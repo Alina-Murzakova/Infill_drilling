@@ -1,7 +1,6 @@
 import numpy as np
 from osgeo import gdal
 
-
 class Map:
     def __init__(self, file_path):
         no_value = 0  # значение для заполнения пустот на карте
@@ -97,3 +96,7 @@ def max_resolution(list_rasters, type_resize="min"):
     map1.resize(dst_geo_transform, projection1, (rows, cols))
 
     dst_geo_transform, projection1,(rows, cols)
+
+
+def calculator():
+    return print('Opportunity map')

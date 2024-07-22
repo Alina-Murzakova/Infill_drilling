@@ -1,6 +1,5 @@
 from map import Map
 
-
 def run():
     # Загрузка карт
     map1 = Map('input_files/Крайнее_Ю1/Ascii grid grd/Изобары.grd')
