@@ -1,3 +1,5 @@
 /venv/
-/input_files/
-/Infill_drilling_v1/
+/input/
+/output/
+/other_files/
+/app/logs.log
