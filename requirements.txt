@@ -1,0 +1,4 @@
+GDAL~=3.8.4
+matplotlib~=3.9.1
+numpy~=1.26.4
+scipy~=1.14.0
