@@ -4,3 +4,4 @@
 /other_files/
 /app/logs.log
 .idea/
+/app/local_parameters.py

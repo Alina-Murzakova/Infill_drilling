@@ -3,4 +3,7 @@ matplotlib~=3.9.1
 numpy~=1.26.4
 scipy~=1.14.0
 loguru~=0.7.2
+xlwings~=0.31.10
+pandas~=2.2.2
+openpyxl~=3.1.5
 
