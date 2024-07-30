@@ -2,8 +2,9 @@ import os
 import numpy as np
 from osgeo import gdal
 from loguru import logger
-from scipy.interpolate import griddata, RBFInterpolator, LinearNDInterpolator
+from scipy.interpolate import RBFInterpolator
 from scipy.spatial import KDTree
+from sklearn.preprocessing import normalize
 
 from config import list_names_map
 
@@ -14,16 +15,11 @@ def mapping(maps_directory, save_directory, data_wells):
     content = os.listdir(path=maps_directory)
     if content:
         logger.info(f"maps: {len(content)}")
-        maps = []
     else:
         raise logger.critical("no maps!")
 
     logger.info(f"Загрузка карт из папки: {maps_directory}")
-    for map_file in content:
-        maps.append(read_raster(f'{maps_directory}/{map_file}', no_value=0))
-
-    logger.info(f"Загрузка карты обводненности на основе выгрузки МЭР")
-    maps.append(read_array(data_wells, name_column_map="water_cut", type_map="water_cut"))
+    maps = maps_load(maps_directory, data_wells)
 
     logger.info(f"Сохраняем img исходных карт")
     for i, raster in enumerate(maps):
@@ -37,13 +33,59 @@ def mapping(maps_directory, save_directory, data_wells):
     for i, raster in enumerate(res_maps):
         raster.save_img(f"{save_directory}/res_map{i + 1}.png", data_wells)
 
+    return res_maps
 
-pass
+
+def maps_load(maps_directory, data_wells):
+    maps = []
+
+    logger.info(f"Загрузка карты ННТ")
+    try:
+        maps.append(read_raster(f'{maps_directory}/NNT.grd', no_value=0))
+    except FileNotFoundError:
+        logger.error(f"в папке отсутствует файл с картой ННТ: NNT.grd")
+
+    logger.info(f"Загрузка карты проницаемости")
+    try:
+        maps.append(read_raster(f'{maps_directory}/permeability.grd', no_value=0))
+    except FileNotFoundError:
+        logger.error(f"в папке отсутствует файл с картой проницаемости: permeability.grd")
+
+    logger.info(f"Загрузка карты ОИЗ")
+    try:
+        maps.append(read_raster(f'{maps_directory}/residual_recoverable_reserves.grd', no_value=0))
+    except FileNotFoundError:
+        logger.error(f"в папке отсутствует файл с картой ОИЗ: residual_recoverable_reserves.grd")
+
+    logger.info(f"Загрузка карты изобар")
+    try:
+        maps.append(read_raster(f'{maps_directory}/pressure.grd', no_value=0))
+    except FileNotFoundError:
+        logger.error(f"в папке отсутствует файл с картой изобар: pressure.grd")
+
+    logger.info(f"Загрузка карты начальной нефтенасыщенности")
+    try:
+        maps.append(read_raster(f'{maps_directory}/initial_oil_saturation.grd', no_value=0))
+    except FileNotFoundError:
+        logger.error(f"в папке отсутствует файл с картой изобар: initial_oil_saturation.grd")
+
+    logger.info(f"Загрузка карты обводненности на основе выгрузки МЭР")
+    maps.append(read_array(data_wells, name_column_map="water_cut", type_map="water_cut"))
+
+    return maps
 
 
 def read_raster(file_path, no_value=np.nan):
     """
-    no_value значение для заполнения пустот на карте
+    Создание объекта класса MAP через загрузку из файла .grd
+    Parameters
+    ----------
+    file_path - путь к файлу
+    no_value - значение для заполнения пустот на карте
+
+    Returns
+    -------
+    Map(type_map)
     """
     dataset = gdal.Open(file_path)
     ndv = dataset.GetRasterBand(1).GetNoDataValue()
@@ -53,6 +95,9 @@ def read_raster(file_path, no_value=np.nan):
     geo_transform = dataset.GetGeoTransform()
     projection = dataset.GetProjection()
     name_file = os.path.basename(file_path).replace(".grd", "")
+    if name_file not in list_names_map:
+        raise logger.critical(f"Неверный тип карты! {name_file}\n"
+                              f"Переименуйте карту в соответствии со списком допустимых названий: {list_names_map}")
     return Map(data, geo_transform, projection, type_map=name_file)
 
 
@@ -64,7 +109,7 @@ def read_array(data_wells, name_column_map, type_map, radius=2000):
     data_wells - DataFrame
     name_column_map - наименование колонок, по значениям котрой строится карта
     type_map - тип карты
-    radius - радиус экстерполяции за крайние скважины
+    radius - радиус экстраполяции за крайние скважины
 
     Returns
     -------
@@ -139,6 +184,10 @@ class Map:
         self.projection = projection
         self.type_map = type_map
 
+    def normalize_data(self, norm="max"):
+        # Возвращение новой карты
+        return Map(normalize(self.data, norm=norm), self.geo_transform, self.projection, self.type_map)
+
     def resize(self, dst_geo_transform, dst_projection, dst_shape):
         # Создание исходного GDAL Dataset в памяти
         src_driver = gdal.GetDriverByName('MEM')
@@ -161,11 +210,6 @@ class Map:
 
         # Возвращение новой карты
         return Map(data, dst_geo_transform, dst_projection, self.type_map)
-
-    def add(self, other_map):
-        if self.data.shape != other_map.data.shape:
-            raise ValueError("Map shapes do not match.")
-        self.data += other_map.data
 
     def show(self):
         import matplotlib.pyplot as plt
@@ -191,24 +235,37 @@ class Map:
     def save_img(self, filename, data_wells):
         import matplotlib.pyplot as plt
 
+        # Определение размера осей
+        x = (self.geo_transform[0], self.geo_transform[0] + self.geo_transform[1] * self.data.shape[1])
+        y = (self.geo_transform[3] + self.geo_transform[5] * self.data.shape[0], self.geo_transform[3])
+
+        d_x = x[1]-x[0]
+        d_y = y[1]-y[0]
+
+        plt.figure(figsize=(d_x/2540, d_y/2540))
+        element_size = min(d_x, d_y) / 10 ** 5
+        font_size = min(d_x, d_y) / 10 ** 3
+
         plt.imshow(self.data, cmap='viridis', origin="upper")
-        plt.colorbar()
+        cbar = plt.colorbar()
+        cbar.ax.tick_params(labelsize=font_size)
 
         if data_wells is not None:
             # Преобразование координат скважин в пиксельные координаты
-            x_t1, y_t1 = self.convert_coord((data_wells.T1_x,data_wells.T1_y))
+            x_t1, y_t1 = self.convert_coord((data_wells.T1_x, data_wells.T1_y))
             x_t3, y_t3 = self.convert_coord((data_wells.T3_x, data_wells.T3_y))
 
             # Отображение скважин на карте
-            plt.plot([x_t1, x_t3], [y_t1, y_t3], c='black', linewidth=0.3)
-            plt.scatter(x_t1, y_t1, s=0.3, c='black', marker="o")
+
+            plt.plot([x_t1, x_t3], [y_t1, y_t3], c='black', linewidth=element_size)
+            plt.scatter(x_t1, y_t1, s=element_size, c='black', marker="o")
 
             # Отображение имен скважин рядом с точками T1
             for x, y, name in zip(x_t1, y_t1, data_wells.well_number):
-                plt.text(x + 3, y - 3, name, fontsize=1.8, ha='left')
+                plt.text(x + 3, y - 3, name, fontsize=font_size/10, ha='left')
 
-        plt.title(self.type_map, fontsize=10)
-        plt.tick_params(axis='both', which='major', labelsize=5)
+        plt.title(self.type_map, fontsize=font_size)
+        plt.tick_params(axis='both', which='major', labelsize=font_size)
         plt.savefig(filename, dpi=300)
         plt.close()
 
@@ -248,7 +305,3 @@ def final_resolution(list_rasters, pixel_sizes="default"):
     dst_projection = max(set(projection_list), key=projection_list.count)
 
     return dst_geo_transform, dst_projection, shape
-
-
-def calculator():
-    return print('Opportunity map')
