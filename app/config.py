@@ -23,5 +23,5 @@ list_names_map = ['NNT',
                   'residual_recoverable_reserves',
                   'pressure',
                   'water_cut',
-                  'current_rate_oil',
+                  'last_rate_oil',
                   'init_rate_oil']

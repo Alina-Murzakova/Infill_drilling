@@ -16,6 +16,9 @@ def input_data(data_well_directory):
     -------
     Фрейм с параметрами добычи на последнюю дату работы для всех скважин
     """
+    #  Количество первых месяцев работы для определения стартового дебита нефти
+    first_months = 6
+
     # Загрузка файла
     data_history = pd.read_excel(os.path.join(os.path.dirname(__file__), data_well_directory))
 
@@ -36,8 +39,21 @@ def input_data(data_well_directory):
 
     # Все скважины на последнюю дату
     data_wells_last_date = data_history.groupby('well_number').nth(0).reset_index(drop=True)
+
     df_diff = data_wells_last_date[~data_wells_last_date.well_number.isin(data_wells_last_param.well_number)]
 
     data_wells = pd.concat([data_wells_last_param, df_diff], ignore_index=True)
+
+    # Нахождение среднего стартового дебита за первые "first_months" месяцев
+    data_first_rate = (data_history.copy().sort_values(by=['well_number', 'date'], ascending=[True, True])
+                       .reset_index(drop=True))
+    data_first_rate['cum_rate_liq'] = data_first_rate['Ql_rate'].groupby(data_first_rate['well_number']).cumsum()
+    data_first_rate = data_first_rate[data_first_rate['cum_rate_liq'] != 0]
+    data_first_rate = data_first_rate.groupby('well_number').head(first_months)
+    data_first_rate = (data_first_rate[data_first_rate['Ql_rate'] != 0].groupby('well_number')
+                       .agg(init_Qo_rate=('Qo_rate', 'mean'), init_Ql_rate=('Ql_rate', 'mean')).reset_index())
+
+    data_wells = data_wells.merge(data_first_rate, how='left', on='well_number')
+    data_wells[['init_Qo_rate', 'init_Ql_rate']] = data_wells[['init_Qo_rate', 'init_Ql_rate']].fillna(0)
 
     return data_history, data_wells

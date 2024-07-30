@@ -20,14 +20,21 @@ def mapping(maps_directory, save_directory, data_wells):
 
     logger.info(f"Загрузка карт из папки: {maps_directory}")
     for map_file in content:
-        maps.append(read_raster(f'{maps_directory}/{map_file}', no_value=0))
+        if map_file.split('.')[0] in list_names_map:
+            maps.append(read_raster(f'{maps_directory}/{map_file}', no_value=0))
 
     logger.info(f"Загрузка карты обводненности на основе выгрузки МЭР")
     maps.append(read_array(data_wells, name_column_map="water_cut", type_map="water_cut"))
 
+    logger.info(f"Загрузка карты последних дебитов нефти на основе выгрузки МЭР")
+    maps.append(read_array(data_wells, name_column_map="Qo_rate", type_map="last_rate_oil"))
+
+    logger.info(f"Загрузка карты стартовых дебитов нефти на основе выгрузки МЭР")
+    maps.append(read_array(data_wells, name_column_map="init_Qo_rate", type_map="init_rate_oil"))
+
     logger.info(f"Сохраняем img исходных карт")
     for i, raster in enumerate(maps):
-        raster.save_img(f"{save_directory}/map{i + 1}.png", data_wells)
+        raster.save_img(f"{save_directory}/{raster.type_map}.png", data_wells)
 
     logger.info(f"Преобразование карт к единому размеру и сетке")
     dst_geo_transform, dst_projection, shape = final_resolution(maps)
@@ -35,7 +42,7 @@ def mapping(maps_directory, save_directory, data_wells):
 
     logger.info(f"Сохраняем img преобразованных карт")
     for i, raster in enumerate(res_maps):
-        raster.save_img(f"{save_directory}/res_map{i + 1}.png", data_wells)
+        raster.save_img(f"{save_directory}/res_{raster.type_map}.png", data_wells)
 
 
 pass
@@ -75,12 +82,24 @@ def read_array(data_wells, name_column_map, type_map, radius=2000):
     default_size = 50.0
     # Расширение границ
     expand = 0.2
+    # Минимальное значение на карте
+    value_min = 0
 
     # Очистка фрейма от скважин не в работе
     data_wells_with_work = data_wells[(data_wells.Ql_rate > 0) | (data_wells.Winj_rate > 0)]
     if type_map == "water_cut":
         data_wells_with_work.loc[data_wells_with_work.Winj_rate > 0, data_wells_with_work.water_cut] = 100.0
+        # Максимальное значение на карте
+        value_max = 100
         # !!! приоритизация точек по последней дате в работе и объединение с картой начальной нефтенасыщенности
+    elif type_map == 'last_rate_oil':
+        data_wells_with_work = data_wells[data_wells.Ql_rate > 0]
+        # Максимальное значение на карте
+        value_max = data_wells_with_work[name_column_map].max()
+    elif type_map == 'init_rate_oil':
+        data_wells_with_work = data_wells[data_wells.init_Ql_rate > 0]
+        # Максимальное значение на карте
+        value_max = data_wells_with_work[name_column_map].max()
     else:
         if type_map not in list_names_map:
             raise logger.critical(f"Неверный тип карты! {type_map}")
@@ -125,7 +144,7 @@ def read_array(data_wells, name_column_map, type_map, radius=2000):
     grid_z.ravel()[points_mask] = valid_grid_z
 
     # Применяем ограничения на минимальное и максимальное значения карты
-    grid_z = np.clip(grid_z, 0, 100).T
+    grid_z = np.clip(grid_z, value_min, value_max).T
 
     # Определение геотрансформации
     geo_transform = [x_min, (x_max - x_min) / grid_z.shape[1], 0, y_max, 0, -((y_max - y_min) / grid_z.shape[0])]
@@ -209,6 +228,7 @@ class Map:
 
         plt.title(self.type_map, fontsize=10)
         plt.tick_params(axis='both', which='major', labelsize=5)
+        plt.contour(self.data, levels=8, colors='black', origin='lower', linewidths=0.5)
         plt.savefig(filename, dpi=300)
         plt.close()
 
