@@ -23,7 +23,7 @@ def mapping(maps_directory, save_directory, data_wells):
 
     logger.info(f"Сохраняем img исходных карт")
     for i, raster in enumerate(maps):
-        raster.save_img(f"{save_directory}/map{i + 1}.png", data_wells)
+        raster.save_img(f"{save_directory}/{raster.type_map}.png", data_wells)
 
     logger.info(f"Преобразование карт к единому размеру и сетке")
     dst_geo_transform, dst_projection, shape = final_resolution(maps)
@@ -31,7 +31,7 @@ def mapping(maps_directory, save_directory, data_wells):
 
     logger.info(f"Сохраняем img преобразованных карт")
     for i, raster in enumerate(res_maps):
-        raster.save_img(f"{save_directory}/res_map{i + 1}.png", data_wells)
+        raster.save_img(f"{save_directory}/res_{raster.type_map}.png", data_wells)
 
     return res_maps
 
@@ -71,6 +71,12 @@ def maps_load(maps_directory, data_wells):
 
     logger.info(f"Загрузка карты обводненности на основе выгрузки МЭР")
     maps.append(read_array(data_wells, name_column_map="water_cut", type_map="water_cut"))
+
+    logger.info(f"Загрузка карты последних дебитов нефти на основе выгрузки МЭР")
+    maps.append(read_array(data_wells, name_column_map="Qo_rate", type_map="last_rate_oil"))
+
+    logger.info(f"Загрузка карты стартовых дебитов нефти на основе выгрузки МЭР")
+    maps.append(read_array(data_wells, name_column_map="init_Qo_rate", type_map="init_rate_oil"))
 
     return maps
 
@@ -239,10 +245,10 @@ class Map:
         x = (self.geo_transform[0], self.geo_transform[0] + self.geo_transform[1] * self.data.shape[1])
         y = (self.geo_transform[3] + self.geo_transform[5] * self.data.shape[0], self.geo_transform[3])
 
-        d_x = x[1]-x[0]
-        d_y = y[1]-y[0]
+        d_x = x[1] - x[0]
+        d_y = y[1] - y[0]
 
-        plt.figure(figsize=(d_x/2540, d_y/2540))
+        plt.figure(figsize=(d_x / 2540, d_y / 2540))
         element_size = min(d_x, d_y) / 10 ** 5
         font_size = min(d_x, d_y) / 10 ** 3
 
@@ -262,11 +268,11 @@ class Map:
 
             # Отображение имен скважин рядом с точками T1
             for x, y, name in zip(x_t1, y_t1, data_wells.well_number):
-                plt.text(x + 3, y - 3, name, fontsize=font_size/10, ha='left')
+                plt.text(x + 3, y - 3, name, fontsize=font_size / 10, ha='left')
 
-        plt.title(self.type_map, fontsize=10)
-        plt.tick_params(axis='both', which='major', labelsize=5)
-        plt.contour(self.data, levels=8, colors='black', origin='lower', linewidths=0.5)
+        plt.title(self.type_map, fontsize=font_size*1.2)
+        plt.tick_params(axis='both', which='major', labelsize=font_size)
+        plt.contour(self.data, levels=8, colors='black', origin='lower', linewidths=font_size / 100)
         plt.savefig(filename, dpi=300)
         plt.close()
 

@@ -5,7 +5,7 @@ import xlwings as xw
 from config import MER_columns_name
 
 
-def input_data(data_well_directory):
+def load_wells_data(data_well_directory):
     """
     Функция, которая обрабатывает выгрузку МЭР (выгрузка по датам по всем скважинам//параметры задаются пользователем)
     Parameters

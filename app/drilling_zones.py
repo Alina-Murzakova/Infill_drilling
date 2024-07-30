@@ -3,12 +3,12 @@ from loguru import logger
 from map import Map
 
 from local_parameters import paths
-from input_output import input_data
+from input_output import load_wells_data
 
 """________БЛОК ДЛЯ УДАЛЕНИЯ_______"""
 data_well_directory = paths["data_well_directory"]
 save_directory = paths["save_directory"]
-_, data_wells = input_data(data_well_directory=data_well_directory)
+_, data_wells = load_wells_data(data_well_directory=data_well_directory)
 """________БЛОК ДЛЯ УДАЛЕНИЯ_______"""
 
 
@@ -17,9 +17,13 @@ def calculate_zones(maps):
 
     map_NNT = maps[type_map_list.index("NNT")]
     map_permeability = maps[type_map_list.index("permeability")]
-    map_water_cut = maps[type_map_list.index("water_cut")]
     map_residual_recoverable_reserves = maps[type_map_list.index("residual_recoverable_reserves")]
     map_pressure = maps[type_map_list.index("pressure")]
+    map_initial_oil_saturation = maps[type_map_list.index("initial_oil_saturation")]
+
+    map_water_cut = maps[type_map_list.index("water_cut")]
+    map_last_rate_oil = maps[type_map_list.index("last_rate_oil")]
+    map_init_rate_oil = maps[type_map_list.index("init_rate_oil")]
 
     logger.info("Расчет карты оценки пласта")
     map_reservoir_score = reservoir_score(map_NNT, map_permeability)
@@ -28,7 +32,7 @@ def calculate_zones(maps):
     map_potential_score = potential_score(map_residual_recoverable_reserves, map_pressure)
 
     logger.info("Расчет карты оценки проблем")
-    map_risk_score = risk_score(map_water_cut)
+    map_risk_score = risk_score(map_water_cut, map_initial_oil_saturation)
 
     logger.info("Расчет карты индекса возможностей")
     map_opportunity_index = opportunity_index(map_reservoir_score, map_potential_score, map_risk_score)

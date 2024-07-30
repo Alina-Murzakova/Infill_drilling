@@ -24,4 +24,5 @@ list_names_map = ['NNT',
                   'pressure',
                   'water_cut',
                   'last_rate_oil',
-                  'init_rate_oil']
+                  'init_rate_oil',
+                  'initial_oil_saturation']
