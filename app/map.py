@@ -97,7 +97,8 @@ def read_raster(file_path, no_value=np.nan):
     ndv = dataset.GetRasterBand(1).GetNoDataValue()
     band = dataset.GetRasterBand(1)
     data = band.ReadAsArray()
-    data = np.where(data >= ndv, no_value, data)
+    if ndv != None:
+        data = np.where(data >= ndv, no_value, data)
     geo_transform = dataset.GetGeoTransform()
     projection = dataset.GetProjection()
     name_file = os.path.basename(file_path).replace(".grd", "")

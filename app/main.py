@@ -1,5 +1,4 @@
 from loguru import logger
-
 from local_parameters import paths
 from input_output import load_wells_data
 from map import mapping
