@@ -25,4 +25,5 @@ list_names_map = ['NNT',
                   'water_cut',
                   'last_rate_oil',
                   'init_rate_oil',
-                  'initial_oil_saturation']
+                  'initial_oil_saturation',
+                  'opportunity_index']

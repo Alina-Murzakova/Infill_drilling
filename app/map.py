@@ -21,9 +21,9 @@ def mapping(maps_directory, save_directory, data_wells):
     logger.info(f"Загрузка карт из папки: {maps_directory}")
     maps = maps_load(maps_directory, data_wells)
 
-    logger.info(f"Сохраняем img исходных карт")
-    for i, raster in enumerate(maps):
-        raster.save_img(f"{save_directory}/{raster.type_map}.png", data_wells)
+    # logger.info(f"Сохраняем img исходных карт")
+    # for i, raster in enumerate(maps):
+    #     raster.save_img(f"{save_directory}/{raster.type_map}.png", data_wells)
 
     logger.info(f"Преобразование карт к единому размеру и сетке")
     dst_geo_transform, dst_projection, shape = final_resolution(maps)
@@ -97,7 +97,8 @@ def read_raster(file_path, no_value=np.nan):
     ndv = dataset.GetRasterBand(1).GetNoDataValue()
     band = dataset.GetRasterBand(1)
     data = band.ReadAsArray()
-    data = np.where(data >= ndv, no_value, data)
+    if ndv != None:
+        data = np.where(data >= ndv, no_value, data)
     geo_transform = dataset.GetGeoTransform()
     projection = dataset.GetProjection()
     name_file = os.path.basename(file_path).replace(".grd", "")
@@ -270,7 +271,7 @@ class Map:
             for x, y, name in zip(x_t1, y_t1, data_wells.well_number):
                 plt.text(x + 3, y - 3, name, fontsize=font_size / 10, ha='left')
 
-        plt.title(self.type_map, fontsize=font_size*1.2)
+        plt.title(self.type_map, fontsize=font_size * 1.2)
         plt.tick_params(axis='both', which='major', labelsize=font_size)
         plt.contour(self.data, levels=8, colors='black', origin='lower', linewidths=font_size / 100)
         plt.savefig(filename, dpi=300)
