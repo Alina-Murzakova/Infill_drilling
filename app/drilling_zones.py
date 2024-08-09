@@ -1,28 +1,21 @@
-import numpy as np
-from loguru import logger
 import pandas as pd
-from osgeo import gdal, ogr, osr
-import datetime
-from dateutil.relativedelta import relativedelta
-import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.pyplot as plt
+
+from loguru import logger
+from osgeo import gdal, ogr
+from scipy.ndimage import gaussian_filter
+from sklearn.cluster import DBSCAN
 
 from map import Map
-
 from local_parameters import paths
 from input_output import load_wells_data
-
-"""________БЛОК ДЛЯ УДАЛЕНИЯ_______"""
-maps_directory = paths["maps_directory"]
-data_well_directory = paths["data_well_directory"]
-save_directory = paths["save_directory"]
-_, data_wells = load_wells_data(data_well_directory=data_well_directory)
-"""________БЛОК ДЛЯ УДАЛЕНИЯ_______"""
 
 
 def calculate_zones(maps):
     type_map_list = list(map(lambda raster: raster.type_map, maps))
 
+    # инициализация всех необходимых карт
     map_NNT = maps[type_map_list.index("NNT")]
     map_permeability = maps[type_map_list.index("permeability")]
     map_residual_recoverable_reserves = maps[type_map_list.index("residual_recoverable_reserves")]
@@ -52,10 +45,17 @@ def calculate_zones(maps):
     map_opportunity_index.save_img(f"{save_directory}/map_opportunity_index.png", data_wells)
     map_opportunity_index.save_grd_file(f"{save_directory}/opportunity_index.grd")
 
-    logger.info("Кластеризация зон")
-    clusterization_zones(map_opportunity_index)
+    logger.info("Создание по карте области исключения (маски) на основе действующего фонда")
+    modified_map_opportunity_index = apply_wells_mask(map_opportunity_index, data_wells)
 
-    pass
+    modified_map_opportunity_index.save_img(f"{save_directory}/cut_map_opportunity_index.png", data_wells)
+    modified_map_opportunity_index.save_grd_file(f"{save_directory}/cut_map_opportunity_index.grd")
+
+    logger.info("Кластеризация зон")
+    dict_zones = clusterization_zones(modified_map_opportunity_index, epsilon=15, min_samples=50, percent_low=80)
+    map_opportunity_index.save_img(f"{save_directory}/map_opportunity_index_with_zones.png",
+                                   data_wells, dict_zones)
+    return dict_zones
 
 
 def reservoir_score(map_NNT, map_permeability) -> Map:
@@ -73,22 +73,7 @@ def reservoir_score(map_NNT, map_permeability) -> Map:
                               norm_map_NNT.geo_transform,
                               norm_map_NNT.projection,
                               "reservoir_score")
-
-    # Пример использования функций
-    logger.info("Расчет буфера вокруг действующих скважин")
-    union_buffer = active_well_outline()
-
-    logger.info("Создание маски буфера")
-    if union_buffer:
-        mask = create_mask_from_buffers(map_reservoir_score, union_buffer)
-    else:
-        mask = np.empty(map_reservoir_score.data.shape)
-
-    logger.info("Бланкование карты согласно буферу")
-    blank_value = np.nan
-    modified_map = cut_map_by_mask(map_reservoir_score, mask, blank_value)
-    modified_map.save_img(f"{save_directory}/cut_map_reservoir_score.png", data_wells)
-
+    map_reservoir_score.save_img(f"{save_directory}/map_reservoir_score.png", data_wells)
     return map_reservoir_score
 
 
@@ -98,7 +83,7 @@ def potential_score(map_residual_recoverable_reserves, map_pressure, map_last_ra
     -------
     Map(type_map=potential_score)
     """
-    P_init = 40 * 9.87  # атм
+    P_init = 40 * 9.87  # атм для Крайнего Ю1
 
     map_last_rate_oil.data = np.nan_to_num(map_last_rate_oil.data)
     map_init_rate_oil.data = np.nan_to_num(map_init_rate_oil.data)
@@ -129,29 +114,15 @@ def risk_score(map_water_cut, map_initial_oil_saturation) -> Map:
     mask = np.isnan(map_water_cut.data)
     data_oil_saturation = np.where(mask, map_initial_oil_saturation.data, data_last_oil_saturation)
 
-    # # 1) Применение морфологической операции расширения
-    # dilated_mask = binary_dilation(mask, iterations=3)
-    # # Заполнение NaN значений
-    # filled = np.where(dilated_mask, map_initial_oil_saturation.data, data_last_oil_saturation)
-    # map_filled = Map(filled, map_water_cut.geo_transform, map_water_cut.projection,
-    #                          "filled")
-    # map_filled.save_img(f"{save_directory}/map_filled", data_wells)
-
-    # 2) Применение гауссова фильтра для сглаживания
+    # Применение гауссова фильтра для сглаживания при объединении карт обводненности и начальной нефтенасыщенности
     sigma = 5  # параметр для определения степени сглаживания
     data_oil_saturation = gaussian_filter(data_oil_saturation, sigma=sigma)
-    # map_oil_saturation = Map(data_oil_saturation, map_water_cut.geo_transform, map_water_cut.projection,
-    #                                                "oil_saturation")
-    # map_oil_saturation.save_img(f"{save_directory}/map_oil_saturation", data_wells)
 
-    # data_risk_score = (1 - map_water_cut.data / 100 + map_initial_oil_saturation.data) / 2
-    # data_risk_score[np.isnan(data_risk_score)] = 0
     data_risk_score = data_oil_saturation
     map_risk_score = Map(data_risk_score, map_water_cut.geo_transform, map_water_cut.projection,
                          "risk_score")
 
     map_risk_score.save_img(f"{save_directory}/map_risk_score.png", data_wells)
-
     return map_risk_score
 
 
@@ -170,175 +141,135 @@ def opportunity_index(map_reservoir_score, map_potential_score, map_risk_score) 
     return map_opportunity_index
 
 
-def clusterization_zones(map_opportunity_index, percent_low=60):
-    data_opportunity_index = map_opportunity_index.data.copy()
+def clusterization_zones(map_opportunity_index, epsilon=15, min_samples=50, percent_low=60):
+    """Кластеризация зон бурения на основе карты индекса возможности с помощью метода DBSCAN"""
+    data_opportunity_index = map_opportunity_index.data
 
+    # Фильтрация карты индекса вероятности по процентилю
     nan_opportunity_index = np.where(data_opportunity_index == 0, np.nan, data_opportunity_index)
     threshold_value = np.nanpercentile(nan_opportunity_index, percent_low)
-
-    mask = data_opportunity_index > threshold_value
-    data_opportunity_index_threshold = np.where(mask, 1, 0)
+    data_opportunity_index_threshold = np.where(data_opportunity_index > threshold_value, data_opportunity_index, 0)
 
     map_opportunity_index_threshold = Map(data_opportunity_index_threshold, map_opportunity_index.geo_transform,
                                           map_opportunity_index.projection, "opportunity_index_threshold")
-    map_opportunity_index_threshold.save_img(f"{save_directory}/map_opportunity_index_threshold = "
-                                             f"{round(threshold_value, 2)}.png", data_wells)
-    pass
+    map_opportunity_index_threshold.save_img(f"{save_directory}/map_opportunity_index_threshold.png", data_wells)
 
+    # Массив для кластеризации
+    drilling_index_map = data_opportunity_index_threshold.copy()
 
-if __name__ == '__main__':
-    from map import read_raster
-
-    map_opportunity_index = read_raster(f"{save_directory}/opportunity_index.grd", no_value=0)
-    data_opportunity_index = map_opportunity_index.data.copy()
-    percent_low = 60
-    nan_opportunity_index = np.where(data_opportunity_index == 0, np.nan, data_opportunity_index)
-    threshold_value = np.nanpercentile(nan_opportunity_index, percent_low)
-
-    mask = data_opportunity_index > threshold_value
-    # data_opportunity_index_threshold = np.where(mask, 1, 0)
-    data_opportunity_index_threshold = np.where(mask, data_opportunity_index, 0)
-
-    # # Использование методов анализа изображений
-    # import cv2
-    # import matplotlib.pyplot as plt
-    #
-    # # Применение порогового преобразования
-    # _, thresholded_map = cv2.threshold(data_opportunity_index, 0.4, 1, cv2.THRESH_BINARY)
-    #
-    # # Поиск контуров
-    # contours, _ = cv2.findContours((thresholded_map * 255).astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    #
-    # # Рисуем контуры на изображении
-    # contour_img = np.zeros_like(data_opportunity_index)
-    # cv2.drawContours(contour_img, contours, -1, (255, 255, 255), 2)
-    #
-    # # Визуализация
-    # plt.imshow(contour_img, cmap='gray')
-    # plt.colorbar()
-    # plt.savefig("D:/Work/Programs_Python/Infill_drilling/output/contour_img", dpi=300)
-    # plt.close()
-
-    # data_opportunity_index = data_opportunity_index_threshold
-    #
-    # кластеризация с использованием DBSCAN
-    import matplotlib.pyplot as plt
-    from sklearn.cluster import DBSCAN
-    from sklearn.preprocessing import StandardScaler
-
-    # карта индекса возможности бурения
-    drilling_index_map = data_opportunity_index_threshold[:int(data_opportunity_index.shape[0]),
-                         :int(data_opportunity_index.shape[1])]
-
-    # Преобразование карты в двумерный массив координат и значений
+    # Преобразование карты в двумерный массив координат, значений и вытягивание их в вектор
     X, Y = np.meshgrid(np.arange(drilling_index_map.shape[1]), np.arange(drilling_index_map.shape[0]))
-    X_vec = X.flatten()
-    Y_vec = Y.flatten()
-    Z = drilling_index_map.flatten()
+    X, Y, Z = X.flatten(), Y.flatten(), drilling_index_map.flatten()
 
-    X_filtered, Y_filtered, Z_filtered = [], [], []
-
-    for i, z in enumerate(Z):
-        if z > 0:
-            X_filtered.append(X_vec[i])
-            Y_filtered.append(Y_vec[i])
-            Z_filtered.append(z)
-
-    X_filtered = np.array(X_filtered)
-    Y_filtered = np.array(Y_filtered)
-    Z_filtered = np.array(Z_filtered)
+    # Фильтрация точек для обучающего набора данных - на fit идут точки с не нулевым индексом
+    X, Y, Z = np.array(X[Z > 0]), np.array(Y[Z > 0]), np.array(Z[Z > 0])
 
     # Комбинирование координат и значений в один массив
-    # data = np.column_stack((X_filtered, Y_filtered, Z_filtered))
-    data = np.column_stack((X_filtered, Y_filtered))
+    dataset = pd.DataFrame(np.column_stack((X, Y, Z)), columns=["X", "Y", "Z"])
+    training_dataset = dataset[["X", "Y"]]
 
-    # Нормализация данных
-    # scaler = StandardScaler()
-    # data_scaled = scaler.fit_transform(data)
-    # Пока без нормализации
-    data_scaled = data
+    # eps: Максимальное расстояние между двумя точками, чтобы одна была соседкой другой
+    # min_samples: Минимальное количество точек для образования плотной области
+    dbscan = DBSCAN(eps=epsilon, min_samples=min_samples).fit(training_dataset)
+    labels = sorted(list(set(dbscan.labels_)))
 
-    # Применение DBSCAN
-    """eps: Максимальное расстояние между двумя точками, чтобы одна была соседкой другой.
-    min_samples: Минимальное количество точек для образования плотной области."""
-    db = DBSCAN(eps=20, min_samples=20)  # Параметры могут варьироваться
-    db.fit(data_scaled)
+    # Создание параметра по которому будет произведена сортировка кластеров // среднее значение индекса в кластере
+    mean_indexes = list(map(lambda label: np.mean(Z[np.where(dbscan.labels_ == label)]), labels[1:]))
+    mean_indexes = pd.DataFrame({"labels": labels[1:], "mean_indexes": mean_indexes})
+    mean_indexes = mean_indexes.sort_values(by=['mean_indexes'], ascending=False).reset_index(drop=True)
 
-    # Получение меток кластеров
-    labels = db.labels_
-
-    # Количество кластеров (без учета шума)
-    n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
-
-    # Визуализация Точки из разных кластеров окрашиваются в разные цвета, точки-шум — в чёрный.
-    plt.imshow(drilling_index_map, cmap='viridis', interpolation='nearest')
-    plt.colorbar()
-
-    # Нанесение кластеров на карту
-    unique_labels = set(labels)
-    colors = plt.cm.viridis(np.linspace(0, 1, len(unique_labels)))
-    for k, col in zip(unique_labels, colors):
-        if k == -1:
-            # Цвет для шума
-            col = [0, 0, 0, 1]
-
-        class_member_mask = (labels == k)
-        xy = data[class_member_mask]
-
-        plt.plot(xy[:, 0], xy[:, 1], markerfacecolor=tuple(col), markersize=5 if k != -1 else 1)
-        # markeredgecolor='k', 'o',
-
-    plt.title(f'Карта индекса возможности бурения с кластеризацией DBSCAN (число кластеров: {n_clusters})'
-              ,fontsize=5)
-    plt.savefig("D:/Work/Programs_Python/Infill_drilling/output/drilling_index_map", dpi=300)
-    plt.close()
-
-    pass
+    # Создание словаря с зонами
+    dict_zones = {}
+    for label in labels:
+        idx = np.where(dbscan.labels_ == label)
+        x_label, y_label, z_label = X[idx], Y[idx], Z[idx]
+        mean_index, max_index, position = 0, 0, -1
+        if label != -1:
+            # Расчет среднего и максимального индекса в кластере
+            mean_index = np.float64(np.round(np.mean(z_label), 3))
+            max_index = np.float64(np.round(np.max(z_label), 3))
+            position = mean_indexes[mean_indexes["labels"] == label].index[0]
+        dict_zones[position] = [x_label, y_label, z_label, mean_index, max_index]
+    # Добавление в словарь гиперпараметров кластеризации
+    dict_zones["DBSCAN_parameters"] = [epsilon, min_samples]
+    return dict_zones
 
 
-def active_well_outline():
+def apply_wells_mask(base_map, data_wells):
     """
-    Создание буфера вокруг действующих скважин
+    Создание по карте области исключения (маски) на основе действующего фонда
+    + как опция в будущем учет также проектного фонда
+    Parameters
+    ----------
+    base_map - карта, на основе которой будет отстроена маска
+    data_wells - фрейм с параметрами добычи на последнюю дату работы для всех скважин
+
     Returns
     -------
-    union_buffer
+    modified_map - карта с вырезанной зоной действующих скважин
     """
-    # Радиус
-    NUMBER_MONTHS = 12
-    BUFFER_RADIUS = 500
+    # import datetime
+    # from dateutil.relativedelta import relativedelta
+    # Обработка массива скважин // выбор действующих скважин на последние NUMBER_MONTHS
+    # NUMBER_MONTHS = 12
+    # last_date = data_wells.date.sort_values()
+    # last_date = last_date.unique()[-1]
+    # active_date = last_date - relativedelta(months=NUMBER_MONTHS)
+    # data_wells_with_work = data_wells[(data_wells.Ql_rate > 0) | (data_wells.Winj_rate > 0)]
+    # data_active_wells = data_wells_with_work[data_wells_with_work.date > active_date]
+    data_active_wells = data_wells
 
-    last_date = data_wells.date.sort_values()
-    last_date = last_date.unique()[-1]
-    active_date = last_date - relativedelta(months=NUMBER_MONTHS)
-    # check_date = last_date + relativedelta(months=1)
+    logger.info("Расчет буфера вокруг скважин")
+    union_buffer = active_well_outline(data_active_wells, buffer_radius=200)
 
-    data_wells_with_work = data_wells.copy()
-    data_wells_with_work = data_wells_with_work[(data_wells_with_work.Ql_rate > 0) | (data_wells_with_work.Winj_rate > 0)]
-    data_active_wells = data_wells_with_work[data_wells_with_work.date > active_date]
-    # data_active_wells = data_wells_with_work[data_wells_with_work.date == check_date]
-    # data_active_wells = data_wells_with_work[data_wells_with_work.well_number == 1026]
+    logger.info("Создание маски буфера")
+    if union_buffer:
+        mask = create_mask_from_buffers(base_map, union_buffer)
+    else:
+        mask = np.empty(base_map.data.shape)
 
-    if data_active_wells.empty:
-        print('Нет действующих скважин')
+    logger.info("Бланкование карты согласно буферу")
+    modified_map = cut_map_by_mask(base_map, mask, blank_value=0)
+
+    return modified_map
+
+
+def active_well_outline(df_wells, buffer_radius=500):
+    """
+    Создание буфера вокруг действующих скважин
+     Parameters
+    ----------
+    df_wells - DataFrame скважин с обязательными столбцами:
+                [well type, T1_x, T1_y, T3_x,T3_y]
+    buffer_radius - расстояние от скважин, на котором нельзя бурить // в перспективе замена на радиус дренирования,
+     нагнетания с индивидуальным расчетом для каждой скважины
+
+    Returns
+    -------
+    union_buffer - POLYGON
+    """
+
+    if df_wells.empty:
+        logger.warning('Нет скважин для создания маски')
         return
 
     # Создание геометрии для каждой скважины
     def create_buffer(row):
-        if row.T3_x != 0 and row.T3_y != 0:
+        if row["well type"] == "horizontal":
             # Горизонтальная скважина (линия)
             line = ogr.Geometry(ogr.wkbLineString)
             line.AddPoint(row.T1_x, row.T1_y)
             line.AddPoint(row.T3_x, row.T3_y)
-            buffer = line.Buffer(BUFFER_RADIUS)
+            buffer = line.Buffer(buffer_radius)
         else:
             # Вертикальная скважина (точка)
             point = ogr.Geometry(ogr.wkbPoint)
             point.AddPoint(row.T1_x, row.T1_y)
-            buffer = point.Buffer(BUFFER_RADIUS)
+            buffer = point.Buffer(buffer_radius)
         return buffer
 
     # Создаём список буферов
-    buffers = [create_buffer(row) for _, row in data_active_wells.iterrows()]
+    buffers = [create_buffer(row) for _, row in df_wells.iterrows()]
 
     # Создаем объединенный буфер
     union_buffer = ogr.Geometry(ogr.wkbGeometryCollection)
@@ -348,7 +279,7 @@ def active_well_outline():
     return union_buffer
 
 
-def create_mask_from_buffers(map, buffer):
+def create_mask_from_buffers(base_map, buffer):
     """
     Функция создания маски из буфера в видe array
     Parameters
@@ -361,12 +292,12 @@ def create_mask_from_buffers(map, buffer):
     mask - array
     """
     # Размер карты
-    cols = map.data.shape[1]
-    rows = map.data.shape[0]
+    cols = base_map.data.shape[1]
+    rows = base_map.data.shape[0]
 
     # Информация о трансформации
-    transform = map.geo_transform
-    projection = map.projection
+    transform = base_map.geo_transform
+    projection = base_map.projection
 
     # Создаем временный растровый слой
     driver = gdal.GetDriverByName('MEM')
@@ -377,13 +308,13 @@ def create_mask_from_buffers(map, buffer):
     # Создаем векторный слой в памяти для буфера
     mem_driver = ogr.GetDriverByName('Memory')
     mem_ds = mem_driver.CreateDataSource('')  # Создаем временный источник данных
-    mem_layer = mem_ds.CreateLayer('', None, ogr.wkbPolygon) # Создаем слой в этом источнике данных
-    feature = ogr.Feature(mem_layer.GetLayerDefn()) # Создание нового объекта
-    feature.SetGeometry(buffer) # Установка геометрии для объекта
-    mem_layer.CreateFeature(feature) # Добавление объекта в слой
+    mem_layer = mem_ds.CreateLayer('', None, ogr.wkbPolygon)  # Создаем слой в этом источнике данных
+    feature = ogr.Feature(mem_layer.GetLayerDefn())  # Создание нового объекта
+    feature.SetGeometry(buffer)  # Установка геометрии для объекта
+    mem_layer.CreateFeature(feature)  # Добавление объекта в слой
 
-    # Заполнение растера значениями по умолчанию
-    band = dataset.GetRasterBand(1) # первый слой
+    # Заполнение растра значениями по умолчанию
+    band = dataset.GetRasterBand(1)  # первый слой
     band.SetNoDataValue(0)
     band.Fill(0)  # Установка всех значений пикселей в 0
 
@@ -394,13 +325,12 @@ def create_mask_from_buffers(map, buffer):
     mask = band.ReadAsArray()
 
     # Закрываем временные данные
-    dataset = None
-    mem_ds = None
+    dataset, mem_ds = None, None
 
     return mask
 
 
-def cut_map_by_mask(map, mask, blank_value):
+def cut_map_by_mask(base_map, mask, blank_value=np.nan):
     """
     Обрезаем карту согласно маске (буферу вокруг действующих скважин)
     Parameters
@@ -413,15 +343,121 @@ def cut_map_by_mask(map, mask, blank_value):
     -------
     modified_map - обрезанная карта
     """
-
     # Создаем копию данных карты и заменяем значения внутри маски
-    modified_data = map.data.copy()
+    modified_data = base_map.data.copy()
     modified_data[mask == 1] = blank_value
 
     # Создаем новый объект Map с модифицированными данными
     modified_map = Map(modified_data,
-                       map.geo_transform,
-                       map.projection,
-                       map.type_map)
+                       base_map.geo_transform,
+                       base_map.projection,
+                       base_map.type_map)
 
     return modified_map
+
+
+"""________БЛОК ДЛЯ УДАЛЕНИЯ_______"""
+maps_directory = paths["maps_directory"]
+data_well_directory = paths["data_well_directory"]
+save_directory = paths["save_directory"]
+_, data_wells = load_wells_data(data_well_directory=data_well_directory)
+"""________БЛОК ДЛЯ УДАЛЕНИЯ_______"""
+
+if __name__ == '__main__':
+    # Скрипт для перебора гиперпараметров DBSCAN по карте cut_map_opportunity_index.grd
+
+    from map import read_raster
+
+    map_opportunity_index = read_raster(f"{save_directory}/cut_map_opportunity_index.grd", no_value=0)
+
+    # Перебор параметров DBSCAN c сеткой графиков 5 х 3
+    pairs_of_hyperparams = [[5, 20], [5, 50], [5, 100],
+                            [10, 20], [10, 50], [10, 100],
+                            [15, 20], [15, 50], [15, 100],
+                            [20, 20], [20, 50], [20, 100],
+                            [30, 20], [30, 50], [30, 100], ]
+    fig = plt.figure()
+    fig.set_size_inches(20, 50)
+
+    for i, s in enumerate(pairs_of_hyperparams):
+        dict_zones = clusterization_zones(map_opportunity_index, epsilon=s[0], min_samples=s[1], percent_low=80)
+
+        ax_ = fig.add_subplot(5, 3, i + 1)
+
+        # Определение размера осей
+        x = (map_opportunity_index.geo_transform[0], map_opportunity_index.geo_transform[0] +
+             map_opportunity_index.geo_transform[1] * map_opportunity_index.data.shape[1])
+        y = (map_opportunity_index.geo_transform[3] + map_opportunity_index.geo_transform[5] *
+             map_opportunity_index.data.shape[0], map_opportunity_index.geo_transform[3])
+
+        d_x = x[1] - x[0]
+        d_y = y[1] - y[0]
+
+        element_size = min(d_x, d_y) / 10 ** 5
+        font_size = min(d_x, d_y) / 10 ** 3
+
+        plt.imshow(map_opportunity_index.data, cmap='viridis')
+        cbar = plt.colorbar()
+        cbar.ax.tick_params(labelsize=font_size)
+
+        if data_wells is not None:
+            # Преобразование координат скважин в пиксельные координаты
+            x_t1, y_t1 = map_opportunity_index.convert_coord((data_wells.T1_x, data_wells.T1_y))
+            x_t3, y_t3 = map_opportunity_index.convert_coord((data_wells.T3_x, data_wells.T3_y))
+
+            # Отображение скважин на карте
+            plt.plot([x_t1, x_t3], [y_t1, y_t3], c='black', linewidth=element_size)
+            plt.scatter(x_t1, y_t1, s=element_size, c='black', marker="o")
+
+            # Отображение имен скважин рядом с точками T1
+            for x, y, name in zip(x_t1, y_t1, data_wells.well_number):
+                plt.text(x + 3, y - 3, name, fontsize=font_size / 10, ha='left')
+
+        plt.title(map_opportunity_index.type_map, fontsize=font_size * 1.2)
+        plt.tick_params(axis='both', which='major', labelsize=font_size)
+        plt.contour(map_opportunity_index.data, levels=8, colors='black', origin='lower', linewidths=font_size / 100)
+
+        labels = list(set(dict_zones.keys()) - {"DBSCAN_parameters"})
+        # Выбираем теплую цветовую карту
+        cmap = plt.get_cmap('Wistia', len(set(labels)))
+        # Генерируем список цветов
+        colors = [cmap(i) for i in range(len(set(labels)))]
+
+        if len(labels) == 1 and labels[0] == -1:
+            colors = {0: "gray"}
+        else:
+            colors = dict(zip(labels, colors))
+            colors.update({-1: "gray"})
+
+        for lab, c in zip(labels, colors.values()):
+            x_zone = dict_zones[lab][0]
+            y_zone = dict_zones[lab][1]
+            mean_index = dict_zones[lab][3]
+            max_index = dict_zones[lab][4]
+            plt.scatter(x_zone, y_zone, color=c, alpha=0.6, s=1)
+
+            x_middle = x_zone[int(len(x_zone) / 2)]
+            y_middle = y_zone[int(len(y_zone) / 2)]
+
+            if lab != -1:
+                # Отображение среднего и максимального индексов рядом с кластерами
+                plt.text(x_middle, y_middle,f"OI_mean = {np.round(mean_index, 2)}",
+                         fontsize=font_size / 10, ha='left', color="black")
+                plt.text(x_middle, y_middle,f"OI_max = {np.round(max_index, 2)}",
+                         fontsize=font_size / 10, ha='left', color="black")
+
+        plt.xlim(0, map_opportunity_index.data.shape[1])
+        plt.ylim(0, map_opportunity_index.data.shape[0])
+        plt.xlabel("x")
+        plt.ylabel("y")
+        plt.gca().invert_yaxis()
+
+        n_clusters = len(labels) - 1
+
+        plt.title(f"Epsilon = {s[0]}\n min_samples = {s[1]} \n with {n_clusters} clusters")
+
+    fig.tight_layout()
+    plt.savefig("D:/Work/Programs_Python/Infill_drilling/output/drilling_index_map", dpi=300)
+    plt.close()
+
+    pass

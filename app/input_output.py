@@ -1,11 +1,12 @@
 import os
 import pandas as pd
 import numpy as np
-import xlwings as xw
+# import xlwings as xw
+
 from config import MER_columns_name
 
 
-def load_wells_data(data_well_directory):
+def load_wells_data(data_well_directory, min_length_hor_well=150):
     """
     Функция, которая обрабатывает выгрузку МЭР (выгрузка по датам по всем скважинам//параметры задаются пользователем)
     Parameters
@@ -14,15 +15,21 @@ def load_wells_data(data_well_directory):
 
     Returns
     -------
+    Фрейм с обработанной полной историей скважин
     Фрейм с параметрами добычи на последнюю дату работы для всех скважин
     """
     #  Количество первых месяцев работы для определения стартового дебита нефти
     first_months = 6
 
     # Загрузка файла
-    data_history = pd.read_excel(os.path.join(os.path.dirname(__file__), data_well_directory))
+    # data_history = pd.read_excel(os.path.join(os.path.dirname(__file__), data_well_directory))
+    data_history = pd.DataFrame()
+    xls = pd.ExcelFile(os.path.join(os.path.dirname(__file__), data_well_directory))
+    for sheet_name in xls.sheet_names:
+        df = xls.parse(sheet_name)
+        data_history = pd.concat([data_history, df], ignore_index=True)
 
-    # Переименовнаие колонок
+    # Переименование колонок
     data_history = data_history[list(MER_columns_name.keys())]
     data_history.columns = MER_columns_name.values()
 
@@ -31,6 +38,18 @@ def load_wells_data(data_well_directory):
     # Удаление строк, где скважина еще не пробурена
     data_history = data_history[data_history.work_marker != "не пробурена"]
     data_history = data_history.sort_values(by=['well_number', 'date'], ascending=[True, False]).reset_index(drop=True)
+
+    # Обработка координат // разделение на горизонтальные и вертикальные скважины
+    data_history.loc[data_history["T3_x"] == 0, 'T3_x'] = data_history.T1_x
+    data_history.loc[data_history["T3_y"] == 0, 'T3_y'] = data_history.T1_y
+    data_history["length of well T1-3"] = np.sqrt(np.power(data_history.T3_x - data_history.T1_x, 2)
+                                                  + np.power(data_history.T3_y - data_history.T1_y, 2))
+    data_history["well type"] = ""
+    data_history.loc[data_history["length of well T1-3"] < min_length_hor_well, "well type"] = "vertical"
+    data_history.loc[data_history["length of well T1-3"] >= min_length_hor_well, "well type"] = "horizontal"
+    data_history.loc[data_history["well type"] == "vertical", 'T3_x'] = data_history.T1_x
+    data_history.loc[data_history["well type"] == "vertical", 'T3_y'] = data_history.T1_y
+    del data_history["length of well T1-3"]
 
     data_wells = data_history.copy()
     data_wells = data_wells[(data_wells.Ql_rate > 0) | (data_wells.Winj_rate > 0)]

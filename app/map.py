@@ -1,5 +1,6 @@
 import os
 import numpy as np
+import pandas as pd
 from osgeo import gdal
 from loguru import logger
 from scipy.interpolate import RBFInterpolator
@@ -81,7 +82,7 @@ def maps_load(maps_directory, data_wells):
     return maps
 
 
-def read_raster(file_path, no_value=np.nan):
+def read_raster(file_path, no_value=0):
     """
     Создание объекта класса MAP через загрузку из файла .grd
     Parameters
@@ -97,7 +98,7 @@ def read_raster(file_path, no_value=np.nan):
     ndv = dataset.GetRasterBand(1).GetNoDataValue()
     band = dataset.GetRasterBand(1)
     data = band.ReadAsArray()
-    if ndv != None:
+    if ndv is not None:
         data = np.where(data >= ndv, no_value, data)
     geo_transform = dataset.GetGeoTransform()
     projection = dataset.GetProjection()
@@ -131,8 +132,11 @@ def read_array(data_wells, name_column_map, type_map, radius=2000):
     # Очистка фрейма от скважин не в работе
     data_wells_with_work = data_wells[(data_wells.Ql_rate > 0) | (data_wells.Winj_rate > 0)]
     if type_map == "water_cut":
-        data_wells_with_work.loc[data_wells_with_work.Winj_rate > 0, data_wells_with_work.water_cut] = 100.0
-        # !!! приоритизация точек по последней дате в работе и объединение с картой начальной нефтенасыщенности
+        import warnings
+        with warnings.catch_warnings(action='ignore', category=pd.errors.SettingWithCopyWarning):
+            data_wells_with_work.water_cut = np.where(data_wells_with_work.Winj_rate > 0,
+                                                      100, data_wells_with_work.water_cut)
+        # !!! приоритизация точек по последней дате в работе
     else:
         if type_map not in list_names_map:
             raise logger.critical(f"Неверный тип карты! {type_map}")
@@ -239,7 +243,7 @@ class Map:
         conv_y = np.where(y != 0, ((self.geo_transform[3] - y) / abs(self.geo_transform[5])).astype(int), np.nan)
         return conv_x, conv_y
 
-    def save_img(self, filename, data_wells):
+    def save_img(self, filename, data_wells=None, dict_zones=None):
         import matplotlib.pyplot as plt
 
         # Определение размера осей
@@ -257,6 +261,7 @@ class Map:
         cbar = plt.colorbar()
         cbar.ax.tick_params(labelsize=font_size)
 
+        # Отображение списка скважин на карте
         if data_wells is not None:
             # Преобразование координат скважин в пиксельные координаты
             x_t1, y_t1 = self.convert_coord((data_wells.T1_x, data_wells.T1_y))
@@ -271,7 +276,43 @@ class Map:
             for x, y, name in zip(x_t1, y_t1, data_wells.well_number):
                 plt.text(x + 3, y - 3, name, fontsize=font_size / 10, ha='left')
 
-        plt.title(self.type_map, fontsize=font_size * 1.2)
+        # Отображение зон кластеризации на карте
+        title = ""
+        if dict_zones is not None:
+            labels = list(set(dict_zones.keys()) - {"DBSCAN_parameters"})
+            # Выбираем теплую цветовую карту
+            cmap = plt.get_cmap('Wistia', len(set(labels)))
+            # Генерируем список цветов
+            colors = [cmap(i) for i in range(len(set(labels)))]
+
+            if len(labels) == 1 and labels[0] == -1:
+                colors = {0: "gray"}
+            else:
+                colors = dict(zip(labels, colors))
+                colors.update({-1: "gray"})
+
+            for i, c in zip(labels, colors.values()):
+                x_zone = dict_zones[i][0]
+                y_zone = dict_zones[i][1]
+                mean_index = dict_zones[i][3]
+                max_index = dict_zones[i][4]
+                plt.scatter(x_zone, y_zone, color=c, alpha=0.6, s=1)
+
+                if i != -1:
+                    # Отображение среднего и максимального индексов рядом с кластерами
+                    plt.text(x_zone[int(len(x_zone)/2)], y_zone[int(len(y_zone)/2)],
+                             f"OI_mean = {np.round(mean_index, 3)}",
+                             fontsize=font_size / 10, ha='left', color="black")
+                    plt.text(x_zone[int(len(x_zone)/2)],  y_zone[int(len(y_zone)/2)] - 10,
+                             f"OI_max = {np.round(max_index, 3)}",
+                             fontsize=font_size / 10, ha='left', color="black")
+
+            n_clusters = len(labels) - 1
+            title = (f"Epsilon = {dict_zones["DBSCAN_parameters"][0]}\n "
+                     f"min_samples = {dict_zones["DBSCAN_parameters"][1]} \n "
+                     f"with {n_clusters} clusters")
+
+        plt.title(f"{self.type_map}\n {title}", fontsize=font_size * 1.2)
         plt.tick_params(axis='both', which='major', labelsize=font_size)
         plt.contour(self.data, levels=8, colors='black', origin='lower', linewidths=font_size / 100)
         plt.savefig(filename, dpi=300)
