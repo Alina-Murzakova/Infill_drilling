@@ -26,8 +26,9 @@ def load_wells_data(data_well_directory, min_length_hor_well=150):
     data_history = pd.DataFrame()
     xls = pd.ExcelFile(os.path.join(os.path.dirname(__file__), data_well_directory))
     for sheet_name in xls.sheet_names:
-        df = xls.parse(sheet_name)
-        data_history = pd.concat([data_history, df], ignore_index=True)
+        if "Данные" in sheet_name:
+            df = xls.parse(sheet_name)
+            data_history = pd.concat([data_history, df], ignore_index=True)
 
     # Переименование колонок
     data_history = data_history[list(MER_columns_name.keys())]
