@@ -2,6 +2,7 @@
 MER_columns_name = {'Дата': 'date',
                     '№ скважины': 'well_number',
                     'Месторождение': 'field',
+                    'Объект': 'object',
                     'Объекты работы': 'objects',
                     'Характер работы': 'work_marker',
                     'Состояние': 'well_status',
