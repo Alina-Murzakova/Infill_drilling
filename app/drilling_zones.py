@@ -41,17 +41,6 @@ def calculate_zones(maps, epsilon, min_samples, percent_low):
     # где нет толщин, проницаемости и давления opportunity_index = 0
     map_opportunity_index.data[(map_NNT.data == 0) & (map_permeability.data == 0) & (map_pressure.data == 0)] = 0
 
-    # # гистограмма распределения параметров
-    # plt.hist(map_risk_score.data.flatten(), color='red', edgecolor='black', bins=int(180 / 5), label="risk_score")
-    # plt.hist(map_reservoir_score.data.flatten(), color='green', edgecolor='black', bins=int(180 / 5),
-    #          label="reservoir_score")
-    # plt.hist(map_potential_score.data.flatten(), color='blue', edgecolor='black', bins=int(180 / 5),
-    #          label="potential_score")
-    # plt.hist(map_opportunity_index.data.flatten(), color='yellow', edgecolor='black', bins=int(180 / 5),
-    #          label="opportunity_index")
-    # plt.legend()
-    # plt.show()
-
     map_opportunity_index.save_img(f"{save_directory}/map_opportunity_index.png", data_wells)
     map_opportunity_index.save_grd_file(f"{save_directory}/opportunity_index.grd")
 
@@ -297,6 +286,7 @@ def active_well_outline(df_wells):
 
     return union_buffer
 
+
 def drainage_radius(df_wells):
     """
     Функция определения радиуса маски для скважин
@@ -321,13 +311,13 @@ def drainage_radius(df_wells):
     active_date = last_date - relativedelta(months=NUMBER_MONTHS)
 
     # Определение радиуса:
-    # 100 - если скважина не работала последние NUMBER_MONTHS
-    # 400 - если скважина работала последние NUMBER_MONTHS
+    # buffer_radius_non_active - если скважина не работала последние NUMBER_MONTHS
+    # buffer_radius_active - если скважина работала последние NUMBER_MONTHS
     import warnings
     with warnings.catch_warnings(action='ignore', category=pd.errors.SettingWithCopyWarning):
-        df_wells["radius"]= np.where((df_wells.date > active_date) &
-                                     (df_wells.Ql_rate > 0) | (df_wells.Winj_rate > 0),
-                                     buffer_radius_active, buffer_radius_non_active)
+        df_wells["radius"] = np.where((df_wells.date > active_date) &
+                                      (df_wells.Ql_rate > 0) | (df_wells.Winj_rate > 0),
+                                      buffer_radius_active, buffer_radius_non_active)
     return df_wells
 
 
