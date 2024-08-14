@@ -6,21 +6,20 @@ import numpy as np
 from config import MER_columns_name
 
 
-def load_wells_data(data_well_directory, min_length_hor_well=150):
+def load_wells_data(data_well_directory, min_length_hor_well=150, first_months=6):
     """
     Функция, которая обрабатывает выгрузку МЭР (выгрузка по датам по всем скважинам//параметры задаются пользователем)
     Parameters
     ----------
     data_well_directory - путь к выгрузке
+    min_length_hor_well - максимальная длина ствола ННС
+    first_months - количество первых месяцев работы для определения стартового дебита нефти
 
     Returns
     -------
     Фрейм с обработанной полной историей скважин
     Фрейм с параметрами добычи на последнюю дату работы для всех скважин
     """
-    #  Количество первых месяцев работы для определения стартового дебита нефти
-    first_months = 6
-
     # Загрузка файла
     # data_history = pd.read_excel(os.path.join(os.path.dirname(__file__), data_well_directory))
     data_history = pd.DataFrame()

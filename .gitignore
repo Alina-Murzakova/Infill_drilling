@@ -6,3 +6,4 @@
 .idea/
 /app/local_parameters.py
 /app/active_well_outline.py
+/app/test.py

@@ -5,13 +5,12 @@ from osgeo import gdal
 from loguru import logger
 from scipy.interpolate import RBFInterpolator
 from scipy.spatial import KDTree
-from sklearn.preprocessing import normalize
 
 from config import list_names_map
 
 
 @logger.catch
-def mapping(maps_directory, save_directory, data_wells):
+def mapping(maps_directory, save_directory, data_wells, default_size_pixel):
     logger.info(f"path: {maps_directory}")
     content = os.listdir(path=maps_directory)
     if content:
@@ -20,14 +19,15 @@ def mapping(maps_directory, save_directory, data_wells):
         raise logger.critical("no maps!")
 
     logger.info(f"Загрузка карт из папки: {maps_directory}")
-    maps = maps_load(maps_directory, data_wells)
+    maps, default_size_pixel = maps_load(maps_directory, data_wells, default_size_pixel)
 
     # logger.info(f"Сохраняем img исходных карт")
     # for i, raster in enumerate(maps):
     #     raster.save_img(f"{save_directory}/{raster.type_map}.png", data_wells)
 
     logger.info(f"Преобразование карт к единому размеру и сетке")
-    dst_geo_transform, dst_projection, shape = final_resolution(maps)
+    dst_geo_transform, dst_projection, shape = final_resolution(maps, default_size_pixel)
+
     res_maps = list(map(lambda raster: raster.resize(dst_geo_transform, dst_projection, shape), maps))
 
     logger.info(f"Сохраняем img преобразованных карт")
@@ -37,7 +37,7 @@ def mapping(maps_directory, save_directory, data_wells):
     return res_maps
 
 
-def maps_load(maps_directory, data_wells):
+def maps_load(maps_directory, data_wells, default_size_pixel):
     maps = []
 
     logger.info(f"Загрузка карты ННТ")
@@ -70,16 +70,24 @@ def maps_load(maps_directory, data_wells):
     except FileNotFoundError:
         logger.error(f"в папке отсутствует файл с картой изобар: initial_oil_saturation.grd")
 
+    # Вычисление минимального размера пикселя, если он None при загрузке
+    dst_geo_transform, _, _ = final_resolution(maps, default_size_pixel)
+    default_size_pixel = dst_geo_transform[1]
+
+    #  Загрузка карт из "МЭР"
     logger.info(f"Загрузка карты обводненности на основе выгрузки МЭР")
-    maps.append(read_array(data_wells, name_column_map="water_cut", type_map="water_cut"))
+    maps.append(read_array(data_wells, name_column_map="water_cut", type_map="water_cut",
+                           default_size=default_size_pixel))
 
     logger.info(f"Загрузка карты последних дебитов нефти на основе выгрузки МЭР")
-    maps.append(read_array(data_wells, name_column_map="Qo_rate", type_map="last_rate_oil"))
+    maps.append(read_array(data_wells, name_column_map="Qo_rate", type_map="last_rate_oil",
+                           default_size=default_size_pixel))
 
     logger.info(f"Загрузка карты стартовых дебитов нефти на основе выгрузки МЭР")
-    maps.append(read_array(data_wells, name_column_map="init_Qo_rate", type_map="init_rate_oil"))
+    maps.append(read_array(data_wells, name_column_map="init_Qo_rate", type_map="init_rate_oil",
+                           default_size=default_size_pixel))
 
-    return maps
+    return maps, default_size_pixel
 
 
 def read_raster(file_path, no_value=0):
@@ -109,7 +117,7 @@ def read_raster(file_path, no_value=0):
     return Map(data, geo_transform, projection, type_map=name_file)
 
 
-def read_array(data_wells, name_column_map, type_map, radius=2000):
+def read_array(data_wells, name_column_map, type_map, default_size, radius=2000, expand=0.2):
     """
     Создание объекта класса MAP из DataFrame
     Parameters
@@ -118,17 +126,12 @@ def read_array(data_wells, name_column_map, type_map, radius=2000):
     name_column_map - наименование колонок, по значениям котрой строится карта
     type_map - тип карты
     radius - радиус экстраполяции за крайние скважины
+    expand - Расширение границ
 
     Returns
     -------
     Map(type_map)
     """
-
-    # Размер ячейки
-    default_size = 50.0
-    # Расширение границ
-    expand = 0.2
-
     # Очистка фрейма от скважин не в работе
     data_wells_with_work = data_wells[(data_wells.Ql_rate > 0) | (data_wells.Winj_rate > 0)]
     if type_map == "water_cut":
@@ -195,9 +198,10 @@ class Map:
         self.projection = projection
         self.type_map = type_map
 
-    def normalize_data(self, norm="max"):
+    def normalize_data(self):
         # Возвращение новой карты
-        return Map(normalize(self.data, norm=norm), self.geo_transform, self.projection, self.type_map)
+        new_data = (self.data - np.min(self.data)) / (np.max(self.data) - np.min(self.data))
+        return Map(new_data, self.geo_transform, self.projection, self.type_map)
 
     def resize(self, dst_geo_transform, dst_projection, dst_shape):
         # Создание исходного GDAL Dataset в памяти
@@ -300,10 +304,10 @@ class Map:
 
                 if i != -1:
                     # Отображение среднего и максимального индексов рядом с кластерами
-                    plt.text(x_zone[int(len(x_zone)/2)], y_zone[int(len(y_zone)/2)],
+                    plt.text(x_zone[int(len(x_zone) / 2)], y_zone[int(len(y_zone) / 2)],
                              f"OI_mean = {np.round(mean_index, 3)}",
                              fontsize=font_size / 10, ha='left', color="black")
-                    plt.text(x_zone[int(len(x_zone)/2)],  y_zone[int(len(y_zone)/2)] - 10,
+                    plt.text(x_zone[int(len(x_zone) / 2)], y_zone[int(len(y_zone) / 2)] - 10,
                              f"OI_max = {np.round(max_index, 3)}",
                              fontsize=font_size / 10, ha='left', color="black")
 
@@ -319,16 +323,14 @@ class Map:
         plt.close()
 
 
-def final_resolution(list_rasters, pixel_sizes="default"):
+def final_resolution(list_rasters, pixel_sizes):
     """Поиск наименьшего размера карты, который станет целевым для расчета
 
     list_rasters - список карт
-    pixel_sizes ("default"/anything) - шаг сетки (по-умолчанию 50/поиск наименьшего шага среди сеток)
+    pixel_sizes - шаг сетки int/None (по-умолчанию 50/поиск наименьшего шага среди сеток)
 
     return: geo_transform, projection, shape
     """
-    default_size = 50
-
     data_list = list(map(lambda raster: raster.data, list_rasters))
     geo_transform_list = list(map(lambda raster: raster.geo_transform, list_rasters))
     projection_list = list(map(lambda raster: raster.projection, list_rasters))
@@ -340,17 +342,16 @@ def final_resolution(list_rasters, pixel_sizes="default"):
                          geo_transform_list, data_list)))
     max_y = min(list(map(lambda geo_transform: geo_transform[3], geo_transform_list)))
 
-    if pixel_sizes == "default":
-        pixel_size_x = pixel_size_y = default_size
-    else:
-        pixel_size_x = min(list(map(lambda geo_transform: geo_transform[1], geo_transform_list)))
-        pixel_size_y = min(list(map(lambda geo_transform: abs(geo_transform[5]), geo_transform_list)))
+    if not pixel_sizes:
+        pixel_size_x = round(min(list(map(lambda geo_transform: geo_transform[1], geo_transform_list))) / 5) * 5
+        pixel_size_y = round(min(list(map(lambda geo_transform: abs(geo_transform[5]), geo_transform_list))) / 5) * 5
+        pixel_sizes = min(pixel_size_x, pixel_size_y)
 
-    cols = int((max_x - min_x) / pixel_size_x)
-    rows = int((max_y - min_y) / pixel_size_y)
+    cols = int((max_x - min_x) / pixel_sizes)
+    rows = int((max_y - min_y) / pixel_sizes)
     shape = (rows, cols)
 
-    dst_geo_transform = (min_x, pixel_size_x, 0, max_y, 0, -pixel_size_y)
+    dst_geo_transform = (min_x, pixel_sizes, 0, max_y, 0, -pixel_sizes)
     dst_projection = max(set(projection_list), key=projection_list.count)
 
     return dst_geo_transform, dst_projection, shape

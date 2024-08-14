@@ -12,7 +12,7 @@ from local_parameters import paths
 from input_output import load_wells_data
 
 
-def calculate_zones(maps):
+def calculate_zones(maps, epsilon, min_samples, percent_low):
     type_map_list = list(map(lambda raster: raster.type_map, maps))
 
     # инициализация всех необходимых карт
@@ -30,17 +30,27 @@ def calculate_zones(maps):
     map_reservoir_score = reservoir_score(map_NNT, map_permeability)
 
     logger.info("Расчет карты оценки показателей разработки")
-    map_potential_score = potential_score(map_residual_recoverable_reserves, map_pressure,
-                                          map_last_rate_oil, map_init_rate_oil)
+    map_potential_score = potential_score(map_residual_recoverable_reserves, map_last_rate_oil, map_init_rate_oil)
 
     logger.info("Расчет карты оценки проблем")
-    map_risk_score = risk_score(map_water_cut, map_initial_oil_saturation)
+    map_risk_score = risk_score(map_water_cut, map_initial_oil_saturation, map_pressure, P_init=40 * 9.87)
 
     logger.info("Расчет карты индекса возможностей")
     map_opportunity_index = opportunity_index(map_reservoir_score, map_potential_score, map_risk_score)
 
     # где нет толщин, проницаемости и давления opportunity_index = 0
     map_opportunity_index.data[(map_NNT.data == 0) & (map_permeability.data == 0) & (map_pressure.data == 0)] = 0
+
+    # # гистограмма распределения параметров
+    # plt.hist(map_risk_score.data.flatten(), color='red', edgecolor='black', bins=int(180 / 5), label="risk_score")
+    # plt.hist(map_reservoir_score.data.flatten(), color='green', edgecolor='black', bins=int(180 / 5),
+    #          label="reservoir_score")
+    # plt.hist(map_potential_score.data.flatten(), color='blue', edgecolor='black', bins=int(180 / 5),
+    #          label="potential_score")
+    # plt.hist(map_opportunity_index.data.flatten(), color='yellow', edgecolor='black', bins=int(180 / 5),
+    #          label="opportunity_index")
+    # plt.legend()
+    # plt.show()
 
     map_opportunity_index.save_img(f"{save_directory}/map_opportunity_index.png", data_wells)
     map_opportunity_index.save_grd_file(f"{save_directory}/opportunity_index.grd")
@@ -52,7 +62,7 @@ def calculate_zones(maps):
     modified_map_opportunity_index.save_grd_file(f"{save_directory}/cut_map_opportunity_index.grd")
 
     logger.info("Кластеризация зон")
-    dict_zones = clusterization_zones(modified_map_opportunity_index, epsilon=15, min_samples=50, percent_low=80)
+    dict_zones = clusterization_zones(modified_map_opportunity_index, epsilon, min_samples, percent_low)
     map_opportunity_index.save_img(f"{save_directory}/map_opportunity_index_with_zones.png",
                                    data_wells, dict_zones)
     return dict_zones
@@ -77,50 +87,49 @@ def reservoir_score(map_NNT, map_permeability) -> Map:
     return map_reservoir_score
 
 
-def potential_score(map_residual_recoverable_reserves, map_pressure, map_last_rate_oil, map_init_rate_oil) -> Map:
+def potential_score(map_residual_recoverable_reserves, map_last_rate_oil, map_init_rate_oil) -> Map:
     """
     Оценка показателей разработки
     -------
     Map(type_map=potential_score)
     """
-    P_init = 40 * 9.87  # атм для Крайнего Ю1
-
     map_last_rate_oil.data = np.nan_to_num(map_last_rate_oil.data)
     map_init_rate_oil.data = np.nan_to_num(map_init_rate_oil.data)
+
     norm_last_rate_oil = map_last_rate_oil.normalize_data()
     norm_init_rate_oil = map_init_rate_oil.normalize_data()
-
     norm_residual_recoverable_reserves = map_residual_recoverable_reserves.normalize_data()
-    map_delta_P = Map(P_init - map_pressure.data, map_pressure.geo_transform, map_pressure.projection,
-                      type_map="delta_P").normalize_data()
 
-    data_potential_score = (map_delta_P.data + norm_residual_recoverable_reserves.data
-                            + norm_last_rate_oil.data + norm_init_rate_oil.data) / 4
-    map_potential_score = Map(data_potential_score, map_pressure.geo_transform, map_pressure.projection,
+    data_potential_score = (norm_residual_recoverable_reserves.data + norm_last_rate_oil.data
+                            + norm_init_rate_oil.data) / 3
+    map_potential_score = Map(data_potential_score, norm_last_rate_oil.geo_transform, norm_last_rate_oil.projection,
                               "potential_score")
-
     map_potential_score.save_img(f"{save_directory}/map_potential_score.png", data_wells)
 
     return map_potential_score
 
 
-def risk_score(map_water_cut, map_initial_oil_saturation) -> Map:
+def risk_score(map_water_cut, map_initial_oil_saturation, map_pressure, P_init, sigma=5) -> Map:
     """
     Оценка проблем
+    P_init - начально давление в атм
+    sigma - параметр для определения степени сглаживания
     -------
     Map(type_map=risk_score)
     """
-    data_last_oil_saturation = 1 - map_water_cut.data / 100
+    map_delta_P = Map(P_init - map_pressure.data, map_pressure.geo_transform, map_pressure.projection,
+                      type_map="delta_P").normalize_data()
+
+    data_init_water_cut = (1 - map_initial_oil_saturation.data) * 100
     mask = np.isnan(map_water_cut.data)
-    data_oil_saturation = np.where(mask, map_initial_oil_saturation.data, data_last_oil_saturation)
-
+    data_water_cut = np.where(mask, data_init_water_cut, map_water_cut.data)
     # Применение гауссова фильтра для сглаживания при объединении карт обводненности и начальной нефтенасыщенности
-    sigma = 5  # параметр для определения степени сглаживания
-    data_oil_saturation = gaussian_filter(data_oil_saturation, sigma=sigma)
+    data_water_cut = gaussian_filter(data_water_cut, sigma=sigma)
+    map_water_cut.data = data_water_cut
+    norm_water_cut = map_water_cut.normalize_data()
 
-    data_risk_score = data_oil_saturation
-    map_risk_score = Map(data_risk_score, map_water_cut.geo_transform, map_water_cut.projection,
-                         "risk_score")
+    data_risk_score = (norm_water_cut.data + map_delta_P.data) / 2
+    map_risk_score = Map(data_risk_score, map_water_cut.geo_transform, map_water_cut.projection, "risk_score")
 
     map_risk_score.save_img(f"{save_directory}/map_risk_score.png", data_wells)
     return map_risk_score
@@ -132,16 +141,21 @@ def opportunity_index(map_reservoir_score, map_potential_score, map_risk_score) 
     -------
     Map(type_map=opportunity_index)
     """
+    # k_reservoir = 1
+    # k_potential = 0.8
+    # k_risk = 0.6
     k_reservoir = k_potential = k_risk = 1
     data_opportunity_index = (k_reservoir * map_reservoir_score.data +
-                              k_potential * map_potential_score.data +
-                              k_risk * map_risk_score.data) / 3
+                              k_potential * map_potential_score.data -
+                              k_risk * map_risk_score.data)
+
     map_opportunity_index = Map(data_opportunity_index, map_reservoir_score.geo_transform,
                                 map_reservoir_score.projection, "opportunity_index")
+    map_opportunity_index = map_opportunity_index.normalize_data()
     return map_opportunity_index
 
 
-def clusterization_zones(map_opportunity_index, epsilon=15, min_samples=50, percent_low=60):
+def clusterization_zones(map_opportunity_index, epsilon, min_samples, percent_low):
     """Кластеризация зон бурения на основе карты индекса возможности с помощью метода DBSCAN"""
     data_opportunity_index = map_opportunity_index.data
 
@@ -441,9 +455,9 @@ if __name__ == '__main__':
 
             if lab != -1:
                 # Отображение среднего и максимального индексов рядом с кластерами
-                plt.text(x_middle, y_middle,f"OI_mean = {np.round(mean_index, 2)}",
+                plt.text(x_middle, y_middle, f"OI_mean = {np.round(mean_index, 2)}",
                          fontsize=font_size / 10, ha='left', color="black")
-                plt.text(x_middle, y_middle,f"OI_max = {np.round(max_index, 2)}",
+                plt.text(x_middle, y_middle, f"OI_max = {np.round(max_index, 2)}",
                          fontsize=font_size / 10, ha='left', color="black")
 
         plt.xlim(0, map_opportunity_index.data.shape[1])
