@@ -12,6 +12,13 @@ from config import list_names_map
 
 @logger.catch
 def mapping(maps_directory, save_directory, data_wells):
+
+    object_value = data_wells.object.values[0].replace('/', '-')
+    field_value = data_wells.field.values[0]
+    save_directory = f"{save_directory}{field_value}_{object_value}"
+    if not os.path.isdir(save_directory):
+        os.mkdir(save_directory)
+
     logger.info(f"path: {maps_directory}")
     content = os.listdir(path=maps_directory)
     if content:
@@ -141,13 +148,62 @@ def read_array(data_wells, name_column_map, type_map, radius=2000):
         if type_map not in list_names_map:
             raise logger.critical(f"Неверный тип карты! {type_map}")
 
+        NNS_mean_init_Ql = data_wells[(data_wells['init_Ql_rate'] != 0) &
+                                   (data_wells['well type'] == 'vertical')]['init_Ql_rate'].mean()
+        GS_mean_init_Ql = data_wells[(data_wells['init_Ql_rate'] != 0) &
+                                       (data_wells['well type'] == 'horizontal')]['init_Ql_rate'].mean()
+
+        NNS_mean_init_Qo = data_wells[(data_wells['init_Qo_rate'] != 0) &
+                                   (data_wells['well type'] == 'vertical')]['init_Ql_rate'].mean()
+        GS_mean_init_Qo = data_wells[(data_wells['init_Qo_rate'] != 0) &
+                                   (data_wells['well type'] == 'horizontal')]['init_Ql_rate'].mean()
+
+        print(f'Вертикальные: средний стартовый Ql: {NNS_mean_init_Ql} т/сут, Qoil: {NNS_mean_init_Qo} т/сут')
+        print(f'Горизонтальные: средний стартовый Ql: {GS_mean_init_Ql} т/сут, Qoil: {GS_mean_init_Qo} т/сут')
+        coefficient_GS_to_NNS = round(NNS_mean_init_Ql/GS_mean_init_Ql, 1)
+        # data_wells_with_work = data_wells_with_work.copy()
+        data_wells_with_work.init_Qo_rate = np.where(data_wells_with_work['well type'] == 'horizontal',
+                                                     data_wells_with_work.init_Qo_rate * coefficient_GS_to_NNS, data_wells_with_work.init_Qo_rate)
+        data_wells_with_work.Qo_rate = np.where(data_wells_with_work['well type'] == 'horizontal',
+                                                     data_wells_with_work.Qo_rate * coefficient_GS_to_NNS, data_wells_with_work.Qo_rate)
+
     # Построение карт по значениям T1
-    x = np.array(data_wells_with_work.T1_x)
-    y = np.array(data_wells_with_work.T1_y)
+    # x = np.array(data_wells_with_work.T1_x)
+    # y = np.array(data_wells_with_work.T1_y)
+    # well_coord = np.column_stack((x, y))
+
+    def trajectory(row):
+        if row['well type'] == 'vertical':
+            return pd.Series({'x_coords': [row['T1_x']], 'y_coords': [row['T1_y']]})
+        elif row['well type'] == 'horizontal':
+            # Для ГС создаем списки координат вдоль ствола
+            # Количество точек вдоль ствола
+            num_points = int(np.ceil(row['length of well T1-3']/default_size))
+            x_coords = np.linspace(row['T1_x'], row['T3_x'], num_points)
+            y_coords = np.linspace(row['T1_y'], row['T3_y'], num_points)
+            return pd.Series({'x_coords': x_coords.tolist(), 'y_coords': y_coords.tolist()})
+
+    # Применение функции к каждой строке и получени df
+    coordinates = data_wells_with_work.apply(trajectory, axis=1)
+
+    # Объединяем координаты и с исходным df
+    data_wells_with_work = pd.concat([data_wells_with_work, coordinates], axis=1)
+
+    x = []
+    y = []
+    values = []
+    for _, row in data_wells_with_work.iterrows():
+        x.extend(row['x_coords'])
+        y.extend(row['y_coords'])
+        values.extend([row[name_column_map]] * len(row['x_coords']))
+
+    x = np.array(x)
+    y = np.array(y)
+    values = np.array(values)
     well_coord = np.column_stack((x, y))
 
     # Выделяем значения для карты
-    values = np.array(data_wells_with_work[name_column_map])
+    # values = np.array(data_wells_with_work[name_column_map])
 
     # Определение границ интерполяции
     x_min, x_max = min(x), max(x)
@@ -308,8 +364,8 @@ class Map:
                              fontsize=font_size / 10, ha='left', color="black")
 
             n_clusters = len(labels) - 1
-            title = (f"Epsilon = {dict_zones["DBSCAN_parameters"][0]}\n "
-                     f"min_samples = {dict_zones["DBSCAN_parameters"][1]} \n "
+            title = (f"Epsilon = {dict_zones['DBSCAN_parameters'][0]}\n "
+                     f"min_samples = {dict_zones['DBSCAN_parameters'][1]} \n "
                      f"with {n_clusters} clusters")
 
         plt.title(f"{self.type_map}\n {title}", fontsize=font_size * 1.2)

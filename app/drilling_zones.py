@@ -217,10 +217,12 @@ def apply_wells_mask(base_map, data_wells):
     # active_date = last_date - relativedelta(months=NUMBER_MONTHS)
     # data_wells_with_work = data_wells[(data_wells.Ql_rate > 0) | (data_wells.Winj_rate > 0)]
     # data_active_wells = data_wells_with_work[data_wells_with_work.date > active_date]
-    data_active_wells = data_wells
+    # data_active_wells = data_wells
+
+    data_wells = drainage_radius(data_wells)
 
     logger.info("Расчет буфера вокруг скважин")
-    union_buffer = active_well_outline(data_active_wells, buffer_radius=200)
+    union_buffer = active_well_outline(data_wells)
 
     logger.info("Создание маски буфера")
     if union_buffer:
@@ -234,7 +236,7 @@ def apply_wells_mask(base_map, data_wells):
     return modified_map
 
 
-def active_well_outline(df_wells, buffer_radius=500):
+def active_well_outline(df_wells):
     """
     Создание буфера вокруг действующих скважин
      Parameters
@@ -255,6 +257,9 @@ def active_well_outline(df_wells, buffer_radius=500):
 
     # Создание геометрии для каждой скважины
     def create_buffer(row):
+
+        buffer_radius = row.radius  # радиус из строки
+
         if row["well type"] == "horizontal":
             # Горизонтальная скважина (линия)
             line = ogr.Geometry(ogr.wkbLineString)
@@ -278,13 +283,46 @@ def active_well_outline(df_wells, buffer_radius=500):
 
     return union_buffer
 
+def drainage_radius(df_wells):
+    """
+    Функция определения радиуса маски для скважин
+    !!!на основе длительности остановки -> будет на основе радиусов дренирования и закачки
+    Parameters
+    ----------
+    df_wells
+    Returns
+    -------
+    df_wells - добавлен столбец radius
+    """
+
+    buffer_radius_active = 400
+    buffer_radius_non_active = 50
+
+    from dateutil.relativedelta import relativedelta
+
+    # Количество месяцев для отнесения скважин к действующим
+    NUMBER_MONTHS = 12
+    last_date = data_wells.date.sort_values()
+    last_date = last_date.unique()[-1]
+    active_date = last_date - relativedelta(months=NUMBER_MONTHS)
+
+    # Определение радиуса:
+    # 100 - если скважина не работала последние NUMBER_MONTHS
+    # 400 - если скважина работала последние NUMBER_MONTHS
+    import warnings
+    with warnings.catch_warnings(action='ignore', category=pd.errors.SettingWithCopyWarning):
+        df_wells["radius"]= np.where((df_wells.date > active_date) &
+                                     (df_wells.Ql_rate > 0) | (df_wells.Winj_rate > 0),
+                                     buffer_radius_active, buffer_radius_non_active)
+    return df_wells
+
 
 def create_mask_from_buffers(base_map, buffer):
     """
     Функция создания маски из буфера в видe array
     Parameters
     ----------
-    map - карта, с которой получаем geo_transform для определения сетки для карты с буфером
+    base_map - карта, с которой получаем geo_transform для определения сетки для карты с буфером
     buffer - буфер вокруг действующих скважин
 
     Returns
@@ -359,8 +397,11 @@ def cut_map_by_mask(base_map, mask, blank_value=np.nan):
 """________БЛОК ДЛЯ УДАЛЕНИЯ_______"""
 maps_directory = paths["maps_directory"]
 data_well_directory = paths["data_well_directory"]
-save_directory = paths["save_directory"]
+# save_directory = paths["save_directory"]
 _, data_wells = load_wells_data(data_well_directory=data_well_directory)
+object_value = data_wells.object.values[0].replace('/', '-')
+field_value = data_wells.field.values[0]
+save_directory = f"{paths['save_directory']}{field_value}_{object_value}"
 """________БЛОК ДЛЯ УДАЛЕНИЯ_______"""
 
 if __name__ == '__main__':
@@ -457,7 +498,7 @@ if __name__ == '__main__':
         plt.title(f"Epsilon = {s[0]}\n min_samples = {s[1]} \n with {n_clusters} clusters")
 
     fig.tight_layout()
-    plt.savefig("D:/Work/Programs_Python/Infill_drilling/output/drilling_index_map", dpi=300)
+    plt.savefig(f"{save_directory}/drilling_index_map", dpi=300)
     plt.close()
 
     pass

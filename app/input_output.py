@@ -50,7 +50,7 @@ def load_wells_data(data_well_directory, min_length_hor_well=150):
     data_history.loc[data_history["length of well T1-3"] >= min_length_hor_well, "well type"] = "horizontal"
     data_history.loc[data_history["well type"] == "vertical", 'T3_x'] = data_history.T1_x
     data_history.loc[data_history["well type"] == "vertical", 'T3_y'] = data_history.T1_y
-    del data_history["length of well T1-3"]
+    # del data_history["length of well T1-3"]
 
     data_wells = data_history.copy()
     data_wells = data_wells[(data_wells.Ql_rate > 0) | (data_wells.Winj_rate > 0)]
@@ -75,5 +75,18 @@ def load_wells_data(data_well_directory, min_length_hor_well=150):
 
     data_wells = data_wells.merge(data_first_rate, how='left', on='well_number')
     data_wells[['init_Qo_rate', 'init_Ql_rate']] = data_wells[['init_Qo_rate', 'init_Ql_rate']].fillna(0)
+    # data_wells.init_Qo_rate = np.where(data_wells['well type'] == 'horizontal', data_wells.init_Qo_rate/4, data_wells.init_Qo_rate)
+
+    """________БЛОК ДЛЯ УДАЛЕНИЯ_______"""
+    # non_null_rate_data_wells = data_wells[data_wells['init_Ql_rate'] != 0]
+    # mean_vert_liq = non_null_rate_data_wells[non_null_rate_data_wells['well type'] == 'vertical']['init_Ql_rate'].mean()
+    # mean_gor_liq = non_null_rate_data_wells[non_null_rate_data_wells['well type'] == 'horizontal']['init_Ql_rate'].mean()
+    #
+    # mean_vert_oil= non_null_rate_data_wells[non_null_rate_data_wells['well type'] == 'vertical']['init_Qo_rate'].mean()
+    # mean_gor_oil = non_null_rate_data_wells[non_null_rate_data_wells['well type'] == 'horizontal']['init_Qo_rate'].mean()
+    #
+    # print(f'Вертикальные: средний стартовый Ql: {mean_vert_liq} т/сут, Qoil: {mean_vert_oil} т/сут')
+    # print(f'Горизонтальные: средний стартовый Ql: {mean_gor_liq} т/сут, Qoil: {mean_gor_oil} т/сут')
+    """________БЛОК ДЛЯ УДАЛЕНИЯ_______"""
 
     return data_history, data_wells
