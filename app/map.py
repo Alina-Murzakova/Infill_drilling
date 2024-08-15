@@ -289,12 +289,21 @@ class Map:
         plt.show()
 
     def save_grd_file(self, filename):
+        filename_copy = filename.replace(".grd", "") + "_copy.grd"
         driver = gdal.GetDriverByName('GTiff')
-        dataset = driver.Create(filename, self.data.shape[1], self.data.shape[0], 1, gdal.GDT_Float32)
+        dataset = driver.Create(filename_copy, self.data.shape[1], self.data.shape[0], 1, gdal.GDT_Float32)
         dataset.SetGeoTransform(self.geo_transform)
         dataset.SetProjection(self.projection)
         dataset.GetRasterBand(1).WriteArray(self.data)
         dataset.FlushCache()
+        src_dataset = gdal.Open(filename_copy, gdal.GA_ReadOnly)
+        # driver = gdal.GetDriverByName('XYZ') можно использовать для формата .dat
+        driver = gdal.GetDriverByName('GSAG')
+        driver.CreateCopy(filename, src_dataset, 0)
+        # Удаляем временный файл
+        src_dataset = None
+        dataset = None
+        os.remove(filename_copy)
 
     def convert_coord(self, array):
         # Преобразование координат массива в пиксельные координаты в соответствии с geo_transform карты
