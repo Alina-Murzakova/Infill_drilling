@@ -27,5 +27,8 @@ list_names_map = ['NNT',
                   'last_rate_oil',
                   'init_rate_oil',
                   'initial_oil_saturation',
-                  'opportunity_index',  # не исходная карта
-                  "cut_map_opportunity_index"]  # не исходная карта
+                  # набор карт создаваемых в результате расчета
+                  'reservoir_score',
+                  'potential_score',
+                  'risk_score',
+                  'opportunity_index']
