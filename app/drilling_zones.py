@@ -263,17 +263,10 @@ def active_well_outline(df_wells):
 
         buffer_radius = row.radius  # радиус из строки
 
-        if row["well type"] == "horizontal":
-            # Горизонтальная скважина (линия)
-            line = ogr.Geometry(ogr.wkbLineString)
-            line.AddPoint(row.T1_x, row.T1_y)
-            line.AddPoint(row.T3_x, row.T3_y)
-            buffer = line.Buffer(buffer_radius)
-        else:
-            # Вертикальная скважина (точка)
-            point = ogr.Geometry(ogr.wkbPoint)
-            point.AddPoint(row.T1_x, row.T1_y)
-            buffer = point.Buffer(buffer_radius)
+        line = ogr.Geometry(ogr.wkbLineString)
+        line.AddPoint(row.T1_x, row.T1_y)
+        line.AddPoint(row.T3_x, row.T3_y)
+        buffer = line.Buffer(buffer_radius)
         return buffer
 
     # Создаём список буферов
