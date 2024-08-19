@@ -138,22 +138,26 @@ def read_array(data_wells, name_column_map, type_map, default_size, accounting_G
 
         with warnings.catch_warnings(action='ignore', category=pd.errors.SettingWithCopyWarning):
             data_wells_with_work[name_column_map] = np.where(data_wells_with_work['well type'] == 'horizontal',
-                                                      data_wells_with_work[name_column_map]/data_wells_with_work["length of well T1-3"] ,
-                                                    data_wells_with_work[name_column_map])
-        data_wells_with_work[name_column_map] = data_wells_with_work.groupby('well type')[name_column_map].transform(
-            lambda x: (x - x.min()) / (x.max() - x.min()))
-        # NNS_mean_init_Ql = data_wells[(data_wells['init_Ql_rate'] != 0) &
-        #                               (data_wells['well type'] == 'vertical')]['init_Ql_rate'].mean()
-        # GS_mean_init_Ql = data_wells[(data_wells['init_Ql_rate'] != 0) &
-        #                              (data_wells['well type'] == 'horizontal')]['init_Ql_rate'].mean()
-        # coefficient_GS_to_NNS = round(NNS_mean_init_Ql / GS_mean_init_Ql, 1)
-        # logger.info(f'Коэффициент соотношения дебитов жидкости ННС и ГС: {coefficient_GS_to_NNS}')
-        #
-        # with warnings.catch_warnings(action='ignore', category=pd.errors.SettingWithCopyWarning):
-        #     data_wells_with_work[name_column_map] = np.where(data_wells_with_work['well type'] == 'horizontal',
-        #                                                  data_wells_with_work[name_column_map] * coefficient_GS_to_NNS,
-        #                                                  data_wells_with_work[name_column_map])
+                                                             data_wells_with_work[name_column_map] /
+                                                             data_wells_with_work["length of well T1-3"],
+                                                             data_wells_with_work[name_column_map])
+            data_wells_with_work[name_column_map] = data_wells_with_work.groupby('well type')[
+                name_column_map].transform(lambda x: (x - x.min()) / (x.max() - x.min()))
+
+        """Обработка колонок last_rate_oil и init_rate_oil через коэффициент
+        NNS_mean_init_Ql = data_wells[(data_wells['init_Ql_rate'] != 0) &
+                                      (data_wells['well type'] == 'vertical')]['init_Ql_rate'].mean()
+        GS_mean_init_Ql = data_wells[(data_wells['init_Ql_rate'] != 0) &
+                                     (data_wells['well type'] == 'horizontal')]['init_Ql_rate'].mean()
+        coefficient_GS_to_NNS = round(NNS_mean_init_Ql / GS_mean_init_Ql, 1)
+        logger.info(f'Коэффициент соотношения дебитов жидкости ННС и ГС: {coefficient_GS_to_NNS}')
+
+        with warnings.catch_warnings(action='ignore', category=pd.errors.SettingWithCopyWarning):
+            data_wells_with_work[name_column_map] = np.where(data_wells_with_work['well type'] == 'horizontal',
+                                                         data_wells_with_work[name_column_map] * coefficient_GS_to_NNS,
+                                                         data_wells_with_work[name_column_map])"""
     else:
+        data_wells_with_work = pd.DataFrame()
         if type_map not in list_names_map:
             raise logger.critical(f"Неверный тип карты! {type_map}")
 
