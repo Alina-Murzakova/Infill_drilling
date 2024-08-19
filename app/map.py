@@ -10,16 +10,8 @@ from config import list_names_map
 
 
 @logger.catch
-def mapping(maps_directory, save_directory, data_wells, default_size_pixel):
-
-    """_____сделать отдельно функцию определения пути сохранения_____"""
-    object_value = data_wells.object.values[0].replace('/', '-')
-    field_value = data_wells.field.values[0]
-    save_directory = f"{save_directory}{field_value}_{object_value}"
-    if not os.path.isdir(save_directory):
-        os.mkdir(save_directory)
-    """__________________________"""
-
+def mapping(maps_directory, data_wells, default_size_pixel):
+    """Загрузка и подготовка всех необходимых карт"""
     logger.info(f"path: {maps_directory}")
     content = os.listdir(path=maps_directory)
     if content:
@@ -30,19 +22,10 @@ def mapping(maps_directory, save_directory, data_wells, default_size_pixel):
     logger.info(f"Загрузка карт из папки: {maps_directory}")
     maps, default_size_pixel = maps_load(maps_directory, data_wells, default_size_pixel)
 
-    # logger.info(f"Сохраняем img исходных карт")
-    # for i, raster in enumerate(maps):
-    #     raster.save_img(f"{save_directory}/{raster.type_map}.png", data_wells)
-
     logger.info(f"Преобразование карт к единому размеру и сетке")
     dst_geo_transform, dst_projection, shape = final_resolution(maps, default_size_pixel)
 
     res_maps = list(map(lambda raster: raster.resize(dst_geo_transform, dst_projection, shape), maps))
-
-    logger.info(f"Сохраняем img преобразованных карт")
-    for i, raster in enumerate(res_maps):
-        raster.save_img(f"{save_directory}/res_{raster.type_map}.png", data_wells)
-
     return res_maps
 
 
@@ -80,8 +63,9 @@ def maps_load(maps_directory, data_wells, default_size_pixel):
         logger.error(f"в папке отсутствует файл с картой изобар: initial_oil_saturation.grd")
 
     # Вычисление минимального размера пикселя, если он None при загрузке
-    dst_geo_transform, _, _ = final_resolution(maps, default_size_pixel)
-    default_size_pixel = dst_geo_transform[1]
+    if not default_size_pixel:
+        dst_geo_transform, _, _ = final_resolution(maps, default_size_pixel)
+        default_size_pixel = dst_geo_transform[1]
 
     #  Загрузка карт из "МЭР"
     logger.info(f"Загрузка карты обводненности на основе выгрузки МЭР")
@@ -174,43 +158,24 @@ def read_array(data_wells, name_column_map, type_map, default_size, accounting_G
             raise logger.critical(f"Неверный тип карты! {type_map}")
 
     if accounting_GS:
-        def trajectory(row):
-            """Формирование списка точек для ствола ГС"""
-            if row['well type'] == 'vertical':
-                return pd.Series({'x_coords': [row['T1_x']], 'y_coords': [row['T1_y']]})
-            elif row['well type'] == 'horizontal':
-                # Для ГС создаем списки координат вдоль ствола
-                # Количество точек вдоль ствола
-                num_points = int(np.ceil(row['length of well T1-3'] / default_size))
-                x_coords = np.linspace(row['T1_x'], row['T3_x'], num_points)
-                y_coords = np.linspace(row['T1_y'], row['T3_y'], num_points)
-                return pd.Series({'x_coords': x_coords.tolist(), 'y_coords': y_coords.tolist()})
-
-        # Применение функции к каждой строке и получение df
-        coordinates = data_wells_with_work.apply(trajectory, axis=1)
-
+        # Формирование списка точек для ствола каждой скважины
+        coordinates = data_wells_with_work.apply(trajectory_break_points, default_size=default_size, axis=1)
         # Объединяем координаты и с исходным df
         data_wells_with_work = pd.concat([data_wells_with_work, coordinates], axis=1)
 
-        x = []
-        y = []
-        values = []
+        x, y, values = [], [], []
         for _, row in data_wells_with_work.iterrows():
             x.extend(row['x_coords'])
             y.extend(row['y_coords'])
             values.extend([row[name_column_map]] * len(row['x_coords']))
 
-        x = np.array(x)
-        y = np.array(y)
-        values = np.array(values)
+        x, y, values = np.array(x), np.array(y), np.array(values)
         well_coord = np.column_stack((x, y))
 
     else:
         # Построение карт по значениям T1
-        x = np.array(data_wells_with_work.T1_x)
-        y = np.array(data_wells_with_work.T1_y)
+        x, y = np.array(data_wells_with_work.T1_x), np.array(data_wells_with_work.T1_y)
         well_coord = np.column_stack((x, y))
-
         # Выделяем значения для карты
         values = np.array(data_wells_with_work[name_column_map])
 
@@ -307,11 +272,12 @@ class Map:
         src_dataset = gdal.Open(filename_copy, gdal.GA_ReadOnly)
         # driver = gdal.GetDriverByName('XYZ') можно использовать для формата .dat
         driver = gdal.GetDriverByName('GSAG')
-        driver.CreateCopy(filename, src_dataset, 0)
+        driver.CreateCopy(filename, src_dataset, 0, options=['TFW=NO'])
         # Удаляем временный файл
         src_dataset = None
         dataset = None
         os.remove(filename_copy)
+        os.remove(filename.replace(".grd", "") + ".grd.aux.xml")
 
     def convert_coord(self, array):
         # Преобразование координат массива в пиксельные координаты в соответствии с geo_transform карты
@@ -345,7 +311,6 @@ class Map:
             x_t3, y_t3 = self.convert_coord((data_wells.T3_x, data_wells.T3_y))
 
             # Отображение скважин на карте
-
             plt.plot([x_t1, x_t3], [y_t1, y_t3], c='black', linewidth=element_size)
             plt.scatter(x_t1, y_t1, s=element_size, c='black', marker="o")
 
@@ -428,3 +393,19 @@ def final_resolution(list_rasters, pixel_sizes):
     dst_projection = max(set(projection_list), key=projection_list.count)
 
     return dst_geo_transform, dst_projection, shape
+
+
+"""Вспомогательные функции"""
+
+
+def trajectory_break_points(row, default_size):
+    """Формирование списка точек для ствола ГС"""
+    if row['well type'] == 'vertical':
+        return pd.Series({'x_coords': [row['T1_x']], 'y_coords': [row['T1_y']]})
+    elif row['well type'] == 'horizontal':
+        # Количество точек вдоль ствола
+        num_points = int(np.ceil(row['length of well T1-3'] / default_size))
+        # Для ГС создаем списки координат вдоль ствола
+        x_coords = np.linspace(row['T1_x'], row['T3_x'], num_points)
+        y_coords = np.linspace(row['T1_y'], row['T3_y'], num_points)
+    return pd.Series({'x_coords': x_coords.tolist(), 'y_coords': y_coords.tolist()})

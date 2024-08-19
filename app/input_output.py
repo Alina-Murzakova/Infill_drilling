@@ -1,6 +1,9 @@
 import os
+import win32api
+
 import pandas as pd
 import numpy as np
+from loguru import logger
 # import xlwings as xw
 
 from config import MER_columns_name
@@ -19,6 +22,7 @@ def load_wells_data(data_well_directory, min_length_hor_well=150, first_months=6
     -------
     Фрейм с обработанной полной историей скважин
     Фрейм с параметрами добычи на последнюю дату работы для всех скважин
+    Словарь с данными о расчете {field, object}
     """
     # Загрузка файла
     # data_history = pd.read_excel(os.path.join(os.path.dirname(__file__), data_well_directory))
@@ -75,4 +79,62 @@ def load_wells_data(data_well_directory, min_length_hor_well=150, first_months=6
     data_wells = data_wells.merge(data_first_rate, how='left', on='well_number')
     data_wells[['init_Qo_rate', 'init_Ql_rate']] = data_wells[['init_Qo_rate', 'init_Ql_rate']].fillna(0)
 
-    return data_history, data_wells
+    # Словарь с данными о расчете
+    field = list(set(data_wells.field.values))
+    object_value = list(set(data_wells.object.values))
+    if len(field) != 1:
+        logger.error(f"Выгрузка содержит не одно месторождение: {field}")
+    elif len(object_value) != 1:
+        logger.error(f"Выгрузка содержит не один объект: {object_value}")
+    else:
+        field = field[0]
+        object_value = object_value[0]
+    info = {'field': field, "object_value": object_value}
+    return data_history, data_wells, info
+
+
+def create_new_dir(path: str) -> None:
+    if not os.path.isdir(path):
+        os.makedirs(path)
+    return
+
+
+def get_save_path(program_name: str = "default", field: str = "field", object_value: str = "object") -> str:
+    """
+    Получение пути на запись
+    :return:
+    """
+    path_program = os.getcwd()
+    # Проверка возможности записи в директорию программы
+    if os.access(path_program, os.W_OK):
+        if "\\app" in path_program:
+            path_program = path_program.replace("\\app","")
+        save_path = f"{path_program}\\output\\{field}_{object_value}"
+    else:
+        # Поиск другого диска с возможностью записи: D: если он есть и C:, если он один
+        # В будущем можно исправить с запросом на сохранение
+        drives = win32api.GetLogicalDriveStrings()  # получение списка дисков
+        save_drive = []
+        list_drives = [drive for drive in drives.split('\\\000')[:-1] if 'D:' in drive]
+        if len(list_drives) >= 1:
+            save_drive = list_drives[0]
+        else:
+            list_drives = [drive for drive in drives.split('\\\000')[:-1] if 'C:' in drive]
+            if len(list_drives) >= 1:
+                save_drive = list_drives[0]
+            else:
+                logger.error(PermissionError)
+
+        current_user = os.getlogin()
+        profile_dir = [dir_ for dir_ in os.listdir(save_drive) if dir_.lower() == "profiles"
+                       or dir_.upper() == "PROFILES"]
+
+        if len(profile_dir) < 1:
+            save_path = f"{save_drive}\\{program_name}_output\\{field}_{object_value}"
+        else:
+            save_path = (f"{save_drive}\\{profile_dir[0]}\\{current_user}\\"
+                         f"{program_name}_output\\{field}_{object_value}")
+
+    create_new_dir(save_path)
+    return save_path
+
