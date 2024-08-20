@@ -9,6 +9,7 @@ from loguru import logger
 from config import MER_columns_name
 
 
+@logger.catch
 def load_wells_data(data_well_directory, min_length_hor_well=150, first_months=6):
     """
     Функция, которая обрабатывает выгрузку МЭР (выгрузка по датам по всем скважинам//параметры задаются пользователем)

@@ -20,16 +20,172 @@ def mapping(maps_directory, data_wells, default_size_pixel):
         raise logger.critical("no maps!")
 
     logger.info(f"Загрузка карт из папки: {maps_directory}")
-    maps, default_size_pixel = maps_load(maps_directory, data_wells, default_size_pixel)
+    maps = maps_load_directory(maps_directory)
 
-    logger.info(f"Преобразование карт к единому размеру и сетке")
+    # Поиск наименьшего размера карты и размера пикселя, если он None при загрузке
     dst_geo_transform, dst_projection, shape = final_resolution(maps, default_size_pixel)
 
+    logger.info(f"Построение карт на основе дискретных значений")
+    maps = maps + maps_load_df(data_wells, dst_geo_transform[1])
+
+    logger.info(f"Преобразование карт к единому размеру и сетке")
     res_maps = list(map(lambda raster: raster.resize(dst_geo_transform, dst_projection, shape), maps))
     return res_maps
 
 
-def maps_load(maps_directory, data_wells, default_size_pixel):
+class Map:
+    def __init__(self, data, geo_transform, projection, type_map):
+        self.data = data
+        self.geo_transform = geo_transform
+        self.projection = projection
+        self.type_map = type_map
+
+    def normalize_data(self):
+        # Возвращение новой карты
+        new_data = (self.data - np.min(self.data)) / (np.max(self.data) - np.min(self.data))
+        return Map(new_data, self.geo_transform, self.projection, self.type_map)
+
+    def resize(self, dst_geo_transform, dst_projection, dst_shape):
+        # Создание исходного GDAL Dataset в памяти
+        src_driver = gdal.GetDriverByName('MEM')
+        src_ds = src_driver.Create('', self.data.shape[1], self.data.shape[0], 1, gdal.GDT_Float32)
+        src_ds.SetGeoTransform(self.geo_transform)
+        src_ds.SetProjection(self.projection)
+        src_ds.GetRasterBand(1).WriteArray(self.data)
+
+        # Создание результирующего GDAL Dataset в памяти
+        dst_driver = gdal.GetDriverByName('MEM')
+        dst_ds = dst_driver.Create('', dst_shape[1], dst_shape[0], 1, gdal.GDT_Float32)
+        dst_ds.SetGeoTransform(dst_geo_transform)
+        dst_ds.SetProjection(dst_projection)
+
+        # Выполнение перепроекции
+        gdal.ReprojectImage(src_ds, dst_ds, self.projection, dst_projection, gdal.GRA_Bilinear)
+
+        # Возвращение результирующего массива
+        data = dst_ds.GetRasterBand(1).ReadAsArray()
+
+        # Возвращение новой карты
+        return Map(data, dst_geo_transform, dst_projection, self.type_map)
+
+    def show(self):
+        import matplotlib.pyplot as plt
+        plt.imshow(self.data, cmap='viridis')
+        plt.colorbar()
+        plt.show()
+
+    def save_grd_file(self, filename):
+        filename_copy = filename.replace(".grd", "") + "_copy.grd"
+        driver = gdal.GetDriverByName('GTiff')
+        dataset = driver.Create(filename_copy, self.data.shape[1], self.data.shape[0], 1, gdal.GDT_Float32)
+        dataset.SetGeoTransform(self.geo_transform)
+        dataset.SetProjection(self.projection)
+        dataset.GetRasterBand(1).WriteArray(self.data)
+        dataset.FlushCache()
+        src_dataset = gdal.Open(filename_copy, gdal.GA_ReadOnly)
+        # driver = gdal.GetDriverByName('XYZ') можно использовать для формата .dat
+        driver = gdal.GetDriverByName('GSAG')
+        driver.CreateCopy(filename, src_dataset, 0, options=['TFW=NO'])
+        # Удаляем временный файл
+        src_dataset = None
+        dataset = None
+        os.remove(filename_copy)
+        os.remove(filename.replace(".grd", "") + ".grd.aux.xml")
+
+    def convert_coord(self, array):
+        # Преобразование координат массива в пиксельные координаты в соответствии с geo_transform карты
+        x, y = array
+        conv_x = np.where(x != 0, ((x - self.geo_transform[0]) / self.geo_transform[1]).astype(int), np.nan)
+        conv_y = np.where(y != 0, ((self.geo_transform[3] - y) / abs(self.geo_transform[5])).astype(int), np.nan)
+        return conv_x, conv_y
+
+    def save_img(self, filename, data_wells=None, dict_zones=None):
+        import matplotlib.pyplot as plt
+
+        # Определение размера осей
+        x = (self.geo_transform[0], self.geo_transform[0] + self.geo_transform[1] * self.data.shape[1])
+        y = (self.geo_transform[3] + self.geo_transform[5] * self.data.shape[0], self.geo_transform[3])
+        x_plt = self.convert_coord((np.array(x), np.array(y)))[0]
+        y_plt = self.convert_coord((np.array(x), np.array(y)))[1]
+        d_x, d_y = x[1] - x[0], y[1] - y[0]
+        count = len(str(int(min(d_x, d_y))))
+
+        plt.figure(figsize=(d_x / 2540, d_y / 2540))
+        element_size = min(d_x, d_y) / 10 ** (count - 1)
+        font_size = min(d_x, d_y) / 10 ** (count - 1.2)
+
+        plt.imshow(self.data, cmap='viridis', origin="upper")
+        cbar = plt.colorbar()
+        cbar.ax.tick_params(labelsize=font_size * 8)
+
+        # Отображение списка скважин на карте
+        if data_wells is not None:
+            column_lim_x = ['T1_x', 'T3_x']
+            for column in column_lim_x:
+                data_wells = data_wells.loc[((data_wells[column] <= x[1]) & (data_wells[column] >= x[0]))]
+            column_lim_y = ['T1_y', 'T3_y']
+            for column in column_lim_y:
+                data_wells = data_wells.loc[((data_wells[column] <= y[1]) & (data_wells[column] >= y[0]))]
+
+            # Преобразование координат скважин в пиксельные координаты
+            x_t1, y_t1 = self.convert_coord((data_wells.T1_x, data_wells.T1_y))
+            x_t3, y_t3 = self.convert_coord((data_wells.T3_x, data_wells.T3_y))
+
+            # Отображение скважин на карте
+            plt.plot([x_t1, x_t3], [y_t1, y_t3], c='black', linewidth=element_size*0.3)
+            plt.scatter(x_t1, y_t1, s=element_size, c='black', marker="o", linewidths=0.1)
+
+            # Отображение имен скважин рядом с точками T1
+            for x, y, name in zip(x_t1, y_t1, data_wells.well_number):
+                plt.text(x + 3, y - 3, name, fontsize=font_size, ha='left')
+
+        # Отображение зон кластеризации на карте
+        title = ""
+        if dict_zones is not None:
+            labels = list(set(dict_zones.keys()) - {"DBSCAN_parameters"})
+            # Выбираем теплую цветовую карту
+            cmap = plt.get_cmap('Wistia', len(set(labels)))
+            # Генерируем список цветов
+            colors = [cmap(i) for i in range(len(set(labels)))]
+
+            if len(labels) == 1 and labels[0] == -1:
+                colors = {0: "gray"}
+            else:
+                colors = dict(zip(labels, colors))
+                colors.update({-1: "gray"})
+
+            for i, c in zip(labels, colors.values()):
+                x_zone = dict_zones[i][0]
+                y_zone = dict_zones[i][1]
+                mean_index = dict_zones[i][3]
+                max_index = dict_zones[i][4]
+                plt.scatter(x_zone, y_zone, color=c, alpha=0.6, s=1)
+
+                if i != -1:
+                    # Отображение среднего и максимального индексов рядом с кластерами
+                    plt.text(x_zone[int(len(x_zone) / 2)], y_zone[int(len(y_zone) / 2)],
+                             f"OI_mean = {np.round(mean_index, 3)}",
+                             fontsize=font_size, ha='left', color="black")
+                    plt.text(x_zone[int(len(x_zone) / 2)], y_zone[int(len(y_zone) / 2)] - 10,
+                             f"OI_max = {np.round(max_index, 3)}",
+                             fontsize=font_size, ha='left', color="black")
+
+            n_clusters = len(labels) - 1
+            title = (f"Epsilon = {dict_zones['DBSCAN_parameters'][0]}\n "
+                     f"min_samples = {dict_zones['DBSCAN_parameters'][1]} \n "
+                     f"with {n_clusters} clusters")
+
+        plt.title(f"{self.type_map}\n {title}", fontsize=font_size * 8)
+        plt.tick_params(axis='both', which='major', labelsize=font_size * 8)
+        plt.contour(self.data, levels=8, colors='black', origin='lower', linewidths=font_size / 100)
+        plt.xlim(x_plt)
+        plt.ylim([y_plt[1], y_plt[0]])
+        plt.gca().invert_yaxis()
+        plt.savefig(filename, dpi=400)
+        plt.close()
+
+
+def maps_load_directory(maps_directory):
     maps = []
 
     logger.info(f"Загрузка карты ННТ")
@@ -62,11 +218,11 @@ def maps_load(maps_directory, data_wells, default_size_pixel):
     except FileNotFoundError:
         logger.error(f"в папке отсутствует файл с картой изобар: initial_oil_saturation.grd")
 
-    # Вычисление минимального размера пикселя, если он None при загрузке
-    if not default_size_pixel:
-        dst_geo_transform, _, _ = final_resolution(maps, default_size_pixel)
-        default_size_pixel = dst_geo_transform[1]
+    return maps
 
+
+def maps_load_df(data_wells, default_size_pixel):
+    maps = []
     #  Загрузка карт из "МЭР"
     logger.info(f"Загрузка карты обводненности на основе выгрузки МЭР")
     maps.append(read_array(data_wells, name_column_map="water_cut", type_map="water_cut",
@@ -80,7 +236,7 @@ def maps_load(maps_directory, data_wells, default_size_pixel):
     maps.append(read_array(data_wells, name_column_map="init_Qo_rate", type_map="init_rate_oil",
                            default_size=default_size_pixel))
 
-    return maps, default_size_pixel
+    return maps
 
 
 def read_raster(file_path, no_value=0):
@@ -222,147 +378,6 @@ def read_array(data_wells, name_column_map, type_map, default_size, accounting_G
     geo_transform = [x_min, (x_max - x_min) / grid_z.shape[1], 0, y_max, 0, -((y_max - y_min) / grid_z.shape[0])]
 
     return Map(grid_z, geo_transform, projection='', type_map=type_map)
-
-
-class Map:
-    def __init__(self, data, geo_transform, projection, type_map):
-        self.data = data
-        self.geo_transform = geo_transform
-        self.projection = projection
-        self.type_map = type_map
-
-    def normalize_data(self):
-        # Возвращение новой карты
-        new_data = (self.data - np.min(self.data)) / (np.max(self.data) - np.min(self.data))
-        return Map(new_data, self.geo_transform, self.projection, self.type_map)
-
-    def resize(self, dst_geo_transform, dst_projection, dst_shape):
-        # Создание исходного GDAL Dataset в памяти
-        src_driver = gdal.GetDriverByName('MEM')
-        src_ds = src_driver.Create('', self.data.shape[1], self.data.shape[0], 1, gdal.GDT_Float32)
-        src_ds.SetGeoTransform(self.geo_transform)
-        src_ds.SetProjection(self.projection)
-        src_ds.GetRasterBand(1).WriteArray(self.data)
-
-        # Создание результирующего GDAL Dataset в памяти
-        dst_driver = gdal.GetDriverByName('MEM')
-        dst_ds = dst_driver.Create('', dst_shape[1], dst_shape[0], 1, gdal.GDT_Float32)
-        dst_ds.SetGeoTransform(dst_geo_transform)
-        dst_ds.SetProjection(dst_projection)
-
-        # Выполнение перепроекции
-        gdal.ReprojectImage(src_ds, dst_ds, self.projection, dst_projection, gdal.GRA_Bilinear)
-
-        # Возвращение результирующего массива
-        data = dst_ds.GetRasterBand(1).ReadAsArray()
-
-        # Возвращение новой карты
-        return Map(data, dst_geo_transform, dst_projection, self.type_map)
-
-    def show(self):
-        import matplotlib.pyplot as plt
-        plt.imshow(self.data, cmap='viridis')
-        plt.colorbar()
-        plt.show()
-
-    def save_grd_file(self, filename):
-        filename_copy = filename.replace(".grd", "") + "_copy.grd"
-        driver = gdal.GetDriverByName('GTiff')
-        dataset = driver.Create(filename_copy, self.data.shape[1], self.data.shape[0], 1, gdal.GDT_Float32)
-        dataset.SetGeoTransform(self.geo_transform)
-        dataset.SetProjection(self.projection)
-        dataset.GetRasterBand(1).WriteArray(self.data)
-        dataset.FlushCache()
-        src_dataset = gdal.Open(filename_copy, gdal.GA_ReadOnly)
-        # driver = gdal.GetDriverByName('XYZ') можно использовать для формата .dat
-        driver = gdal.GetDriverByName('GSAG')
-        driver.CreateCopy(filename, src_dataset, 0, options=['TFW=NO'])
-        # Удаляем временный файл
-        src_dataset = None
-        dataset = None
-        os.remove(filename_copy)
-        os.remove(filename.replace(".grd", "") + ".grd.aux.xml")
-
-    def convert_coord(self, array):
-        # Преобразование координат массива в пиксельные координаты в соответствии с geo_transform карты
-        x, y = array
-        conv_x = np.where(x != 0, ((x - self.geo_transform[0]) / self.geo_transform[1]).astype(int), np.nan)
-        conv_y = np.where(y != 0, ((self.geo_transform[3] - y) / abs(self.geo_transform[5])).astype(int), np.nan)
-        return conv_x, conv_y
-
-    def save_img(self, filename, data_wells=None, dict_zones=None):
-        import matplotlib.pyplot as plt
-
-        # Определение размера осей
-        x = (self.geo_transform[0], self.geo_transform[0] + self.geo_transform[1] * self.data.shape[1])
-        y = (self.geo_transform[3] + self.geo_transform[5] * self.data.shape[0], self.geo_transform[3])
-
-        d_x = x[1] - x[0]
-        d_y = y[1] - y[0]
-
-        plt.figure(figsize=(d_x / 2540, d_y / 2540))
-        element_size = min(d_x, d_y) / 10 ** 5
-        font_size = min(d_x, d_y) / 10 ** 3
-
-        plt.imshow(self.data, cmap='viridis', origin="upper")
-        cbar = plt.colorbar()
-        cbar.ax.tick_params(labelsize=font_size)
-
-        # Отображение списка скважин на карте
-        if data_wells is not None:
-            # Преобразование координат скважин в пиксельные координаты
-            x_t1, y_t1 = self.convert_coord((data_wells.T1_x, data_wells.T1_y))
-            x_t3, y_t3 = self.convert_coord((data_wells.T3_x, data_wells.T3_y))
-
-            # Отображение скважин на карте
-            plt.plot([x_t1, x_t3], [y_t1, y_t3], c='black', linewidth=element_size)
-            plt.scatter(x_t1, y_t1, s=element_size, c='black', marker="o")
-
-            # Отображение имен скважин рядом с точками T1
-            for x, y, name in zip(x_t1, y_t1, data_wells.well_number):
-                plt.text(x + 3, y - 3, name, fontsize=font_size / 10, ha='left')
-
-        # Отображение зон кластеризации на карте
-        title = ""
-        if dict_zones is not None:
-            labels = list(set(dict_zones.keys()) - {"DBSCAN_parameters"})
-            # Выбираем теплую цветовую карту
-            cmap = plt.get_cmap('Wistia', len(set(labels)))
-            # Генерируем список цветов
-            colors = [cmap(i) for i in range(len(set(labels)))]
-
-            if len(labels) == 1 and labels[0] == -1:
-                colors = {0: "gray"}
-            else:
-                colors = dict(zip(labels, colors))
-                colors.update({-1: "gray"})
-
-            for i, c in zip(labels, colors.values()):
-                x_zone = dict_zones[i][0]
-                y_zone = dict_zones[i][1]
-                mean_index = dict_zones[i][3]
-                max_index = dict_zones[i][4]
-                plt.scatter(x_zone, y_zone, color=c, alpha=0.6, s=1)
-
-                if i != -1:
-                    # Отображение среднего и максимального индексов рядом с кластерами
-                    plt.text(x_zone[int(len(x_zone) / 2)], y_zone[int(len(y_zone) / 2)],
-                             f"OI_mean = {np.round(mean_index, 3)}",
-                             fontsize=font_size / 10, ha='left', color="black")
-                    plt.text(x_zone[int(len(x_zone) / 2)], y_zone[int(len(y_zone) / 2)] - 10,
-                             f"OI_max = {np.round(max_index, 3)}",
-                             fontsize=font_size / 10, ha='left', color="black")
-
-            n_clusters = len(labels) - 1
-            title = (f"Epsilon = {dict_zones['DBSCAN_parameters'][0]}\n "
-                     f"min_samples = {dict_zones['DBSCAN_parameters'][1]} \n "
-                     f"with {n_clusters} clusters")
-
-        plt.title(f"{self.type_map}\n {title}", fontsize=font_size * 1.2)
-        plt.tick_params(axis='both', which='major', labelsize=font_size)
-        plt.contour(self.data, levels=8, colors='black', origin='lower', linewidths=font_size / 100)
-        plt.savefig(filename, dpi=300)
-        plt.close()
 
 
 def final_resolution(list_rasters, pixel_sizes):

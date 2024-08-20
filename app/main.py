@@ -39,14 +39,14 @@ if __name__ == '__main__':
                                        percent_low=percent_low,
                                        data_wells=data_wells)
 
-    logger.info(f"Сохраняем рассчитанные карты")
+    logger.info(f"Сохраняем рассчитанные карты в .png и .grd форматах")
     type_add_maps = ['reservoir_score', 'potential_score', 'risk_score', 'opportunity_index']
     for i, raster in enumerate(maps):
         if raster.type_map in type_add_maps:
             raster.save_img(f"{save_directory}/{raster.type_map}.png", data_wells)
+            raster.save_grd_file(f"{save_directory}/{raster.type_map}.grd")
             if raster.type_map == 'opportunity_index':
-                logger.info(f"Сохраняем .grd файл карты OI и .png с зонами")
-                raster.save_grd_file(f"{save_directory}/opportunity_index.grd")
+                logger.info(f"Сохраняем .png карты OI с зонами")
                 raster.save_img(f"{save_directory}/map_opportunity_index_with_zones.png", data_wells, dict_zones)
 
     logger.info("Расчет запускных параметров в зонах")

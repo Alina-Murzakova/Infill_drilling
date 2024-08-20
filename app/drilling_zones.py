@@ -11,6 +11,7 @@ from map import Map
 from input_output import load_wells_data
 
 
+@logger.catch
 def calculate_zones(maps, epsilon, min_samples, percent_low, data_wells=None):
     """
     Выделение зон для уверенного бурения
