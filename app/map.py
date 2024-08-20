@@ -26,7 +26,7 @@ def mapping(maps_directory, data_wells, default_size_pixel):
     dst_geo_transform, dst_projection, shape = final_resolution(maps, default_size_pixel)
 
     logger.info(f"Построение карт на основе дискретных значений")
-    maps = maps + maps_load_df(data_wells, dst_geo_transform[1])
+    maps = maps + maps_load_df(data_wells, dst_geo_transform, shape)
 
     logger.info(f"Преобразование карт к единому размеру и сетке")
     res_maps = list(map(lambda raster: raster.resize(dst_geo_transform, dst_projection, shape), maps))
@@ -107,12 +107,12 @@ class Map:
         y = (self.geo_transform[3] + self.geo_transform[5] * self.data.shape[0], self.geo_transform[3])
         x_plt = self.convert_coord((np.array(x), np.array(y)))[0]
         y_plt = self.convert_coord((np.array(x), np.array(y)))[1]
-        d_x, d_y = x[1] - x[0], y[1] - y[0]
+        d_x, d_y = abs(x_plt[1] - x_plt[0]), abs(y_plt[1] - y_plt[0])
         count = len(str(int(min(d_x, d_y))))
 
-        plt.figure(figsize=(d_x / 2540, d_y / 2540))
-        element_size = min(d_x, d_y) / 10 ** (count - 1)
-        font_size = min(d_x, d_y) / 10 ** (count - 1.2)
+        plt.figure(figsize=(d_x / 10 ** (count-1), d_y / 10 ** (count-1)))
+        element_size = min(d_x, d_y) / 10 ** (count - 0.2)
+        font_size = min(d_x, d_y) / 10 ** (count - 0.5)
 
         plt.imshow(self.data, cmap='viridis', origin="upper")
         cbar = plt.colorbar()
@@ -132,7 +132,7 @@ class Map:
             x_t3, y_t3 = self.convert_coord((data_wells.T3_x, data_wells.T3_y))
 
             # Отображение скважин на карте
-            plt.plot([x_t1, x_t3], [y_t1, y_t3], c='black', linewidth=element_size*0.3)
+            plt.plot([x_t1, x_t3], [y_t1, y_t3], c='black', linewidth=element_size * 0.3)
             plt.scatter(x_t1, y_t1, s=element_size, c='black', marker="o", linewidths=0.1)
 
             # Отображение имен скважин рядом с точками T1
@@ -190,51 +190,51 @@ def maps_load_directory(maps_directory):
 
     logger.info(f"Загрузка карты ННТ")
     try:
-        maps.append(read_raster(f'{maps_directory}/NNT.grd', no_value=0))
+        maps.append(read_raster(f'{maps_directory}/NNT.grd'))
     except FileNotFoundError:
         logger.error(f"в папке отсутствует файл с картой ННТ: NNT.grd")
 
     logger.info(f"Загрузка карты проницаемости")
     try:
-        maps.append(read_raster(f'{maps_directory}/permeability.grd', no_value=0))
+        maps.append(read_raster(f'{maps_directory}/permeability.grd'))
     except FileNotFoundError:
         logger.error(f"в папке отсутствует файл с картой проницаемости: permeability.grd")
 
     logger.info(f"Загрузка карты ОИЗ")
     try:
-        maps.append(read_raster(f'{maps_directory}/residual_recoverable_reserves.grd', no_value=0))
+        maps.append(read_raster(f'{maps_directory}/residual_recoverable_reserves.grd'))
     except FileNotFoundError:
         logger.error(f"в папке отсутствует файл с картой ОИЗ: residual_recoverable_reserves.grd")
 
     logger.info(f"Загрузка карты изобар")
     try:
-        maps.append(read_raster(f'{maps_directory}/pressure.grd', no_value=0))
+        maps.append(read_raster(f'{maps_directory}/pressure.grd'))
     except FileNotFoundError:
         logger.error(f"в папке отсутствует файл с картой изобар: pressure.grd")
 
     logger.info(f"Загрузка карты начальной нефтенасыщенности")
     try:
-        maps.append(read_raster(f'{maps_directory}/initial_oil_saturation.grd', no_value=0))
+        maps.append(read_raster(f'{maps_directory}/initial_oil_saturation.grd'))
     except FileNotFoundError:
         logger.error(f"в папке отсутствует файл с картой изобар: initial_oil_saturation.grd")
 
     return maps
 
 
-def maps_load_df(data_wells, default_size_pixel):
+def maps_load_df(data_wells, dst_geo_transform, shape):
     maps = []
     #  Загрузка карт из "МЭР"
     logger.info(f"Загрузка карты обводненности на основе выгрузки МЭР")
     maps.append(read_array(data_wells, name_column_map="water_cut", type_map="water_cut",
-                           default_size=default_size_pixel))
+                           geo_transform=dst_geo_transform, size=shape))
 
     logger.info(f"Загрузка карты последних дебитов нефти на основе выгрузки МЭР")
     maps.append(read_array(data_wells, name_column_map="Qo_rate", type_map="last_rate_oil",
-                           default_size=default_size_pixel))
+                           geo_transform=dst_geo_transform, size=shape))
 
     logger.info(f"Загрузка карты стартовых дебитов нефти на основе выгрузки МЭР")
     maps.append(read_array(data_wells, name_column_map="init_Qo_rate", type_map="init_rate_oil",
-                           default_size=default_size_pixel))
+                           geo_transform=dst_geo_transform, size=shape))
 
     return maps
 
@@ -266,7 +266,9 @@ def read_raster(file_path, no_value=0):
     return Map(data, geo_transform, projection, type_map=name_file)
 
 
-def read_array(data_wells, name_column_map, type_map, default_size, accounting_GS=True, radius=1000, expand=0.3):
+def read_array(data_wells, name_column_map, type_map, geo_transform, size,
+               accounting_GS=True,
+               radius=1000):
     """
     Создание объекта класса MAP из DataFrame
     Parameters
@@ -275,7 +277,8 @@ def read_array(data_wells, name_column_map, type_map, default_size, accounting_G
     name_column_map - наименование колонок, по значениям котрой строится карта
     type_map - тип карты
     radius - радиус экстраполяции за крайние скважины
-    expand - Расширение границ
+    geo_transform - геотрансформация карты
+    size - размер массива (x, y)
 
     Returns
     -------
@@ -319,7 +322,7 @@ def read_array(data_wells, name_column_map, type_map, default_size, accounting_G
 
     if accounting_GS:
         # Формирование списка точек для ствола каждой скважины
-        coordinates = data_wells_with_work.apply(trajectory_break_points, default_size=default_size, axis=1)
+        coordinates = data_wells_with_work.apply(trajectory_break_points, default_size=geo_transform[1], axis=1)
         # Объединяем координаты и с исходным df
         data_wells_with_work = pd.concat([data_wells_with_work, coordinates], axis=1)
 
@@ -340,14 +343,10 @@ def read_array(data_wells, name_column_map, type_map, default_size, accounting_G
         values = np.array(data_wells_with_work[name_column_map])
 
     # Определение границ интерполяции
-    x_min, x_max = min(x), max(x)
-    y_min, y_max = min(y), max(y)
+    x_min, x_max = [geo_transform[0], geo_transform[0] + geo_transform[1] * size[1]]
+    y_min, y_max = [geo_transform[3] + geo_transform[5] * size[0], geo_transform[3]]
 
-    # Расширение границ
-    x_min -= (x_max - x_min) * expand
-    x_max += (x_max - x_min) * expand
-    y_min -= (y_max - y_min) * expand
-    y_max += (y_max - y_min) * expand
+    default_size = geo_transform[1]
 
     # Создание сетки для интерполяции
     grid_x, grid_y = np.mgrid[x_min:x_max:default_size, y_max:y_min:-default_size]
