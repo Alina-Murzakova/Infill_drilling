@@ -12,7 +12,7 @@ from input_output import load_wells_data
 
 
 @logger.catch
-def calculate_zones(maps, epsilon, min_samples, percent_low, data_wells=None):
+def calculate_zones(maps, epsilon, min_samples, percent_low, dict_properties, data_wells=None):
     """
     Выделение зон для уверенного бурения
     Parameters
@@ -24,6 +24,7 @@ def calculate_zones(maps, epsilon, min_samples, percent_low, data_wells=None):
     min_samples - Минимальное количество точек для образования плотной области, шт
     percent_top - процент лучших точек для кластеризации, %
     save_directory - путь для сохранения карт
+    dict_properties - ГФХ пласта
     data_wells - фрейм скважин для визуализации при необходимости
     Returns
     -------
@@ -53,13 +54,17 @@ def calculate_zones(maps, epsilon, min_samples, percent_low, data_wells=None):
     maps.append(map_potential_score)
 
     logger.info("Расчет карты оценки проблем")
-    map_risk_score = risk_score(map_water_cut, map_initial_oil_saturation, map_pressure, P_init=40 * 9.87)
+    P_init = dict_properties['init_pressure']
+    if P_init == 0:
+        P_init = np.max(map_pressure.data)
+    # обязательно перевод начального из МПа в атм: P_init * 9.87
+    map_risk_score = risk_score(map_water_cut, map_initial_oil_saturation, map_pressure, P_init=P_init * 9.87)
     maps.append(map_risk_score)
 
     logger.info("Расчет карты индекса возможностей")
     map_opportunity_index = opportunity_index(map_reservoir_score, map_potential_score, map_risk_score)
-    # где нет толщин, проницаемости и давления opportunity_index = 0
-    map_opportunity_index.data[(map_NNT.data == 0) & (map_permeability.data == 0) & (map_pressure.data == 0)] = 0
+    # где нет толщин и давления opportunity_index = 0
+    map_opportunity_index.data[(map_NNT.data == 0) & (map_pressure.data == 0)] = 0
     maps.append(map_opportunity_index)
 
     logger.info("Создание по карте области исключения (маски) на основе действующего фонда")
@@ -122,12 +127,16 @@ def risk_score(map_water_cut, map_initial_oil_saturation, map_pressure, P_init, 
     -------
     Map(type_map=risk_score)
     """
-    map_delta_P = Map(P_init - map_pressure.data, map_pressure.geo_transform, map_pressure.projection,
+    # Подготовка карты снижения давлений
+    data_delta_P = P_init - map_pressure.data
+    data_delta_P = np.where(data_delta_P < 0, 0, data_delta_P)
+    map_delta_P = Map(data_delta_P, map_pressure.geo_transform, map_pressure.projection,
                       type_map="delta_P").normalize_data()
-
+    # Подготовка карты текущей обводненности
     data_init_water_cut = (1 - map_initial_oil_saturation.data) * 100
     mask = np.isnan(map_water_cut.data)
     data_water_cut = np.where(mask, data_init_water_cut, map_water_cut.data)
+
     # Применение гауссова фильтра для сглаживания при объединении карт обводненности и начальной нефтенасыщенности
     data_water_cut = gaussian_filter(data_water_cut, sigma=sigma)
     map_water_cut.data = data_water_cut
@@ -218,9 +227,6 @@ def apply_wells_mask(base_map, data_wells):
     -------
     modified_map - карта с вырезанной зоной действующих скважин
     """
-    # определения радиусов для скважин в маске
-    data_wells = drainage_radius(data_wells)
-
     logger.info("Расчет буфера вокруг скважин")
     union_buffer = active_well_outline(data_wells)
 
@@ -257,7 +263,7 @@ def active_well_outline(df_wells):
 
     def create_buffer(row):
         # Создание геометрии для каждой скважины
-        buffer_radius = row.radius  # радиус из строки
+        buffer_radius = row.r_eff  # радиус из строки
         line = ogr.Geometry(ogr.wkbLineString)
         line.AddPoint(row.T1_x, row.T1_y)
         line.AddPoint(row.T3_x, row.T3_y)
@@ -266,41 +272,15 @@ def active_well_outline(df_wells):
     # Создаём список буферов
     buffers = [create_buffer(row) for _, row in df_wells.iterrows()]
 
-    # Создаем объединенный буфер
-    union_buffer = ogr.Geometry(ogr.wkbGeometryCollection)
-    for buffer in buffers:
-        union_buffer = union_buffer.Union(buffer)
+    # Создание пустой геометрии типа MultiPolygon для объединения
+    merged_geometry = ogr.Geometry(ogr.wkbMultiPolygon)
+    # Добавляем каждую геометрию в объединенную геометрию
+    for geom in buffers:
+        merged_geometry.AddGeometry(geom)
+    # Объединяем все геометрии в одну
+    union_buffer = merged_geometry.UnionCascaded()
 
     return union_buffer
-
-
-def drainage_radius(df_wells):
-    """
-    Функция определения радиуса маски для скважин
-    !!!на основе длительности остановки -> будет на основе радиусов дренирования и закачки
-    Parameters
-    ----------
-    df_wells
-    Returns
-    -------
-    df_wells - добавлен столбец radius
-    """
-    # Количество месяцев для отнесения скважин к действующим
-    NUMBER_MONTHS = 12
-    buffer_radius_active = 400  # если скважина не работала последние NUMBER_MONTHS
-    buffer_radius_non_active = 50  # если скважина работала последние NUMBER_MONTHS
-
-    from dateutil.relativedelta import relativedelta
-    last_date = df_wells.date.sort_values()
-    last_date = last_date.unique()[-1]
-    active_date = last_date - relativedelta(months=NUMBER_MONTHS)
-
-    import warnings
-    with warnings.catch_warnings(action='ignore', category=pd.errors.SettingWithCopyWarning):
-        df_wells["radius"] = np.where((df_wells.date > active_date) &
-                                      (df_wells.Ql_rate > 0) | (df_wells.Winj_rate > 0),
-                                      buffer_radius_active, buffer_radius_non_active)
-    return df_wells
 
 
 def create_mask_from_buffers(base_map, buffer):

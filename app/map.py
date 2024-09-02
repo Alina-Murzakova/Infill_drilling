@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 from osgeo import gdal
 from loguru import logger
-from scipy.interpolate import RBFInterpolator
+from scipy.interpolate import RBFInterpolator, RegularGridInterpolator
 from scipy.spatial import KDTree
 
 from config import list_names_map
@@ -99,6 +99,32 @@ class Map:
         conv_y = np.where(y != 0, ((self.geo_transform[3] - y) / abs(self.geo_transform[5])).astype(int), np.nan)
         return conv_x, conv_y
 
+    def get_values(self, x, y):
+        interpolated_values, values_out = [], []
+
+        # Создаем массивы координат
+        x_coords = self.geo_transform[0] + np.arange(self.data.shape[1]) * self.geo_transform[1]
+        y_coords = self.geo_transform[3] + np.arange(self.data.shape[0]) * self.geo_transform[5]
+
+        # Проверка, чтобы не выйти за пределы изображения
+        mask_x_in = (x >= x_coords[0]) & (x <= x_coords[-1])
+        mask_y_in = (y >= y_coords[-1]) & (y <= y_coords[0])
+        mask_all_in = mask_x_in & mask_y_in
+        x_in, y_in = list(np.array(x)[mask_all_in]), list(np.array(y)[mask_all_in])
+
+        if len(x_in):
+            # Создаем интерполятор
+            interpolator = RegularGridInterpolator((y_coords[::-1], x_coords), self.data, method='linear')
+            # Получаем интерполированные значения в точках (x, y)
+            interpolated_values = interpolator((y_in, x_in))
+
+        x_out, y_out = list(np.array(x)[~mask_all_in]), list(np.array(y)[~mask_all_in])
+        if len(x_out) :
+            values_out = [0] * len(x_out)
+
+        values = list(interpolated_values) + values_out
+        return values
+
     def save_img(self, filename, data_wells=None, dict_zones=None):
         import matplotlib.pyplot as plt
 
@@ -110,7 +136,7 @@ class Map:
         d_x, d_y = abs(x_plt[1] - x_plt[0]), abs(y_plt[1] - y_plt[0])
         count = len(str(int(min(d_x, d_y))))
 
-        plt.figure(figsize=(d_x / 10 ** (count-1), d_y / 10 ** (count-1)))
+        plt.figure(figsize=(d_x / 10 ** (count - 1), d_y / 10 ** (count - 1)))
         element_size = min(d_x, d_y) / 10 ** (count - 0.2)
         font_size = min(d_x, d_y) / 10 ** (count - 0.5)
 
@@ -217,6 +243,12 @@ def maps_load_directory(maps_directory):
         maps.append(read_raster(f'{maps_directory}/initial_oil_saturation.grd'))
     except FileNotFoundError:
         logger.error(f"в папке отсутствует файл с картой изобар: initial_oil_saturation.grd")
+
+    logger.info(f"Загрузка карты пористости")
+    try:
+        maps.append(read_raster(f'{maps_directory}/porosity.grd'))
+    except FileNotFoundError:
+        logger.error(f"в папке отсутствует файл с картой пористости: porosity.grd")
 
     return maps
 
@@ -363,10 +395,10 @@ def read_array(data_wells, name_column_map, type_map, geo_transform, size,
     grid_points_mask = grid_points[points_mask]
 
     # Использование RBFInterpolator
-    rbfi = RBFInterpolator(well_coord, values, kernel='linear')  # сглаживание smoothing=0.5
+    rbf_interpolator = RBFInterpolator(well_coord, values, kernel='linear')  # сглаживание smoothing=0.5
 
     # Предсказание значений на сетке
-    valid_grid_z = rbfi(grid_points_mask)
+    valid_grid_z = rbf_interpolator(grid_points_mask)
     grid_z = np.full(grid_x.shape, np.nan)
     grid_z.ravel()[points_mask] = valid_grid_z
 
