@@ -1,7 +1,7 @@
 import math
 
-from one_phase_model import get_one_phase_model
-from pressure_for_RD import Pwd
+from .one_phase_model import get_one_phase_model
+from .pressure_for_RD import Pwd
 
 
 def calculate_starting_rate(reservoir_params, fluid_params, well_params, coefficients,

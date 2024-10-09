@@ -41,11 +41,12 @@ class Map:
         self.type_map = type_map
 
     def normalize_data(self):
-        # Возвращение новой карты
+        """MinMax нормализация карты, метод возвращает новую карту"""
         new_data = (self.data - np.min(self.data)) / (np.max(self.data) - np.min(self.data))
         return Map(new_data, self.geo_transform, self.projection, self.type_map)
 
     def resize(self, dst_geo_transform, dst_projection, dst_shape):
+        """Изменение размеров карты"""
         # Создание исходного GDAL Dataset в памяти
         src_driver = gdal.GetDriverByName('MEM')
         src_ds = src_driver.Create('', self.data.shape[1], self.data.shape[0], 1, gdal.GDT_Float32)
@@ -93,13 +94,24 @@ class Map:
         os.remove(filename.replace(".grd", "") + ".grd.aux.xml")
 
     def convert_coord(self, array):
-        # Преобразование координат массива в пиксельные координаты в соответствии с geo_transform карты
+        """Преобразование координат массива в пиксельные координаты в соответствии с geo_transform карты"""
         x, y = array
         conv_x = np.where(x != 0, ((x - self.geo_transform[0]) / self.geo_transform[1]).astype(int), np.nan)
         conv_y = np.where(y != 0, ((self.geo_transform[3] - y) / abs(self.geo_transform[5])).astype(int), np.nan)
         return conv_x, conv_y
 
     def get_values(self, x, y):
+        """
+        Получить значения с карты по спискам x и y
+        Parameters
+        ----------
+        x - array координаты x скважины (не в пикселях)
+        y - array координаты y скважины (не в пикселях)
+
+        Returns
+        -------
+        Список значений по координатам с карты
+        """
         interpolated_values, values_out = [], []
 
         # Создаем массивы координат
@@ -119,7 +131,7 @@ class Map:
             interpolated_values = interpolator((y_in, x_in))
 
         x_out, y_out = list(np.array(x)[~mask_all_in]), list(np.array(y)[~mask_all_in])
-        if len(x_out) :
+        if len(x_out):
             values_out = [0] * len(x_out)
 
         values = list(interpolated_values) + values_out

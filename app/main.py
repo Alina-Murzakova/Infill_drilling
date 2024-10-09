@@ -4,6 +4,7 @@ from input_output import load_wells_data, get_save_path, load_geo_phys_propertie
 from map import mapping
 from drilling_zones import calculate_zones
 from well_active_zone import calculate_effective_radius
+from starting_rates import calculate_flow_rates
 
 if __name__ == '__main__':
     logger.add('logs.log', mode='w')
@@ -44,7 +45,7 @@ if __name__ == '__main__':
                                        min_samples=min_samples,
                                        percent_low=percent_low,
                                        dict_properties=dict_geo_phys_properties,
-                                       data_wells=data_wells,)
+                                       data_wells=data_wells)
 
     logger.info(f"Сохраняем рассчитанные карты в .png и .grd форматах")
     type_add_maps = ['reservoir_score', 'potential_score', 'risk_score', 'opportunity_index']
@@ -57,3 +58,5 @@ if __name__ == '__main__':
                 raster.save_img(f"{save_directory}/map_opportunity_index_with_zones.png", data_wells, dict_zones)
 
     logger.info("Расчет запускных параметров в зонах")
+    calculate_flow_rates(maps, dict_zones, dict_properties=dict_geo_phys_properties)
+
