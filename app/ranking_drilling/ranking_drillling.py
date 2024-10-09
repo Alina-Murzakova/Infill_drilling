@@ -1,7 +1,7 @@
 import math
 
-from one_phase_model import get_one_phase_model
-from pressure_drop_for_Jd import Pd
+from .one_phase_model import get_one_phase_model
+from .pressure_drop_for_Jd import Pd
 
 
 def calculate_starting_rate(reservoir_params, fluid_params, well_params, coefficients,

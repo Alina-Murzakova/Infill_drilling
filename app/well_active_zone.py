@@ -10,12 +10,12 @@ from loguru import logger
 from map import trajectory_break_points
 
 
-def R_prod(cumulative_oil_prod, Bo, ro_oil, eff_h, m, So, type_well, len_well, So_min=0.3):
+def calc_r_eff(cumulative_value, B, ro, eff_h, m, So, type_well, len_well, So_min=0.3):
     """
     calculate drainage radius of production well
-    :param cumulative_oil_prod: cumulative oil production, tons
-    :param Bo: volumetric ratio of oil
-    :param ro_oil: density g/cm3
+    :param cumulative_value: cumulative oil production or cumulative_water_inj, tons|m3
+    :param B: volumetric ratio of oil|water
+    :param ro: density oli|water g/cm3
     :param eff_h: effective thickness, m
     :param m: reservoir porosity, units
     :param So: initial oil saturation, units
@@ -27,52 +27,20 @@ def R_prod(cumulative_oil_prod, Bo, ro_oil, eff_h, m, So, type_well, len_well, S
     if So - So_min < 0:
         So = So_min
     if type_well == "vertical":
-        a = cumulative_oil_prod * Bo
-        b = ro_oil * math.pi * eff_h * m * (So - So_min)
+        a = cumulative_value * B
+        b = ro * math.pi * eff_h * m * (So - So_min)
         if b == 0:
             return 0
         else:
              math.sqrt(a / b)
     elif type_well == "horizontal":
         L = len_well
-        a = math.pi * cumulative_oil_prod * Bo
-        b = eff_h * m * ro_oil * (So - So_min)
+        a = math.pi * cumulative_value * B
+        b = eff_h * m * ro * (So - So_min)
         if b == 0:
             return 0
         else:
             return (-1 * L + math.sqrt(L * L + a / b)) / math.pi
-    else:
-        raise NameError(f"Wrong well type: {type_well}. Allowed values: vertical or horizontal")
-
-
-def R_inj(cumulative_water_inj, eff_h, m, So, type_well, len_well, So_min=0.3, Bw=1):
-    """
-    calculate drainage radius of injection well
-    :param cumulative_water_inj: накопленная закачка воды, м3
-    :param Bw: volumetric ratio of water
-    :param eff_h: effective thickness, m
-    :param m: reservoir porosity, units
-    :param So: initial oil saturation, units
-    :param So_min: minimum oil saturation, units
-    :param type_well: "vertical" or "horizontal"
-    :param len_well: length of well for vertical well
-    :return:
-    """
-    if So - So_min < 0:
-        So = So_min
-    if type_well == "vertical":
-        if math.pi * eff_h * m * (So - So_min) == 0:
-            return 0
-        else:
-            return math.sqrt(cumulative_water_inj * Bw / (math.pi * eff_h * m * (So - So_min)))
-    elif type_well == "horizontal":
-        L = len_well
-        a = math.pi * cumulative_water_inj
-        b = eff_h * m * (So - So_min)
-        if b == 0:
-            return 0
-        else:
-            (-1 * L + math.sqrt(L * L + a / b)) / math.pi
     else:
         raise NameError(f"Wrong well type: {type_well}. Allowed values: vertical or horizontal")
 
@@ -105,10 +73,10 @@ def well_effective_radius(row, default_radius=50, NUMBER_MONTHS = 120):
             cumulative_oil_prod = row.Qo_cumsum
             Bo = row.Bo
             ro_oil = row.ro_oil
-            R_eff = R_prod(cumulative_oil_prod, Bo, ro_oil, eff_h, m, So, well_type, len_well)
+            R_eff = calc_r_eff(cumulative_oil_prod, Bo, ro_oil, eff_h, m, So, well_type, len_well)
         elif work_type_well == "inj":
             cumulative_water_inj = row.Winj_cumsum
-            R_eff = R_inj(cumulative_water_inj, eff_h, m, So, well_type, len_well)
+            R_eff = calc_r_eff(cumulative_water_inj, 1, 1, eff_h, m, So, well_type, len_well)
         if not R_eff:
             R_eff = default_radius
         return R_eff
