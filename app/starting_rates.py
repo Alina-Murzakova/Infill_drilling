@@ -56,9 +56,9 @@ def calculate_flow_rates(maps, dict_zones, dict_properties):
 
         for f_w, Phi, h, k_h, Pr in zip(array_f_w, array_Phi, array_h, array_k_h, array_Pr):
             reservoir_params = {'f_w': f_w, 'c_r': c_r, 'Phi': Phi, 'h': h, 'k_h': k_h, 'Pr': Pr}
-            Q_oil, Q_liq = calculate_starting_rate(reservoir_params, fluid_params, well_params, coefficients)
-            array_Q_oil.append(Q_oil)
-            array_Q_liq.append(Q_liq)
+            # Q_oil, Q_liq = calculate_starting_rate(reservoir_params, fluid_params, well_params, coefficients)
+            # array_Q_oil.append(Q_oil)
+            # array_Q_liq.append(Q_liq)
         print(1)
 
     pass
