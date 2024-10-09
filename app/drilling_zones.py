@@ -14,7 +14,7 @@ from input_output import load_wells_data
 @logger.catch
 def calculate_zones(maps, epsilon, min_samples, percent_low, dict_properties, data_wells=None):
     """
-    Выделение зон для уверенного бурения
+    Выделение зон для уверенного бурения с высоким индексом возможности OI
     Parameters
     ----------
     maps - обязательный набор карт списком (порядок не важен):
@@ -23,7 +23,6 @@ def calculate_zones(maps, epsilon, min_samples, percent_low, dict_properties, da
     eps - Максимальное расстояние между двумя точками, чтобы одна была соседкой другой, расстояние по сетке
     min_samples - Минимальное количество точек для образования плотной области, шт
     percent_top - процент лучших точек для кластеризации, %
-    save_directory - путь для сохранения карт
     dict_properties - ГФХ пласта
     data_wells - фрейм скважин для визуализации при необходимости
     Returns
@@ -45,15 +44,15 @@ def calculate_zones(maps, epsilon, min_samples, percent_low, dict_properties, da
     map_last_rate_oil = maps[type_map_list.index("last_rate_oil")]
     map_init_rate_oil = maps[type_map_list.index("init_rate_oil")]
 
-    logger.info("Расчет карты оценки пласта")
+    logger.info("Расчет карты оценки качества коллектора")
     map_reservoir_score = reservoir_score(map_NNT, map_permeability)
     maps.append(map_reservoir_score)
 
-    logger.info("Расчет карты оценки показателей разработки")
+    logger.info("Расчет карты оценки потенциала")
     map_potential_score = potential_score(map_residual_recoverable_reserves, map_last_rate_oil, map_init_rate_oil)
     maps.append(map_potential_score)
 
-    logger.info("Расчет карты оценки проблем")
+    logger.info("Расчет карты оценки риска")
     P_init = dict_properties['init_pressure']
     if P_init == 0:
         P_init = np.max(map_pressure.data)
@@ -67,7 +66,7 @@ def calculate_zones(maps, epsilon, min_samples, percent_low, dict_properties, da
     map_opportunity_index.data[(map_NNT.data == 0) & (map_pressure.data == 0)] = 0
     maps.append(map_opportunity_index)
 
-    logger.info("Создание по карте области исключения (маски) на основе действующего фонда")
+    logger.info("Создание на карте области исключения (маски) на основе действующего фонда")
     modified_map_opportunity_index = apply_wells_mask(map_opportunity_index, data_wells)
 
     logger.info("Кластеризация зон")

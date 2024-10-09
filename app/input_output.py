@@ -70,6 +70,7 @@ def load_wells_data(data_well_directory, min_length_hor_well=150, first_months=6
     first_date = sorted(data_history.date.unique())[0]
     data_wells_last_param['no_work_time'] = round((last_date - data_wells_last_param.date).dt.days / 29.3)
 
+    # Скважины без добычи/закачки на последнюю дату
     df_diff = data_wells_last_date[~data_wells_last_date.well_number.isin(data_wells_last_param.well_number)]
     import warnings
     with warnings.catch_warnings(action='ignore', category=pd.errors.SettingWithCopyWarning):

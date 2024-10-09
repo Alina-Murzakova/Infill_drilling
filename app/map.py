@@ -119,7 +119,7 @@ class Map:
             interpolated_values = interpolator((y_in, x_in))
 
         x_out, y_out = list(np.array(x)[~mask_all_in]), list(np.array(y)[~mask_all_in])
-        if len(x_out) :
+        if len(x_out):
             values_out = [0] * len(x_out)
 
         values = list(interpolated_values) + values_out

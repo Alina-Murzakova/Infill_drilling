@@ -1,11 +1,11 @@
 import math
 
 from one_phase_model import get_one_phase_model
-from pressure_for_RD import Pwd
+from pressure_drop_for_Jd import Pd
 
 
 def calculate_starting_rate(reservoir_params, fluid_params, well_params, coefficients,
-                            kv_kh=1, Swc=0.2, Sor=0.3, Fw=0.3, m1=1, Fo=1, m2=1, Bw=1):
+                            kv_kh=0.1, Swc=0.2, Sor=0.3, Fw=0.3, m1=1, Fo=1, m2=1, Bw=1):
     """
     Расчет Q_liq - Qж (м3/сут) на Tзап без учета лифта и
            Q_oil - Qн (т/сут) с учетом лифта 3'' на Tзап
@@ -180,7 +180,7 @@ def Get_PI(mu, c_t, B, reservoir_params, well_params, coefficients, kv_kh, mode=
             ye = xe
             xw, yw = xe / 2, xe / 2
 
-    Jd = K_Jd * Pwd(t, Fcd, L_fr, k_h, c_t, Phi, mu, xe, ye, xw, yw, mode, skin)
+    Jd = K_Jd * Pd(t, Fcd, L_fr, k_h, c_t, Phi, mu, xe, ye, xw, yw, mode, skin)
     J = (k_h * h) / (18.42 * B * mu) * Jd  # Продуктивность скважины
     PI = KUBS * J  # Продуктивность скважины с учетом успешности
     return PI
