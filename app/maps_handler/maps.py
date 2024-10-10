@@ -5,32 +5,9 @@ from osgeo import gdal
 from loguru import logger
 from scipy.interpolate import RBFInterpolator, RegularGridInterpolator
 from scipy.spatial import KDTree
+from scipy.ndimage import gaussian_filter
 
-from config import list_names_map
-
-
-@logger.catch
-def mapping(maps_directory, data_wells, default_size_pixel):
-    """Загрузка и подготовка всех необходимых карт"""
-    logger.info(f"path: {maps_directory}")
-    content = os.listdir(path=maps_directory)
-    if content:
-        logger.info(f"maps: {len(content)}")
-    else:
-        raise logger.critical("no maps!")
-
-    logger.info(f"Загрузка карт из папки: {maps_directory}")
-    maps = maps_load_directory(maps_directory)
-
-    # Поиск наименьшего размера карты и размера пикселя, если он None при загрузке
-    dst_geo_transform, dst_projection, shape = final_resolution(maps, default_size_pixel)
-
-    logger.info(f"Построение карт на основе дискретных значений")
-    maps = maps + maps_load_df(data_wells, dst_geo_transform, shape)
-
-    logger.info(f"Преобразование карт к единому размеру и сетке")
-    res_maps = list(map(lambda raster: raster.resize(dst_geo_transform, dst_projection, shape), maps))
-    return res_maps
+from .config import list_names_map
 
 
 class Map:
@@ -137,7 +114,7 @@ class Map:
         values = list(interpolated_values) + values_out
         return values
 
-    def save_img(self, filename, data_wells=None, dict_zones=None):
+    def save_img(self, filename, data_wells=None, list_zones=None, info_clusterization_zones=None):
         import matplotlib.pyplot as plt
 
         # Определение размера осей
@@ -179,8 +156,8 @@ class Map:
 
         # Отображение зон кластеризации на карте
         title = ""
-        if dict_zones is not None:
-            labels = list(set(dict_zones.keys()) - {"DBSCAN_parameters"})
+        if list_zones is not None:
+            labels = list(map(lambda zone: zone.rating, list_zones))
             # Выбираем теплую цветовую карту
             cmap = plt.get_cmap('Wistia', len(set(labels)))
             # Генерируем список цветов
@@ -193,10 +170,11 @@ class Map:
                 colors.update({-1: "gray"})
 
             for i, c in zip(labels, colors.values()):
-                x_zone = dict_zones[i][0]
-                y_zone = dict_zones[i][1]
-                mean_index = dict_zones[i][3]
-                max_index = dict_zones[i][4]
+                zone = list_zones[labels.index(i)]
+                x_zone = zone.x_coordinates
+                y_zone = zone.y_coordinates
+                mean_index = np.mean(zone.opportunity_index_values)
+                max_index = np.max(zone.opportunity_index_values)
                 plt.scatter(x_zone, y_zone, color=c, alpha=0.6, s=1)
 
                 if i != -1:
@@ -208,10 +186,10 @@ class Map:
                              f"OI_max = {np.round(max_index, 3)}",
                              fontsize=font_size, ha='left', color="black")
 
-            n_clusters = len(labels) - 1
-            title = (f"Epsilon = {dict_zones['DBSCAN_parameters'][0]}\n "
-                     f"min_samples = {dict_zones['DBSCAN_parameters'][1]} \n "
-                     f"with {n_clusters} clusters")
+            if info_clusterization_zones is not None:
+                title = (f"Epsilon = {info_clusterization_zones['epsilon']}\n "
+                         f"min_samples = {info_clusterization_zones["min_samples"]} \n "
+                         f"with {info_clusterization_zones["n_clusters"]} clusters")
 
         plt.title(f"{self.type_map}\n {title}", fontsize=font_size * 8)
         plt.tick_params(axis='both', which='major', labelsize=font_size * 8)
@@ -221,66 +199,6 @@ class Map:
         plt.gca().invert_yaxis()
         plt.savefig(filename, dpi=400)
         plt.close()
-
-
-def maps_load_directory(maps_directory):
-    maps = []
-
-    logger.info(f"Загрузка карты ННТ")
-    try:
-        maps.append(read_raster(f'{maps_directory}/NNT.grd'))
-    except FileNotFoundError:
-        logger.error(f"в папке отсутствует файл с картой ННТ: NNT.grd")
-
-    logger.info(f"Загрузка карты проницаемости")
-    try:
-        maps.append(read_raster(f'{maps_directory}/permeability.grd'))
-    except FileNotFoundError:
-        logger.error(f"в папке отсутствует файл с картой проницаемости: permeability.grd")
-
-    logger.info(f"Загрузка карты ОИЗ")
-    try:
-        maps.append(read_raster(f'{maps_directory}/residual_recoverable_reserves.grd'))
-    except FileNotFoundError:
-        logger.error(f"в папке отсутствует файл с картой ОИЗ: residual_recoverable_reserves.grd")
-
-    logger.info(f"Загрузка карты изобар")
-    try:
-        maps.append(read_raster(f'{maps_directory}/pressure.grd'))
-    except FileNotFoundError:
-        logger.error(f"в папке отсутствует файл с картой изобар: pressure.grd")
-
-    logger.info(f"Загрузка карты начальной нефтенасыщенности")
-    try:
-        maps.append(read_raster(f'{maps_directory}/initial_oil_saturation.grd'))
-    except FileNotFoundError:
-        logger.error(f"в папке отсутствует файл с картой изобар: initial_oil_saturation.grd")
-
-    logger.info(f"Загрузка карты пористости")
-    try:
-        maps.append(read_raster(f'{maps_directory}/porosity.grd'))
-    except FileNotFoundError:
-        logger.error(f"в папке отсутствует файл с картой пористости: porosity.grd")
-
-    return maps
-
-
-def maps_load_df(data_wells, dst_geo_transform, shape):
-    maps = []
-    #  Загрузка карт из "МЭР"
-    logger.info(f"Загрузка карты обводненности на основе выгрузки МЭР")
-    maps.append(read_array(data_wells, name_column_map="water_cut", type_map="water_cut",
-                           geo_transform=dst_geo_transform, size=shape))
-
-    logger.info(f"Загрузка карты последних дебитов нефти на основе выгрузки МЭР")
-    maps.append(read_array(data_wells, name_column_map="Qo_rate", type_map="last_rate_oil",
-                           geo_transform=dst_geo_transform, size=shape))
-
-    logger.info(f"Загрузка карты стартовых дебитов нефти на основе выгрузки МЭР")
-    maps.append(read_array(data_wells, name_column_map="init_Qo_rate", type_map="init_rate_oil",
-                           geo_transform=dst_geo_transform, size=shape))
-
-    return maps
 
 
 def read_raster(file_path, no_value=0):
@@ -323,6 +241,8 @@ def read_array(data_wells, name_column_map, type_map, geo_transform, size,
     radius - радиус экстраполяции за крайние скважины
     geo_transform - геотрансформация карты
     size - размер массива (x, y)
+    accounting_GS - учет ствола горизонтальных скважин при построении карты
+    radius - радиус интерполяции от точки
 
     Returns
     -------
@@ -423,41 +343,96 @@ def read_array(data_wells, name_column_map, type_map, geo_transform, size,
     return Map(grid_z, geo_transform, projection='', type_map=type_map)
 
 
-def final_resolution(list_rasters, pixel_sizes):
-    """Поиск наименьшего размера карты, который станет целевым для расчета
-
-    list_rasters - список карт
-    pixel_sizes - шаг сетки int/None (по-умолчанию 50/поиск наименьшего шага среди сеток)
-
-    return: geo_transform, projection, shape
+def get_map_reservoir_score(map_NNT, map_permeability) -> Map:
     """
-    data_list = list(map(lambda raster: raster.data, list_rasters))
-    geo_transform_list = list(map(lambda raster: raster.geo_transform, list_rasters))
-    projection_list = list(map(lambda raster: raster.projection, list_rasters))
+    Оценка пласта
+    -------
+    Map(type_map=reservoir_score)
+    """
+    norm_map_NNT = map_NNT.normalize_data()
+    norm_map_permeability = map_permeability.normalize_data()
 
-    min_x = max(list(map(lambda geo_transform: geo_transform[0], geo_transform_list)))
-    max_x = min(list(map(lambda geo_transform, data: geo_transform[0] + geo_transform[1] * data.shape[1],
-                         geo_transform_list, data_list)))
-    min_y = max(list(map(lambda geo_transform, data: geo_transform[3] + geo_transform[5] * data.shape[0],
-                         geo_transform_list, data_list)))
-    max_y = min(list(map(lambda geo_transform: geo_transform[3], geo_transform_list)))
+    data_reservoir_score = (norm_map_NNT.data + norm_map_permeability.data) / 2
 
-    if not pixel_sizes:
-        pixel_size_x = round(min(list(map(lambda geo_transform: geo_transform[1], geo_transform_list))) / 5) * 5
-        pixel_size_y = round(min(list(map(lambda geo_transform: abs(geo_transform[5]), geo_transform_list))) / 5) * 5
-        pixel_sizes = min(pixel_size_x, pixel_size_y)
-
-    cols = int((max_x - min_x) / pixel_sizes)
-    rows = int((max_y - min_y) / pixel_sizes)
-    shape = (rows, cols)
-
-    dst_geo_transform = (min_x, pixel_sizes, 0, max_y, 0, -pixel_sizes)
-    dst_projection = max(set(projection_list), key=projection_list.count)
-
-    return dst_geo_transform, dst_projection, shape
+    map_reservoir_score = Map(data_reservoir_score,
+                              norm_map_NNT.geo_transform,
+                              norm_map_NNT.projection,
+                              "reservoir_score")
+    return map_reservoir_score
 
 
-"""Вспомогательные функции"""
+def get_map_potential_score(map_residual_recoverable_reserves, map_last_rate_oil, map_init_rate_oil) -> Map:
+    """
+    Оценка показателей разработки
+    -------
+    Map(type_map=potential_score)
+    """
+    map_last_rate_oil.data = np.nan_to_num(map_last_rate_oil.data)
+    map_init_rate_oil.data = np.nan_to_num(map_init_rate_oil.data)
+
+    norm_last_rate_oil = map_last_rate_oil.normalize_data()
+    norm_init_rate_oil = map_init_rate_oil.normalize_data()
+    norm_residual_recoverable_reserves = map_residual_recoverable_reserves.normalize_data()
+
+    data_potential_score = (norm_residual_recoverable_reserves.data
+                            + norm_last_rate_oil.data
+                            + norm_init_rate_oil.data) / 3
+
+    map_potential_score = Map(data_potential_score,
+                              norm_last_rate_oil.geo_transform,
+                              norm_last_rate_oil.projection,
+                              "potential_score")
+    return map_potential_score
+
+
+def get_map_risk_score(map_water_cut, map_initial_oil_saturation, map_pressure, init_pressure, sigma=5) -> Map:
+    """
+    Оценка проблем
+    Parameters
+    ----------
+    P_init - начально давление в атм
+    sigma - параметр для определения степени сглаживания
+    -------
+    Map(type_map=risk_score)
+    """
+    # Подготовка карты снижения давлений
+    data_delta_P = init_pressure - map_pressure.data
+    data_delta_P = np.where(data_delta_P < 0, 0, data_delta_P)
+    map_delta_P = Map(data_delta_P, map_pressure.geo_transform, map_pressure.projection,
+                      type_map="delta_P").normalize_data()
+    # Подготовка карты текущей обводненности
+    data_init_water_cut = (1 - map_initial_oil_saturation.data) * 100
+    mask = np.isnan(map_water_cut.data)
+    data_water_cut = np.where(mask, data_init_water_cut, map_water_cut.data)
+
+    # Применение гауссова фильтра для сглаживания при объединении карт обводненности и начальной нефтенасыщенности
+    data_water_cut = gaussian_filter(data_water_cut, sigma=sigma)
+    map_water_cut.data = data_water_cut
+    norm_water_cut = map_water_cut.normalize_data()
+
+    data_risk_score = (norm_water_cut.data + map_delta_P.data) / 2
+    map_risk_score = Map(data_risk_score, map_water_cut.geo_transform, map_water_cut.projection, "risk_score")
+    return map_risk_score
+
+
+def get_map_opportunity_index(map_reservoir_score, map_potential_score, map_risk_score) -> Map:
+    """
+    Оценка индекса возможностей
+    -------
+    Map(type_map=opportunity_index)
+    """
+    k_reservoir = k_potential = k_risk = 1  # все карты оценок имеют равные веса
+    data_opportunity_index = (k_reservoir * map_reservoir_score.data +
+                              k_potential * map_potential_score.data -
+                              k_risk * map_risk_score.data)
+    map_opportunity_index = Map(data_opportunity_index,
+                                map_reservoir_score.geo_transform,
+                                map_reservoir_score.projection, "opportunity_index")
+    map_opportunity_index = map_opportunity_index.normalize_data()
+    return map_opportunity_index
+
+
+"""___Вспомогательная функция___"""
 
 
 def trajectory_break_points(row, default_size):

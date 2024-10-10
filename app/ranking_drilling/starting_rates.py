@@ -1,7 +1,7 @@
 import math
 
 from .one_phase_model import get_one_phase_model
-from .pressure_drop_for_Jd import Pd
+from .pressure_drop_for_Jd import get_dimensionless_delta_pressure
 
 
 def calculate_starting_rate(reservoir_params, fluid_params, well_params, coefficients,
@@ -56,8 +56,8 @@ def calculate_starting_rate(reservoir_params, fluid_params, well_params, coeffic
     Bw - объемный м расширения воды | м3/м3
 
     Рассчитываются по функциям:
-    dP - депрессия | атм
-    PI - коффициент продуктивности | м3/сут/атм
+    delta_P - депрессия | атм
+    well_productivity - коффициент продуктивности | м3/сут/атм
     --------------------------------------------------------------------------------------------------------------------
     """
     rho = fluid_params['rho']
@@ -65,12 +65,12 @@ def calculate_starting_rate(reservoir_params, fluid_params, well_params, coeffic
     mu, c_t, B = get_one_phase_model(fluid_params, reservoir_params, Swc, Sor, Fw, m1, Fo, m2, Bw)
 
     # Коэффициент продуктивности | м3/сут/атм
-    PI = Get_PI(mu, c_t, B, reservoir_params, well_params, coefficients, kv_kh)
+    well_productivity = get_well_productivity(mu, c_t, B, reservoir_params, well_params, coefficients, kv_kh)
 
     # Депрессия по Вогелю | атм
-    dP = Get_dP(reservoir_params, fluid_params, well_params)
+    delta_P = get_delta_pressure(reservoir_params, fluid_params, well_params)
 
-    Q_liq = PI * dP
+    Q_liq = well_productivity * delta_P
     Q_max = -5.3918 * rho * 1000 + 6614.7  # пропускная способность НКТ 89 мм | м3/сут - характеристика напора
     if Q_liq > Q_max:
         Q_liq = Q_max
@@ -79,7 +79,7 @@ def calculate_starting_rate(reservoir_params, fluid_params, well_params, coeffic
     return Q_liq, Q_oil
 
 
-def Get_dP(reservoir_params, fluid_params, well_params):
+def get_delta_pressure(reservoir_params, fluid_params, well_params):
     """
     Расчет депрессии с учетом газовой фазы и обводненности продукции (Вогель с учетом обводненности)
     Parameters
@@ -125,7 +125,7 @@ def Get_dP(reservoir_params, fluid_params, well_params):
     return dP
 
 
-def Get_PI(mu, c_t, B, reservoir_params, well_params, coefficients, kv_kh, mode=2):
+def get_well_productivity(mu, c_t, B, reservoir_params, well_params, coefficients, kv_kh, mode=2):
     """
     Расчет коэффициента продуктивности ствола (м3/сут/атм) в зависимости от типа ствола
     Пояснения к некоторым величинам:
@@ -139,7 +139,7 @@ def Get_PI(mu, c_t, B, reservoir_params, well_params, coefficients, kv_kh, mode=
                                                                                'w_f', 'k_f']))
     t = well_params['t_p'] * 24  # перевод дней в часы
     r_e = well_params['r_e'] * 100  # 100 - коэффициент для масштабирования решений с очень маленьким радиусом,
-                                    # для уменьшение влияния границ дренажного прямоугольника
+    # для уменьшения влияния границ дренажного прямоугольника
     # Выделение параметров пласта
     Phi, h, k_h = list(map(lambda key: reservoir_params[key], ['Phi', 'h', 'k_h']))
     # Выделение экспертных параметров
@@ -160,10 +160,10 @@ def Get_PI(mu, c_t, B, reservoir_params, well_params, coefficients, kv_kh, mode=
             if FracCount > 1:  # если трещин больше 1 пересчитываем полудлину через L
                 xfr = L / (2 * FracCount)
             L_fr = L / 2 + (FracCount - 1) * xfr / 2  # второе слагаемое связано с суммарным воздействием всех трещин
-            # полудлина трещины = половина длины горизонтального ствола скважины
+            # полу-длина трещины = половина длины горизонтального ствола скважины
             # максимальная теоретическая длина дренажного воздействия для одной трещины
         Fcd = FracCount * w_f * k_f / (xfr * k_h)
-    else:  # нет ГРП, у нас один сток = сверхпроводимая трещина
+    else:  # нет ГРП, у нас один сток = сверх-проводимая трещина
         Fcd = 10000000
         if L > 0:  # ГС
             L_fr = L / 2
@@ -180,8 +180,7 @@ def Get_PI(mu, c_t, B, reservoir_params, well_params, coefficients, kv_kh, mode=
             ye = xe
             xw, yw = xe / 2, xe / 2
 
-    Jd = K_Jd * Pd(t, Fcd, L_fr, k_h, c_t, Phi, mu, xe, ye, xw, yw, mode, skin)
+    Jd = K_Jd * get_dimensionless_delta_pressure(t, Fcd, L_fr, k_h, c_t, Phi, mu, xe, ye, xw, yw, mode, skin)
     J = (k_h * h) / (18.42 * B * mu) * Jd  # Продуктивность скважины
     PI = KUBS * J  # Продуктивность скважины с учетом успешности
     return PI
-

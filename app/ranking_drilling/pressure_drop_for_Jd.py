@@ -119,9 +119,9 @@ def pd_OR(S, xd, xwd, xed, yd, ywd, yed):
     yd1 = yed - fabs(yd - ywd)
     yd2 = yed - (yd + ywd)
     p_wD = (pd_inf(S, xd, xwd) +
-                    pd_b1(S, yd, ywd, yed, xed, yd1, yd2) +
-                    pd_b2(S, xd, xwd, xed, yd, ywd, yed, yd1, yd2) +
-                    pd_b3(S, xd, xwd, xed, yd, ywd))
+            pd_b1(S, yd, ywd, yed, xed, yd1, yd2) +
+            pd_b2(S, xd, xwd, xed, yd, ywd, yed, yd1, yd2) +
+            pd_b3(S, xd, xwd, xed, yd, ywd))
     return p_wD
 
 
@@ -174,17 +174,17 @@ def PdFracWBSSf(S, cfd, skin_f, Cd, Cd_fi, lf, mult=100000):
     return p_wD_f - p_wD_inf
 
 
-def Pd(t, cfd, lf, k_h, c_t, Phi, mu, xe, ye, xw, yw, mode, skin_f=0, Cd=0, Cd_fi=1):
+def get_dimensionless_delta_pressure(t, cfd, lf, k_h, c_t, porosity, mu, xe, ye, xw, yw, mode, skin_f=0, Cd=0, Cd_fi=1):
     """
     Безразмерный перепад давления  Pd в пласте с прямоугольной геометрией и без течения флюида через границы
     Parameters
     ----------
     t - время работы скважины, часы
     cfd - безразмерный коэффициент проводимости трещин ГРП, в случае скважины без ГРП - 10000000
-    lf - полудлина трещины
+    lf - полу-длина трещины
     k_h - проницаемость
     c_t - общая сжимаемость
-    Phi - пористость
+    porosity - пористость
     mu - вязкость флюида
     xe - размер прямоугольной области дренирования по x
     ye - размер прямоугольной области дренирования по y
@@ -201,7 +201,7 @@ def Pd(t, cfd, lf, k_h, c_t, Phi, mu, xe, ye, xw, yw, mode, skin_f=0, Cd=0, Cd_f
     Pwd - безразмерный перепад давления
     """
     # безразмерное время (0.00036 при размерностях м, сек, атм)
-    td = 0.00036 * k_h * t / (Phi * mu * c_t * lf ** 2)
+    td = 0.00036 * k_h * t / (porosity * mu * c_t * lf ** 2)
 
     # безразмерные координаты скважины
     xwd, ywd = xw / lf, yw / lf

@@ -7,7 +7,7 @@ from shapely.geometry import Point, LineString, Polygon, MultiPolygon
 from longsgis import voronoiDiagram4plg
 
 from loguru import logger
-from map import trajectory_break_points
+from app.maps_handler.maps import trajectory_break_points
 
 
 def calc_r_eff(cumulative_value, B, ro, eff_h, m, So, type_well, len_well, So_min=0.3):
@@ -181,7 +181,7 @@ def calculate_effective_radius(data_wells, dict_geo_phys_properties, maps):
     ----------
     data_wells - фрейм данных по скважинам
     dict_geo_phys_properties - словарь свойств на объект
-    maps - обязательные карты NNT|porosity|initial_oil_saturation
+    maps_handler - обязательные карты NNT|porosity|initial_oil_saturation
 
     Returns new_data_wells
     -------
