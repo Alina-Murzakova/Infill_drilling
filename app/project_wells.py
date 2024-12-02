@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from shapely.geometry import Point, LineString, Polygon, MultiPolygon
 from loguru import logger
 from app.input_output import get_save_path
-from app.drill_zones_handler.functions import (get_nearest_wells, get_params_nearest_wells)
+from app.drill_zones.functions import (get_nearest_wells, get_params_nearest_wells)
 from app.well_active_zones import get_value_map
 from app.ranking_drilling.starting_rates import (get_geo_phys_and_default_params, calculate_starting_rate)
 
@@ -151,7 +151,7 @@ if __name__ == '__main__':
     from app.local_parameters import paths, parameters_calculation, default_well_params, default_coefficients
     from app.maps_handler.functions import mapping
     from app.well_active_zones import calculate_effective_radius
-    from app.drill_zones_handler.drilling_zones import (calculate_drilling_zones)
+    from app.drill_zones.drilling_zones import (calculate_drilling_zones)
 
     data_well_directory = paths["data_well_directory"]
     maps_directory = paths["maps_directory"]

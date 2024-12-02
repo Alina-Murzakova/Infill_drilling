@@ -4,7 +4,7 @@ from local_parameters import paths, parameters_calculation, default_well_params,
 from input_output import load_wells_data, get_save_path, load_geo_phys_properties
 from app.decline_rate.decline_rate import get_decline_rate
 from app.maps_handler.functions import mapping
-from drill_zones_handler.drilling_zones import calculate_drilling_zones
+from drill_zones.drilling_zones import calculate_drilling_zones
 from well_active_zones import calculate_effective_radius
 from project_wells import init_locate_project_wells
 from app.maps_handler.maps import Map

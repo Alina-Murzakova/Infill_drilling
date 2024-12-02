@@ -175,8 +175,8 @@ def load_geo_phys_properties(path_geo_phys_properties, name_field, name_object):
 
     # Переименование колонок
     df_geo_phys_properties = df_geo_phys_properties[list(gpch_column_name.keys())]
-    df_geo_phys_properties.columns = list(map(lambda x: x[0], gpch_column_name.values()))
-    dtypes_column = list(map(lambda x: x[1], gpch_column_name.values()))
+    df_geo_phys_properties.columns = gpch_column_name.values()
+    # dtypes_column = list(map(lambda x: x[1], gpch_column_name.values()))
     # df.astype({'col1': 'int32'}).dtypes Изменить формат config!!!!
 
     # Подготовка файла
@@ -189,10 +189,10 @@ def load_geo_phys_properties(path_geo_phys_properties, name_field, name_object):
     df_geo_phys_properties = df_geo_phys_properties[df_geo_phys_properties.data_type == "в целом"]
     df_geo_phys_properties = df_geo_phys_properties[(df_geo_phys_properties.field == name_field)
                                                     & (df_geo_phys_properties.object == name_object)]
-    # добавляем строки со значениями по умолчанию (среднее по мр) для каждого месторождения
-    type_dct = {str(k): list(v) for k, v in df_geo_phys_properties.groupby(df_geo_phys_properties.dtypes, axis=1)}
-    df_geo_phys_properties_mean = df_geo_phys_properties.groupby('field').mean()
-    df_geo_phys_properties_mean['object'] = "default_properties"
+    # # добавляем строки со значениями по умолчанию (среднее по мр) для каждого месторождения
+    # type_dct = {str(k): list(v) for k, v in df_geo_phys_properties.groupby(df_geo_phys_properties.dtypes, axis=1)}
+    # df_geo_phys_properties_mean = df_geo_phys_properties.groupby('field').mean()
+    # df_geo_phys_properties_mean['object'] = "default_properties"
 
     if df_geo_phys_properties.empty:
         logger.error(f"В файле ГФХ не найден объект {name_field} месторождения {name_field}")
@@ -219,8 +219,8 @@ def get_save_path(program_name: str = "default", field: str = "field", object_va
     if os.access(path_program, os.W_OK):
         if "\\app" in path_program:
             path_program = path_program.replace("\\app", "")
-        if "\\drill_zones_handler" in path_program:
-            path_program = path_program.replace("\\drill_zones_handler", "")
+        if "\\drill_zones" in path_program:
+            path_program = path_program.replace("\\drill_zones", "")
         save_path = f"{path_program}\\output\\{field}_{object_value}"
     else:
         # Поиск другого диска с возможностью записи: D: если он есть и C:, если он один

@@ -9,8 +9,8 @@ from shapely.geometry import Point, LineString, Polygon, MultiPolygon
 
 from app.maps_handler.functions import apply_wells_mask
 from app.project_wells import ProjectWell
-from app.drill_zones_handler.functions import (create_gdf_with_polygons, get_params_nearest_wells,
-                                               compute_t1_t3_points, update_and_shift_proj_wells)
+from app.drill_zones.functions import (create_gdf_with_polygons, get_params_nearest_wells,
+                                       compute_t1_t3_points, update_and_shift_proj_wells)
 
 @logger.catch
 def calculate_drilling_zones(maps, epsilon, min_samples, percent_low, data_wells):

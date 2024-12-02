@@ -253,14 +253,25 @@ def calculate_effective_radius(data_wells, dict_geo_phys_properties, maps):
     map_initial_oil_saturation = maps[type_map_list.index("initial_oil_saturation")]
 
     # с карт снимаем значения eff_h, m, So
-    data_wells['eff_h'] = data_wells.apply(get_value_map, raster=map_NNT, axis=1)
-    data_wells['m'] = data_wells.apply(get_value_map, raster=map_porosity, axis=1)
-    data_wells['So'] = data_wells.apply(get_value_map, raster=map_initial_oil_saturation, axis=1)
+    data_wells['eff_h'] = data_wells.apply(
+        lambda row: get_value_map(row['well type'], row['T1_x'], row['T1_y'], row['T3_x'], row['T3_y'],
+                                  row['length of well T1-3'], raster=map_NNT), axis=1)
+    data_wells['m'] = data_wells.apply(
+        lambda row: get_value_map(row['well type'], row['T1_x'], row['T1_y'], row['T3_x'], row['T3_y'],
+                                  row['length of well T1-3'], raster=map_porosity), axis=1)
+    data_wells['So'] = data_wells.apply(
+        lambda row: get_value_map(row['well type'], row['T1_x'], row['T1_y'], row['T3_x'], row['T3_y'],
+                                  row['length of well T1-3'], raster=map_initial_oil_saturation), axis=1)
 
     # расчет радиусов по физическим параметрам
     data_wells['r_eff'] = data_wells.apply(well_effective_radius, axis=1)
 
-    # нормировка эффективного радиуса фонда через площади ячеек Вороного и расчет радиусов по ячейкам Вороного для ОИЗ
+    # нормировка эффективного радиуса фонда через площади ячеек Вороного
     data_wells = voronoi_normalize_r_eff(data_wells)
+
+    data_wells['T1_x_conv'], data_wells['T1_y_conv'] = maps[12].convert_coord(
+        (data_wells["T1_x"].to_numpy(), data_wells["T1_y"].to_numpy()))
+    data_wells['T3_x_conv'], data_wells['T3_y_conv'] = maps[12].convert_coord(
+        (data_wells["T3_x"].to_numpy(), data_wells["T3_y"].to_numpy()))
 
     return data_wells
