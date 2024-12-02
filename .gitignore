@@ -7,4 +7,7 @@
 /app/local_parameters.py
 /app/active_well_outline.py
 /app/test.py
-/app/ranking_drilling/coef_stehf.py
+.ipynb_checkpoints/
+init_well_position.ipynb
+/картинки_ПФ/
+/*.png

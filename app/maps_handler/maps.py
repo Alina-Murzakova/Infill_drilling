@@ -77,6 +77,13 @@ class Map:
         conv_y = np.where(y != 0, ((self.geo_transform[3] - y) / abs(self.geo_transform[5])).astype(int), np.nan)
         return conv_x, conv_y
 
+    def convert_coord_from_pixel(self, array):
+        """Преобразование координат массива из пиксельных координат в соответствии с geo_transform карты"""
+        conv_x, conv_y = array
+        x = np.where(conv_x != 0, (conv_x * self.geo_transform[1] + self.geo_transform[0]), np.nan)
+        y = np.where(conv_y != 0, (self.geo_transform[3] - conv_y * abs(self.geo_transform[5])), np.nan)
+        return x, y
+
     def get_values(self, x, y):
         """
         Получить значения с карты по спискам x и y
@@ -103,7 +110,8 @@ class Map:
 
         if len(x_in):
             # Создаем интерполятор
-            interpolator = RegularGridInterpolator((y_coords[::-1], x_coords), self.data, method='linear')
+            # interpolator = RegularGridInterpolator((y_coords[::-1], x_coords), self.data, method='linear')
+            interpolator = RegularGridInterpolator((y_coords, x_coords), self.data, method='linear')
             # Получаем интерполированные значения в точках (x, y)
             interpolated_values = interpolator((y_in, x_in))
 
@@ -188,8 +196,8 @@ class Map:
 
             if info_clusterization_zones is not None:
                 title = (f"Epsilon = {info_clusterization_zones['epsilon']}\n "
-                         f"min_samples = {info_clusterization_zones["min_samples"]} \n "
-                         f"with {info_clusterization_zones["n_clusters"]} clusters")
+                         f"min_samples = {info_clusterization_zones['min_samples']} \n "
+                         f"with {info_clusterization_zones['n_clusters']} clusters")
 
         plt.title(f"{self.type_map}\n {title}", fontsize=font_size * 8)
         plt.tick_params(axis='both', which='major', labelsize=font_size * 8)
@@ -286,7 +294,11 @@ def read_array(data_wells, name_column_map, type_map, geo_transform, size,
 
     if accounting_GS:
         # Формирование списка точек для ствола каждой скважины
-        coordinates = data_wells_with_work.apply(trajectory_break_points, default_size=geo_transform[1], axis=1)
+        coordinates = data_wells_with_work.apply(
+            lambda row: pd.Series(trajectory_break_points(row['well type'], row['T1_x'], row['T1_y'], row['T3_x'],
+                                                          row['T3_y'], row['length of well T1-3'],
+                                                          default_size=geo_transform[1]),
+                                  index=['x_coords', 'y_coords']), axis=1)
         # Объединяем координаты и с исходным df
         data_wells_with_work = pd.concat([data_wells_with_work, coordinates], axis=1)
 
@@ -435,14 +447,14 @@ def get_map_opportunity_index(map_reservoir_score, map_potential_score, map_risk
 """___Вспомогательная функция___"""
 
 
-def trajectory_break_points(row, default_size):
+def trajectory_break_points(well_type, T1_x, T1_y, T3_x, T3_y, length_of_well, default_size):
     """Формирование списка точек для ствола ГС"""
-    if row['well type'] == 'vertical':
-        return pd.Series({'x_coords': [row['T1_x']], 'y_coords': [row['T1_y']]})
-    elif row['well type'] == 'horizontal':
+    if well_type == 'vertical':
+        return [T1_x], [T1_y]
+    elif well_type == 'horizontal':
         # Количество точек вдоль ствола
-        num_points = int(np.ceil(row['length of well T1-3'] / default_size))
+        num_points = int(np.ceil(length_of_well / default_size))
         # Для ГС создаем списки координат вдоль ствола
-        x_coords = np.linspace(row['T1_x'], row['T3_x'], num_points)
-        y_coords = np.linspace(row['T1_y'], row['T3_y'], num_points)
-    return pd.Series({'x_coords': x_coords.tolist(), 'y_coords': y_coords.tolist()})
+        x_coords = np.linspace(T1_x, T3_x, num_points)
+        y_coords = np.linspace(T1_y, T3_y, num_points)
+    return x_coords.tolist(), y_coords.tolist()

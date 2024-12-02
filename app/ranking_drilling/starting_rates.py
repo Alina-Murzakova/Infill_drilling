@@ -2,6 +2,7 @@ import math
 
 from .one_phase_model import get_one_phase_model
 from .pressure_drop_for_Jd import get_dimensionless_delta_pressure
+from app.local_parameters import default_well_params, default_coefficients
 
 
 def calculate_starting_rate(reservoir_params, fluid_params, well_params, coefficients,
@@ -184,3 +185,18 @@ def get_well_productivity(mu, c_t, B, reservoir_params, well_params, coefficient
     J = (k_h * h) / (18.42 * B * mu) * Jd  # Продуктивность скважины
     PI = KUBS * J  # Продуктивность скважины с учетом успешности
     return PI
+
+
+def get_geo_phys_and_default_params(dict_geo_phys_properties):
+    reservoir_params = {'c_r': dict_geo_phys_properties['formation_compressibility'] / 100000} # 'k_h': dict_geo_phys_properties['permeability']
+    fluid_params = {'mu_w': dict_geo_phys_properties['water_viscosity_in_situ'],
+                    'mu_o': dict_geo_phys_properties['oil_viscosity_in_situ'],
+                    'c_o': dict_geo_phys_properties['oil_compressibility'] / 100000,
+                    'c_w': dict_geo_phys_properties['water_compressibility'] / 100000,
+                    'Bo': dict_geo_phys_properties['Bo'],
+                    'Pb': dict_geo_phys_properties['bubble_point_pressure'] * 10,
+                    'rho': dict_geo_phys_properties['oil_density_at_surf']}
+    well_params = default_well_params
+    coefficients = default_coefficients
+
+    return reservoir_params, fluid_params, well_params, coefficients

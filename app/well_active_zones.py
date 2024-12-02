@@ -32,7 +32,7 @@ def calc_r_eff(cumulative_value, B, ro, eff_h, m, So, type_well, len_well, So_mi
         if b == 0:
             return 0
         else:
-             math.sqrt(a / b)
+            math.sqrt(a / b)
     elif type_well == "horizontal":
         L = len_well
         a = math.pi * cumulative_value * B
@@ -45,7 +45,7 @@ def calc_r_eff(cumulative_value, B, ro, eff_h, m, So, type_well, len_well, So_mi
         raise NameError(f"Wrong well type: {type_well}. Allowed values: vertical or horizontal")
 
 
-def well_effective_radius(row, default_radius=50, NUMBER_MONTHS = 120):
+def well_effective_radius(row, default_radius=50, NUMBER_MONTHS=120):
     """
     Расчет радиуса дренирования/нагнетания на основе параметров разработки
     Parameters
@@ -82,8 +82,9 @@ def well_effective_radius(row, default_radius=50, NUMBER_MONTHS = 120):
         return R_eff
 
 
-def get_value_map(row, raster):
-    x_coord, y_coord = trajectory_break_points(row, default_size=raster.geo_transform[1])
+def get_value_map(well_type, T1_x, T1_y, T3_x, T3_y, length_of_well, raster):
+    x_coord, y_coord = trajectory_break_points(well_type, T1_x, T1_y, T3_x, T3_y, length_of_well,
+                                               default_size=raster.geo_transform[1])
     value = np.mean(raster.get_values(x_coord, y_coord))
     return value
 
@@ -159,19 +160,33 @@ def voronoi_normalize_r_eff(data_wells, buff=1.1):
     # новый радиус
     gdf_Coordinates['new_r_eff'] = gdf_Coordinates['r_eff']
 
-    # if площадь эффективного радиуса > площади ячейки вороного * buff then новый радиус ГС/ННС через площадь ячейки
-    gdf_Coordinates.loc[(gdf_Coordinates['area_r_eff'] > gdf_Coordinates['area_voronoi'] * buff) & (
-                gdf_Coordinates["well type"] == "vertical"), "new_r_eff"] = np.sqrt(
+    # # if площадь эффективного радиуса > площади ячейки вороного * buff then новый радиус ГС/ННС через площадь ячейки
+    # gdf_Coordinates.loc[(gdf_Coordinates['area_r_eff'] > gdf_Coordinates['area_voronoi'] * buff) & (
+    #             gdf_Coordinates["well type"] == "vertical"), "new_r_eff"] = np.sqrt(
+    #     gdf_Coordinates['area_voronoi'] / np.pi)
+    # gdf_Coordinates.loc[(gdf_Coordinates['area_r_eff'] > gdf_Coordinates['area_voronoi'] * buff) & (
+    #             gdf_Coordinates["well type"] == "horizontal"), "new_r_eff"] = (-gdf_Coordinates[
+    #     "length of well T1-3"] + np.sqrt(
+    #     np.power(gdf_Coordinates["length of well T1-3"], 2) + gdf_Coordinates['area_voronoi'] * np.pi)) // np.pi
+
+    # считаем для ГС и ННС радиус через площадь ячейки вороного
+    gdf_Coordinates.loc[gdf_Coordinates["well type"] == "vertical", "r_eff_voronoy"] = np.sqrt(
         gdf_Coordinates['area_voronoi'] / np.pi)
-    gdf_Coordinates.loc[(gdf_Coordinates['area_r_eff'] > gdf_Coordinates['area_voronoi'] * buff) & (
-                gdf_Coordinates["well type"] == "horizontal"), "new_r_eff"] = (-gdf_Coordinates[
+    gdf_Coordinates.loc[gdf_Coordinates["well type"] == "horizontal", "r_eff_voronoy"] = (-gdf_Coordinates[
         "length of well T1-3"] + np.sqrt(
         np.power(gdf_Coordinates["length of well T1-3"], 2) + gdf_Coordinates['area_voronoi'] * np.pi)) // np.pi
 
+    # if площадь эффективного радиуса > площади ячейки вороного * buff then новый радиус ГС/ННС через площадь ячейки
+    gdf_Coordinates.loc[gdf_Coordinates['area_r_eff'] >
+                        gdf_Coordinates['area_voronoi'] * buff, "new_r_eff"] = gdf_Coordinates['r_eff_voronoy']
+
     # мерджим фреймы gdf_Coordinates и data_wells
     data_wells = data_wells.merge(gdf_Coordinates[['well_number', 'new_r_eff']], on='well_number', how='left')
+    data_wells = data_wells.merge(gdf_Coordinates[['well_number', 'r_eff_voronoy']], on='well_number', how='left')
     data_wells['new_r_eff'] = data_wells['new_r_eff'].fillna(data_wells['r_eff'])
-    return data_wells['new_r_eff']
+    data_wells['r_eff_voronoy'] = data_wells['r_eff_voronoy'].fillna(data_wells['r_eff'])
+    data_wells = data_wells.rename(columns={'new_r_eff': 'r_eff', 'r_eff': 'r_eff_not_norm'})
+    return data_wells
 
 
 def calculate_effective_radius(data_wells, dict_geo_phys_properties, maps):
@@ -199,14 +214,25 @@ def calculate_effective_radius(data_wells, dict_geo_phys_properties, maps):
     map_initial_oil_saturation = maps[type_map_list.index("initial_oil_saturation")]
 
     # с карт снимаем значения eff_h, m, So
-    data_wells['eff_h'] = data_wells.apply(get_value_map, raster=map_NNT, axis=1)
-    data_wells['m'] = data_wells.apply(get_value_map, raster=map_porosity, axis=1)
-    data_wells['So'] = data_wells.apply(get_value_map, raster=map_initial_oil_saturation, axis=1)
+    data_wells['eff_h'] = data_wells.apply(
+        lambda row: get_value_map(row['well type'], row['T1_x'], row['T1_y'], row['T3_x'], row['T3_y'],
+                                  row['length of well T1-3'], raster=map_NNT), axis=1)
+    data_wells['m'] = data_wells.apply(
+        lambda row: get_value_map(row['well type'], row['T1_x'], row['T1_y'], row['T3_x'], row['T3_y'],
+                                  row['length of well T1-3'], raster=map_porosity), axis=1)
+    data_wells['So'] = data_wells.apply(
+        lambda row: get_value_map(row['well type'], row['T1_x'], row['T1_y'], row['T3_x'], row['T3_y'],
+                                  row['length of well T1-3'], raster=map_initial_oil_saturation), axis=1)
 
     # расчет радиусов по физическим параметрам
     data_wells['r_eff'] = data_wells.apply(well_effective_radius, axis=1)
 
     # нормировка эффективного радиуса фонда через площади ячеек Вороного
-    data_wells['r_eff'] = voronoi_normalize_r_eff(data_wells)
+    data_wells = voronoi_normalize_r_eff(data_wells)
+
+    data_wells['T1_x_conv'], data_wells['T1_y_conv'] = maps[12].convert_coord(
+        (data_wells["T1_x"].to_numpy(), data_wells["T1_y"].to_numpy()))
+    data_wells['T3_x_conv'], data_wells['T3_y_conv'] = maps[12].convert_coord(
+        (data_wells["T3_x"].to_numpy(), data_wells["T3_y"].to_numpy()))
 
     return data_wells

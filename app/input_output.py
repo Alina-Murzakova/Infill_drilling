@@ -6,8 +6,7 @@ import numpy as np
 from loguru import logger
 # import xlwings as xw
 
-
-from config import MER_columns_name, gpch_column_name, dict_work_marker
+from app.config import MER_columns_name, gpch_column_name, dict_work_marker
 
 
 @logger.catch
@@ -100,6 +99,21 @@ def load_wells_data(data_well_directory, min_length_hor_well=150, first_months=6
     data_wells = data_wells.merge(data_first_rate, how='left', on='well_number')
     data_wells[['init_Qo_rate', 'init_Ql_rate']] = data_wells[['init_Qo_rate', 'init_Ql_rate']].fillna(0)
 
+    # Определение запускного забойного давления P_well
+    data_P_well_init_prod = (df_sort_date[df_sort_date.Ql_rate > 0][['well_number', 'P_well', 'date']]
+                             .groupby('well_number').apply(lambda x: get_P_well_init(x, 'P_well'))
+                             .reset_index(name='P_well_init_prod'))
+
+    data_P_well_init_inj = (df_sort_date[df_sort_date.Winj_rate > 0][['well_number', 'P_well', 'date']]
+                            .groupby('well_number').apply(lambda x: get_P_well_init(x, 'P_well'))
+                            .reset_index(name='P_well_init_inj'))
+
+    data_wells = data_wells.merge(data_P_well_init_prod[['well_number', 'P_well_init_prod']], how='left', on='well_number')
+    data_wells = data_wells.merge(data_P_well_init_inj[['well_number', 'P_well_init_inj']], how='left', on='well_number')
+    data_wells = data_wells.fillna(0)
+
+    data_wells['azimuth'] = data_wells.apply(calculate_azimuth, axis=1)
+
     # Словарь с данными о расчете
     field = list(set(data_wells.field.values))
     object_value = list(set(data_wells.object.values))
@@ -112,6 +126,46 @@ def load_wells_data(data_well_directory, min_length_hor_well=150, first_months=6
         object_value = object_value[0]
     info = {'field': field, "object_value": object_value}
     return data_history, data_wells, info
+
+def get_P_well_init(df, column):
+    """Получение Рзаб в первый или второй месяц работы скважины, если в первом нет"""
+    first_value = df.iloc[0][column]
+    if first_value > 0:
+        return first_value
+
+    # Проверка, если это единственная запись в скважине
+    if len(df) == 1:
+        return 0
+
+    second_value = df.iloc[1][column]
+    if second_value > 0 and (df['date'].iloc[1] - df['date'].iloc[0]).days / 31 <= 1:
+        return second_value
+    return 0
+
+def calculate_azimuth(row):
+    """Расчет азимута горизонтальной скважины"""
+    if row['well type'] != "horizontal":
+        return None  # Возвращаем None для вертикальных скважин
+
+    dX = row['T3_x'] - row['T1_x']  # Разность по оси X
+    dY = row['T3_y'] - row['T1_y']  # Разность по оси Y
+    beta = np.degrees(np.arctan2(abs(dY), abs(dX)))
+
+    # Определяем угол в зависимости от направления
+    if dX > 0:
+        if dY < 0:
+            azimuth = 270 + beta
+        else:
+            azimuth = 270 - beta
+    else:
+        if dY < 0:
+            azimuth = 90 - beta
+        else:
+            azimuth = 90 + beta
+
+    # Приведение к диапазону [0, 360)
+    azimuth = (360 - azimuth) % 360
+    return azimuth
 
 
 def load_geo_phys_properties(path_geo_phys_properties, name_field, name_object):
@@ -158,6 +212,8 @@ def get_save_path(program_name: str = "default", field: str = "field", object_va
     if os.access(path_program, os.W_OK):
         if "\\app" in path_program:
             path_program = path_program.replace("\\app", "")
+        if "\\drill_zones_handler" in path_program:
+            path_program = path_program.replace("\\drill_zones_handler", "")
         save_path = f"{path_program}\\output\\{field}_{object_value}"
     else:
         # Поиск другого диска с возможностью записи: D: если он есть и C:, если он один
