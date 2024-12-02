@@ -110,7 +110,6 @@ class Map:
 
         if len(x_in):
             # Создаем интерполятор
-            # interpolator = RegularGridInterpolator((y_coords[::-1], x_coords), self.data, method='linear')
             interpolator = RegularGridInterpolator((y_coords, x_coords), self.data, method='linear')
             # Получаем интерполированные значения в точках (x, y)
             interpolated_values = interpolator((y_in, x_in))

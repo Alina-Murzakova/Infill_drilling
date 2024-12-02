@@ -1,11 +1,12 @@
 from loguru import logger
+
 from local_parameters import paths, parameters_calculation, default_well_params, default_coefficients
 from input_output import load_wells_data, get_save_path, load_geo_phys_properties
+from app.decline_rate.decline_rate import get_decline_rate
 from app.maps_handler.functions import mapping
 from drill_zones_handler.drilling_zones import calculate_drilling_zones
 from well_active_zones import calculate_effective_radius
 from project_wells import init_locate_project_wells
-import pickle
 from app.maps_handler.maps import Map
 
 if __name__ == '__main__':
@@ -25,7 +26,7 @@ if __name__ == '__main__':
     buffer_project_wells = parameters_calculation["buffer_project_wells"] / default_size_pixel
 
     logger.info("Загрузка скважинных данных")
-    _, data_wells, info_object_calculation = load_wells_data(data_well_directory=data_well_directory)
+    data_history, data_wells, info_object_calculation = load_wells_data(data_well_directory=data_well_directory)
     name_field, name_object = info_object_calculation.get("field"), info_object_calculation.get("object_value")
     save_directory = get_save_path("Infill_drilling", name_field, name_object.replace('/', '-'))
 
@@ -40,6 +41,9 @@ if __name__ == '__main__':
 
     logger.info("Расчет радиусов дренирования и нагнетания для скважин")
     data_wells = calculate_effective_radius(data_wells, dict_geo_phys_properties, maps)
+
+    logger.info("Оценка темпов падения для текущего фонда")
+    data_decline_rate_stat, data_history_decline_rate, _ = get_decline_rate(data_history, data_wells)
 
     logger.info("Расчет зон с высоким индексом бурения")
     list_zones, info_clusterization_zones = calculate_drilling_zones(maps=maps,
@@ -77,14 +81,3 @@ if __name__ == '__main__':
                                                                        buffer_project_wells=buffer_project_wells)
 
     logger.info("Расчет запускных параметров проектных скважин")
-
-    # Сохранение list_zones в файлы
-    logger.info("Сохранение объектов list_zones и maps в формате pickle")
-    with open(f"{save_directory}/list_zones.pkl", 'wb') as f:
-        pickle.dump(list_zones, f)
-
-    with open(f"{save_directory}/maps.pkl", 'wb') as f:
-        pickle.dump(maps, f)
-
-    with open(f"{save_directory}/data_wells.pkl", 'wb') as f:
-        pickle.dump(data_wells, f)
