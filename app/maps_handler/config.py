@@ -12,4 +12,5 @@ list_names_map = ['NNT',  # ННТ, расчет карты ОИ
                   'reservoir_score',
                   'potential_score',
                   'risk_score',
-                  'opportunity_index']
+                  'opportunity_index',
+                  'permeability_fact_wells']

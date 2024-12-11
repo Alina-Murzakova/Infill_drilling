@@ -6,11 +6,90 @@ from loguru import logger
 from shapely.geometry import Point, LineString, Polygon, MultiPolygon
 from shapely.affinity import translate, rotate
 from shapely.ops import unary_union, nearest_points
+from sklearn.cluster import KMeans
 
 
-def create_gdf_with_polygons(points, labels):
+def get_project_wells_from_clusters(name_cluster, gdf_clusters, data_wells, default_size_pixel, buffer_project_wells):
+    """Получаем GeoDataFrame с начальными координатами проектных скважин"""
+    # Подготовка GeoDataFrame с проектными скважинами
+    gdf_project = gdf_clusters.copy()
+    gdf_project['well_number'] = [f'{name_cluster}_{i}' for i in range(1, len(gdf_project) + 1)]
+    gdf_project['well_marker'] = 'project'
+    gdf_project.rename(columns={'centers': 'POINT_T2_pix', 'geometry': 'cluster'}, inplace=True)
+    gdf_project.set_geometry("POINT_T2_pix", inplace=True)
+
+    # Подготовка GeoDataFrame с фактическими скважинами
+    df_fact_wells = (data_wells[(data_wells['Qo_cumsum'] > 0)
+                                | (data_wells['Winj_cumsum'] > 0)].reset_index(drop=True))
+    gdf_fact_wells = gpd.GeoDataFrame(df_fact_wells, geometry="LINESTRING_pix")
+
+    # GeoDataFrame с фактическими ГС
+    gdf_fact_hor_wells = gdf_fact_wells[gdf_fact_wells["well_type"] == "horizontal"].reset_index(drop=True)
+    if gdf_fact_hor_wells.empty:
+        logger.warning("На объекте нет фактических горизонтальных скважин! \n "
+                       "Необходимо задать азимут, длину, Рзаб проектных скважин вручную.")
+
+    # Находим ближайшие фактические ГС для проектных точек и рассчитываем параметры по окружению
+    gdf_project[["azimuth", 'length_pix']] = (gdf_project["POINT_T2_pix"].apply(
+        lambda center: pd.Series(get_well_path_nearest_wells(center, gdf_fact_hor_wells,
+                                                             threshold=2500/default_size_pixel))))
+    # Получаем точки T1 и T3 на основе центров кластеров (T2)
+    gdf_project[['POINT_T1_pix', 'POINT_T3_pix']] = gdf_project.apply(compute_t1_t3_points, axis=1,
+                                                                      result_type='expand')
+    # Получаем линии (горизонтальные стволы)
+    gdf_project['LINESTRING_pix'] = gdf_project.apply(lambda row: LineString([row['POINT_T1_pix'],
+                                                                              row['POINT_T3_pix']]), axis=1)
+    # Выпуклая оболочка для того, чтобы проектная скважина не выходила за её пределы
+    gdf_project['convex_hull'] = gdf_project['cluster'].apply(lambda x: x.convex_hull)
+    # Создаем буферы, чтобы искать пересечения зон скважин (для фактических скважин - радиусы дренирования)
+    gdf_fact_wells.set_geometry("LINESTRING_pix", inplace=True)
+    gdf_fact_wells['buffer'] = gdf_fact_wells.geometry.buffer(gdf_fact_wells["r_eff"] / default_size_pixel)
+    gdf_project['buffer'] = gdf_project.geometry.buffer(buffer_project_wells)
+    # Пересекающийся с проектным и/или фактическим фондом проектный фонд скважин
+    intersecting_proj_wells = gdf_project[
+        gdf_project.apply(lambda row: (gdf_fact_wells['buffer'].intersects(row['buffer']).any() or
+                                       gdf_project[gdf_project.index != row.name]['buffer'].intersects(
+                                           row['buffer']).any()), axis=1)]
+
+    # Смещаем, вращаем, сокращаем пересекающихся проектный фонд скважин, при наличии такового
+    if not intersecting_proj_wells.empty:
+        update_and_shift_proj_wells(gdf_project, gdf_fact_wells, intersecting_proj_wells, default_size_pixel,
+                                    buffer_project_wells)
+        gdf_project = gdf_project[gdf_project['well_marker'] != 'удалить']
+
+    gdf_project["POINT_T1_pix"] = gdf_project["LINESTRING_pix"].apply(lambda x: Point(x.coords[0]))
+    gdf_project["POINT_T3_pix"] = gdf_project["LINESTRING_pix"].apply(lambda x: Point(x.coords[-1]))
+    gdf_project.loc[gdf_project["POINT_T1_pix"] == gdf_project["POINT_T3_pix"], "well_type"] = "vertical"
+    gdf_project.loc[gdf_project["POINT_T1_pix"] != gdf_project["POINT_T3_pix"], "well_type"] = "horizontal"
+    return gdf_project
+
+
+def clusterize_drill_zone(tuple_points, map_rrr, num_project_wells, init_profit_cum_oil):
+    """Кластеризация зоны методом k-means, критерий: в каждой зоне должно быть достаточно запасов"""
+    points = np.column_stack(tuple_points)
+    array_rrr = map_rrr.data[tuple_points[1], tuple_points[0]]
+
+    # Уменьшаем количество скважин и кластеризуем пока во всех кластерах не будет достаточно запасов
+    while True:
+        kmeans = KMeans(n_clusters=num_project_wells, max_iter=300, random_state=42)
+        kmeans.fit(points)  # , sample_weight=value_OI)
+        labels = kmeans.labels_
+        cluster_reserves = np.array([np.sum(array_rrr[labels == i]) * map_rrr.geo_transform[1] ** 2 / 10000 / 1000
+                                     for i in range(num_project_wells)])
+        # Фильтрация кластеров по количеству запасов
+        valid_clusters = np.where(cluster_reserves >= init_profit_cum_oil)[0]
+
+        if len(valid_clusters) == num_project_wells or num_project_wells == 1:  # минимальное кол-во кластеров = 1
+            break
+        else:
+            num_project_wells -= 1
+
+    return num_project_wells, labels
+
+
+def create_gdf_with_polygons(tuple_points, labels):
     """Преобразование точек кластеров в полигоны и создание gdf с кластерами"""
-
+    points = np.column_stack(tuple_points)
     # Преобразуем точки кластера в GeoDataFrame
     gdf_points = gpd.GeoDataFrame(geometry=[Point(p) for p in points])
     # Создаем буферы вокруг точек (1 - минимальный буфер, необходимый затем для объединения)
@@ -66,6 +145,7 @@ def convert_multipolygon(row, gdf_clusters, coef_area=0.4):
         intersecting_polygons = gdf_clusters[(gdf_clusters.index != row.name) &
                                              (gdf_clusters.geometry.intersects(zone))].copy()
         if intersecting_polygons.empty:
+            gdf_clusters.at[row.name, 'zones'].remove(zone)
             continue  # Нет пересекающихся кластеров
 
         # Добавляем расстояние до текущей зоны для сортировки
@@ -110,22 +190,23 @@ def convert_multipolygon(row, gdf_clusters, coef_area=0.4):
             logger.warning("Несвязанный кластер (MultiPolygon) не перераспределился!")
 
 
-def get_nearest_wells(geometry, gdf_fact_wells, default_size_pixel, k=5, threshold=2500):
+def get_well_path_nearest_wells(center, gdf_fact_wells, threshold, k=5):
     """
-    Получаем параметры ближайших фактических горизонтальных скважин
+    Получаем параметры k - ближайших фактических горизонтальных скважин
     Parameters
     ----------
-    geometry - центр кластера скважины (POINT T2) или сама проектная скважина
+    center - центр кластера скважины (POINT_T2_pix)
     gdf_fact_wells - gdf с фактическими скважинами
-    k=5 - количество ближайших фактических скважин
-    threshold=2500 - максимальное расстояние для исключения скважины из ближайших скважин, м
+    threshold = 2500 / default_size_pixel - максимальное расстояние для исключения скважины
+                                                из ближайших скважин, пиксели
     Returns
     -------
-    gdf_nearest_wells - gdf с ближайшими фактическими скважинами
+    avg_azimuth - средний азимут по окружению
+    avg_length - средняя длина по окружению
+    avg_param - средний параметр name_param по окружению
     """
-    threshold = threshold / default_size_pixel
     # Вычисляем расстояния до всех ГС
-    distances = geometry.distance(gdf_fact_wells["LINESTRING"])
+    distances = center.distance(gdf_fact_wells["LINESTRING_pix"])
     sorted_distances = distances.nsmallest(k)
     nearest_hor_wells_index = [sorted_distances.index[0]]  # Ближайшая скважина всегда включается
 
@@ -137,46 +218,23 @@ def get_nearest_wells(geometry, gdf_fact_wells, default_size_pixel, k=5, thresho
     # Извлечение строк GeoDataFrame по индексам
     gdf_nearest_wells = gdf_fact_wells.loc[nearest_hor_wells_index]
 
-    return gdf_nearest_wells
-
-
-def get_params_nearest_wells(center, gdf_fact_wells, default_size_pixel, name_param):
-    """
-    Получаем параметры ближайших фактических горизонтальных скважин
-    Parameters
-    ----------
-    center - центр кластера скважины (POINT T2)
-    gdf_fact_wells - gdf с фактическими скважинами
-    Returns
-    -------
-    avg_azimuth - средний азимут по окружению
-    avg_length - средняя длина по окружению
-    avg_param - средний параметр name_param по окружению
-    """
-    gdf_nearest_hor_wells = get_nearest_wells(center, gdf_fact_wells, default_size_pixel)
-
-    # Расчет средний параметров по выбранному окружению в зависимости от типа параметры
-    if name_param == "траектория":
-        avg_azimuth = gdf_nearest_hor_wells.loc[(abs(gdf_nearest_hor_wells['azimuth'] - gdf_nearest_hor_wells['azimuth']
-                                                 .iloc[0]) <= 90)]['azimuth'].mean()
-        avg_length = np.mean(gdf_nearest_hor_wells['length_conv'])
-        return avg_azimuth, avg_length
-
-    else:
-        avg_param = np.mean(gdf_nearest_hor_wells[name_param])
-        return avg_param
+    # Расчет средний параметров по выбранному окружению
+    avg_azimuth = gdf_nearest_wells.loc[(abs(gdf_nearest_wells['azimuth']
+                                             - gdf_nearest_wells['azimuth'].iloc[0]) <= 90)]['azimuth'].mean()
+    avg_length = np.mean(gdf_nearest_wells['length_pix'])
+    return avg_azimuth, avg_length
 
 
 def compute_t1_t3_points(row):
     """Расчет точек Т1 и Т3 на основе Т2 (центра) и азимута"""
     azimuth_rad = np.radians(row['azimuth'])
-    half_length = row['length_conv'] / 2
+    half_length = row['length_pix'] / 2
 
     # Вычисление координат начальной и конечной точек
-    x1 = row['POINT T2'].x - half_length * np.sin(azimuth_rad)
-    y1 = row['POINT T2'].y + half_length * np.cos(azimuth_rad)
-    x2 = row['POINT T2'].x + half_length * np.sin(azimuth_rad)
-    y2 = row['POINT T2'].y - half_length * np.cos(azimuth_rad)
+    x1 = row['POINT_T2_pix'].x - half_length * np.sin(azimuth_rad)
+    y1 = row['POINT_T2_pix'].y + half_length * np.cos(azimuth_rad)
+    x2 = row['POINT_T2_pix'].x + half_length * np.sin(azimuth_rad)
+    y2 = row['POINT_T2_pix'].y - half_length * np.cos(azimuth_rad)
 
     return Point(x1, y1), Point(x2, y2)
 
@@ -200,12 +258,15 @@ def update_and_shift_proj_wells(gdf_project, gdf_fact_wells, intersecting_proj_w
 
         # Находим ближайшую пересеченную скважину
         if not intersected_wells.empty:
-            nearest_intersected_well = intersected_wells.loc[intersected_wells['LINESTRING'].apply(
-                lambda x: proj_row['LINESTRING'].distance(x)).idxmin()].copy()
+            intersected_wells['distance'] = intersected_wells['LINESTRING_pix'].apply(
+                lambda x: proj_row['LINESTRING_pix'].distance(x))
+            min_distance = intersected_wells['distance'].min()
+            nearest_intersected_well = intersected_wells[intersected_wells['distance'] == min_distance].copy().iloc[0]
         else:
             continue
 
-        original_position = proj_row['LINESTRING']
+        original_position = proj_row['LINESTRING_pix']
+        new_position = original_position
         is_updated = False  # Флаг для управления завершением цикла
         original_length = original_position.length  # Сохраняем первоначальную длину
         new_length = original_length
@@ -215,35 +276,35 @@ def update_and_shift_proj_wells(gdf_project, gdf_fact_wells, intersecting_proj_w
             new_position, is_updated = shift_project_well(proj_row, nearest_intersected_well, gdf_fact_wells,
                                                           other_proj_wells, buffer_project_wells)
             # Вращаем проектную скважину, если решение не нашлось и она не ННС
-            if not is_updated and proj_row['LINESTRING'].length > 0:
+            if not is_updated and proj_row['LINESTRING_pix'].length > 0:
                 new_position, is_updated = rotate_project_well(original_position, gdf_fact_wells,
                                                                other_proj_wells, buffer_project_wells)
             # Удаление проектной скважины из-за невозможности расположить её
             if not is_updated and new_length == 0:
-                gdf_project.at[proj_idx, 'well_type'] = 'удалить'
+                gdf_project.at[proj_idx, 'well_marker'] = 'удалить'
                 # gdf_project.drop(proj_idx, inplace=True)
                 break
 
             # Уменьшаем длины проектной скважины
-            if new_length >= min_length / default_size_pixel:
-                new_length -= 0.1 * original_length # Уменьшаем длину на 10%
-            else:
+            new_length -= 0.1 * original_length  # Уменьшаем длину на 10%
+            if new_length < min_length / default_size_pixel:
                 new_length = 0
 
             if not is_updated:
-                new_position = short_well(proj_row['LINESTRING'], new_length)
-                proj_row['LINESTRING'] = new_position
-                proj_row['length_conv'] = new_position.length
+                new_position = short_well(proj_row['LINESTRING_pix'], new_length)
+                proj_row['LINESTRING_pix'] = new_position
+                proj_row['length_pix'] = new_position.length
                 proj_row['buffer'] = new_position.buffer(buffer_project_wells)
 
         # Обновление данных
         if is_updated:
             gdf_project.at[proj_idx, 'buffer'] = new_position.buffer(buffer_project_wells)
-            gdf_project.at[proj_idx, 'LINESTRING'] = new_position
+            gdf_project.at[proj_idx, 'LINESTRING_pix'] = new_position
+            gdf_project.at[proj_idx, 'length_pix'] = new_position.length
 
 
 def shift_project_well(proj_row, nearest_intersected_well, gdf_fact_wells, other_proj_wells,
-                       buffer_project_wells, part_line_in=0.7, step_shift=1, max_attempts = 100):
+                       buffer_project_wells, part_line_in=0.7, step_shift=1, max_attempts=100):
     """
     Сдвиг проектной скважины в указанном направлении
     proj_row - строка gdf с проектными скважинами
@@ -259,14 +320,14 @@ def shift_project_well(proj_row, nearest_intersected_well, gdf_fact_wells, other
                        'right': (step_shift, 0),
                        'left': (-step_shift, 0)}
 
-    original_position = proj_row['LINESTRING']
+    original_position = proj_row['LINESTRING_pix']
 
     # Если исходная проектная скважина - не LINESTRING (не ГС)
     if not original_position.is_valid:
         original_position = Point(original_position.coords[0])
 
     # Определяем порядок направлений сдвига (вверх/вниз/влево/вправо)
-    directions = determine_shift_direction(original_position, nearest_intersected_well['LINESTRING'])
+    directions = determine_shift_direction(original_position, nearest_intersected_well['LINESTRING_pix'])
     Flag = False
     attempt_count = 0  # Счетчик попыток сдвига
 
@@ -284,22 +345,21 @@ def shift_project_well(proj_row, nearest_intersected_well, gdf_fact_wells, other
 
             # Если количество попыток превышает лимит, выходим
             if attempt_count > max_attempts:
-                logger.warning("НПревышен лимит попыток сдвига, скважина не может быть сдвинута.")
+                logger.warning("Превышен лимит попыток сдвига, скважина не может быть сдвинута.")
                 return original_position, False  # Сдвиг не удался
 
             # Смена Flag в случае, если изначально центр и больше 0,7*ГС вне кластера
-            if proj_row['cluster'].intersection(new_position).length >= (part_line_in * proj_row['length_conv']):
+            if proj_row['cluster'].intersection(new_position).length >= (part_line_in * proj_row['length_pix']):
                 if proj_row['cluster'].contains(new_position.centroid):
                     Flag = True
 
             # Меняем направление, если скважина начала выходить из кластера на >30%
             if (not proj_row['cluster'].intersection(new_position).length >=
-                    (part_line_in * proj_row['length_conv']) and Flag or
+                    (part_line_in * proj_row['length_pix']) and Flag or
                     not proj_row['cluster'].contains(new_position.centroid) and Flag or
                     not proj_row['convex_hull'].intersection(new_position).length >=
-                        (part_line_in * proj_row['length_conv']) or
+                        (part_line_in * proj_row['length_pix']) or
                     not proj_row['convex_hull'].contains(new_position.centroid)):
-
                 Flag = False
                 break
 

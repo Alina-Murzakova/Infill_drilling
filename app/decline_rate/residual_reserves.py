@@ -9,7 +9,7 @@ from shapely.geometry import Point
 from sklearn.metrics import mean_squared_error
 from sklearn.linear_model import LinearRegression
 
-from app.well_active_zones import create_gdf_coordinates
+# from app.well_active_zones import create_gdf_coordinates
 
 pd.options.mode.chained_assignment = None
 
@@ -58,15 +58,15 @@ def get_reserves_by_characteristic_of_desaturation(df, min_reserves, r_max, year
 
     """_________________Заключительный этап: расчет для скважин с ошибкой по карте______________________"""
 
-    df_coordinates = df[['well_number', 'T3_x', 'T3_y']]
+    df_coordinates = df[['well_number', 'T3_x_geo', 'T3_y_geo']]
     df_coordinates = df_coordinates.drop_duplicates(subset=['well_number']).reset_index(drop=True)
     df_all = df_reserves.set_index('Скважина')
     df_coordinates = df_coordinates.set_index('well_number')
-    df_field = pd.merge(df_coordinates[['T3_x', 'T3_y']], df_all[['НИЗ']], left_index=True, right_index=True)
+    df_field = pd.merge(df_coordinates[['T3_x_geo', 'T3_y_geo']], df_all[['НИЗ']], left_index=True, right_index=True)
 
     df_errors = pd.DataFrame({'Скважина': well_error, 'well_number': well_error})
     df_errors = df_errors.set_index('well_number')
-    df_errors = pd.merge(df_coordinates[['T3_x', 'T3_y']], df_errors[['Скважина']], left_index=True, right_index=True)
+    df_errors = pd.merge(df_coordinates[['T3_x_geo', 'T3_y_geo']], df_errors[['Скважина']], left_index=True, right_index=True)
 
     # списки для заполнения
     marker, list_residual_reserves, list_initial_reserves = [], [], []
@@ -74,7 +74,7 @@ def get_reserves_by_characteristic_of_desaturation(df, min_reserves, r_max, year
     for well in tqdm(well_error, desc='Расчет ОИЗ для скважин с ошибкой по карте'):
         # Информация по скважине
         df_well = df.loc[df.well_number == well].reset_index(drop=True)
-        x_well, y_well = df_errors['T3_x'][well], df_errors['T3_y'][well]
+        x_well, y_well = df_errors['T3_x_geo'][well], df_errors['T3_y_geo'][well]
         cumulative_oil_production = df_well['Qo'].cumsum().values[-1]
         # Добыча нефти за предпоследний и последний месяц
         if df_well.shape[0] > 1:
@@ -82,7 +82,7 @@ def get_reserves_by_characteristic_of_desaturation(df, min_reserves, r_max, year
         else:
             Q_next_to_last = 0
         Q_last = df_well['Qo'].values[-1]
-        distance = ((x_well - df_field['T3_x']) ** 2 + (y_well - df_field['T3_y']) ** 2) ** 0.5
+        distance = ((x_well - df_field['T3_x_geo']) ** 2 + (y_well - df_field['T3_y_geo']) ** 2) ** 0.5
         r_min = distance.min()
         if r_min > r_max:
             marker.append("!!!Ближайшая скважина на расстоянии " + str(r_min))
@@ -90,7 +90,7 @@ def get_reserves_by_characteristic_of_desaturation(df, min_reserves, r_max, year
             marker.append("Скважина в пределах ограничений по расстоянию")
 
         initial_reserves = interpolate_reserves(x_well, y_well,
-                                                df_field[['T3_x']], df_field[['T3_y']], df_field[['НИЗ']])
+                                                df_field[['T3_x_geo']], df_field[['T3_y_geo']], df_field[['НИЗ']])
         error_residual_reserves = initial_reserves - cumulative_oil_production
 
         work_time = error_residual_reserves / (Q_last * 12)
@@ -121,7 +121,7 @@ def get_reserves_by_map(data_wells, map_rrr, min_reserves=2):
     ----------
 
     data_wells - массив скважин с основными данными
-    map_rrr - карта ОИЗ
+    map_rrr - карта ОИЗ, т/Га
     min_reserves - минимальные запасы в тыс.т (по-умолчанию 2)
 
     Returns
@@ -148,23 +148,21 @@ def get_reserves_by_map(data_wells, map_rrr, min_reserves=2):
     gdf_mesh = gpd.GeoDataFrame(mesh, geometry="Mesh_Points")
     mesh_pixel = pd.DataFrame(grid_points_pixel, columns=['x_coords', 'y_coords'])
 
-    gdf_Coordinates = create_gdf_coordinates(data_wells)
-    gdf_Coordinates["r_eff_voronoy"] = data_wells["r_eff_voronoy"]
-    gdf_Coordinates["polygon_r_eff_voronoy"] = (gdf_Coordinates.set_geometry("LINESTRING")
-                                                .buffer(gdf_Coordinates["r_eff_voronoy"]))
+    gdf_data_wells = gpd.GeoDataFrame(data_wells, geometry="LINESTRING_geo")
+    gdf_data_wells["polygon_r_eff_voronoy"] = gdf_data_wells.buffer(gdf_data_wells["r_eff_voronoy"])
     import warnings
     with warnings.catch_warnings(action='ignore', category=pd.errors.SettingWithCopyWarning):
-        gdf_Coordinates["reserves"] = None
+        gdf_data_wells["reserves"] = None
 
-    for index, row in gdf_Coordinates.iterrows():
-        points_index = list(gdf_mesh[gdf_Coordinates.loc[index, "polygon_r_eff_voronoy"]
+    for index, row in gdf_data_wells.iterrows():
+        points_index = list(gdf_mesh[gdf_data_wells.loc[index, "polygon_r_eff_voronoy"]
                             .contains(gdf_mesh["Mesh_Points"])].index)
         array_rrr = map_rrr.data[mesh_pixel.loc[points_index, 'y_coords'], mesh_pixel.loc[points_index, 'x_coords']]
         value_rrr = np.sum(array_rrr * area_cell / 10000) / 1000
-        gdf_Coordinates.loc[index, "reserves"] = value_rrr
+        gdf_data_wells.loc[index, "reserves"] = value_rrr
         if value_rrr == 0 or value_rrr < min_reserves:
-            gdf_Coordinates.loc[index, "reserves"] = min_reserves
-    return gdf_Coordinates["reserves"]
+            gdf_data_wells.loc[index, "reserves"] = min_reserves
+    return gdf_data_wells["reserves"]
 
 
 def calculate_reserves_statistics(df_well, name_well, marker="all_period"):
@@ -229,7 +227,7 @@ def calculate_reserves_statistics(df_well, name_well, marker="all_period"):
         row = [name_well, results[0][i], results[1][i], list_methods[i], df_well['Qo'].values[-1],
                Q_next_to_last, cumulative_oil_production, results[2][i], results[3][i],
                results[1][i] / df_well['Qo'].values[-1], work_time,
-               float(df_well.T3_x.iloc[-1]), float(df_well.T3_y.iloc[-1])]
+               float(df_well.T3_x_geo.iloc[-1]), float(df_well.T3_y_geo.iloc[-1])]
         df_well_result.loc[len(df_well_result)] = row
 
     # Оценка текущего решения по фильтрам

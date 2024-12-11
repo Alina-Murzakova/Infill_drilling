@@ -3,8 +3,10 @@ import numpy as np
 from loguru import logger
 from osgeo import gdal, ogr
 
-from .maps import (Map, read_array, read_raster,
-                   get_map_reservoir_score, get_map_potential_score, get_map_risk_score, get_map_opportunity_index)
+from .maps import (Map, read_array, read_raster, get_map_reservoir_score, get_map_potential_score,
+                   get_map_risk_score, get_map_opportunity_index)
+from ..input_output import create_shapely_types
+from ..well_active_zones import get_value_map
 
 
 @logger.catch
@@ -31,7 +33,29 @@ def mapping(maps_directory, data_wells, dict_properties, default_size_pixel):
 
     logger.info(f"Расчет оценочных карт")
     maps = maps + calculate_score_maps(maps, dict_properties)
-    return maps
+
+    logger.info(f"Перевод координат скважин в пиксельные")
+    data_wells['T1_x_pix'], data_wells['T1_y_pix'] = maps[-1].convert_coord_to_pix(
+        (data_wells["T1_x_geo"].to_numpy(), data_wells["T1_y_geo"].to_numpy()))
+    data_wells['T3_x_pix'], data_wells['T3_y_pix'] = maps[-1].convert_coord_to_pix(
+        (data_wells["T3_x_geo"].to_numpy(), data_wells["T3_y_geo"].to_numpy()))
+    data_wells['length_pix'] = np.sqrt(np.power(data_wells.T3_x_pix - data_wells.T1_x_pix, 2)
+                                       + np.power(data_wells.T3_y_pix - data_wells.T1_y_pix, 2))
+    # расчет Shapely объектов
+    df_shapely = create_shapely_types(data_wells, list_names=['T1_x_pix', 'T1_y_pix', 'T3_x_pix', 'T3_y_pix'])
+    data_wells[['POINT_T1_pix', 'POINT_T3_pix', 'LINESTRING_pix']] = df_shapely
+
+    logger.info(f"Запись значений с карт для текущего фонда")
+    # с карт снимаем значения eff_h (NNT), m, So
+    type_map_list = list(map(lambda raster: raster.type_map, maps))
+    dict_column_map = {'NNT': "NNT", 'm': "porosity", 'So': "initial_oil_saturation",
+                       'permeability': "permeability"}
+    for column_key in dict_column_map.keys():
+        data_wells[column_key] = data_wells.apply(
+            lambda row: get_value_map(row['well_type'], row['T1_x_pix'], row['T1_y_pix'], row['T3_x_pix'],
+                                      row['T3_y_pix'], row['length_pix'],
+                                      raster=maps[type_map_list.index(dict_column_map[column_key])]), axis=1)
+    return maps, data_wells
 
 
 def maps_load_directory(maps_directory):
@@ -90,7 +114,6 @@ def maps_load_df(data_wells, dst_geo_transform, shape):
     logger.info(f"Загрузка карты стартовых дебитов нефти на основе выгрузки МЭР")
     maps.append(read_array(data_wells, name_column_map="init_Qo_rate", type_map="init_rate_oil",
                            geo_transform=dst_geo_transform, size=shape))
-
     return maps
 
 
@@ -162,13 +185,11 @@ def calculate_score_maps(maps, dict_properties):
                                                   map_last_rate_oil,
                                                   map_init_rate_oil)
     logger.info("Расчет карты оценки риска")
-    init_pressure = dict_properties['init_pressure']
+    init_pressure = dict_properties['P_init']
     if init_pressure == 0:
         init_pressure = np.max(map_pressure.data)
-    # обязательно перевод начального из МПа в атм: init_pressure * 9.87
     map_risk_score = get_map_risk_score(map_water_cut, map_initial_oil_saturation, map_pressure,
-                                        init_pressure=init_pressure * 9.87)
-
+                                        init_pressure=init_pressure)
     logger.info("Расчет карты индекса возможностей")
     map_opportunity_index = get_map_opportunity_index(map_reservoir_score, map_potential_score, map_risk_score)
     # где нет толщин и давления opportunity_index = 0
@@ -211,7 +232,7 @@ def active_well_outline(df_wells):
      Parameters
     ----------
     df_wells - DataFrame скважин с обязательными столбцами:
-                [well type, T1_x, T1_y, T3_x,T3_y]
+                [well type, T1_x_geo, T1_y_geo, T3_x_geo, T3_y_geo]
     buffer_radius - расстояние от скважин, на котором нельзя бурить // в перспективе замена на радиус дренирования,
      нагнетания с индивидуальным расчетом для каждой скважины
 
@@ -228,8 +249,8 @@ def active_well_outline(df_wells):
         # Создание геометрии для каждой скважины
         buffer_radius = row.r_eff  # радиус из строки
         line = ogr.Geometry(ogr.wkbLineString)
-        line.AddPoint(row.T1_x, row.T1_y)
-        line.AddPoint(row.T3_x, row.T3_y)
+        line.AddPoint(row.T1_x_geo, row.T1_y_geo)
+        line.AddPoint(row.T3_x_geo, row.T3_y_geo)
         return line.Buffer(buffer_radius)
 
     # Создаём список буферов
@@ -321,3 +342,16 @@ def cut_map_by_mask(base_map, mask, blank_value=np.nan):
                        base_map.type_map)
 
     return modified_map
+
+
+def save_map_permeability_fact_wells(data_wells, map_pressure, filename):
+    map_permeability_fact_wells = read_array(data_wells,
+                                             name_column_map="permeability_fact",
+                                             type_map="permeability_fact_wells",
+                                             geo_transform=map_pressure.geo_transform,
+                                             size=map_pressure.data.shape)
+
+    map_permeability_fact_wells.data = np.where(np.isnan(map_permeability_fact_wells.data), 0,
+                                                map_permeability_fact_wells.data)
+    map_permeability_fact_wells.save_img(filename, data_wells)
+    pass

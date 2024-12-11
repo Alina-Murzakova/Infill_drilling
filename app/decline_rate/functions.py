@@ -1,8 +1,5 @@
-import calendar
 import numpy as np
 import pandas as pd
-
-from datetime import date, timedelta
 
 
 def history_processing(history, max_delta):
@@ -51,37 +48,38 @@ def history_processing(history, max_delta):
     del history_new["next_date"]
     return history_new
 
-
-def fluid_production_mod(period, model_corey_well, model_arps_well, date_last, oil_recovery_factor, initial_reserves):
-    """
-    Построение профиля жидкости
-    :param period: период расчета (мес.)
-    :param model_corey_well: параметры функции Кори для скважины
-    :param model_arps_well: параметры Арпса
-    :param date_last: дата начала прогноза
-    :param oil_recovery_factor: текущая выработка
-    :param initial_reserves: НИЗ
-    :return: [Qo_rate, Ql_rate] - набор списков добыча нефти и добыча жидкости
-    """
-    Co, Cw, mef = model_corey_well
-    k1, k2, starting_index, starting_productivity = model_arps_well
-    k1 = float(k1)
-    k2 = float(k2)
-    starting_index = int(float(starting_index))
-    starting_productivity = float(starting_productivity)
-    date_last = date(date_last[0], date_last[1], date_last[2])
-
-    Qo, Qo_rate, Ql_rate, water_cut = [0], [], [], []
-    for month in range(period):
-        oil_recovery_factor = oil_recovery_factor + Qo[-1] / initial_reserves / 1000
-        if oil_recovery_factor >= 1:
-            oil_recovery_factor = 0.99999999999
-        water_cut.append(mef * oil_recovery_factor ** Cw /
-                         ((1 - oil_recovery_factor) ** Co + mef * oil_recovery_factor ** Cw))
-        Ql_rate.append(starting_productivity * (1 + k1 * k2 * (starting_index - 1)) ** (-1 / k2))
-        starting_index += 1
-        Qo_rate.append(Ql_rate[-1] * (1 - water_cut[-1]))
-        days_in_month = calendar.monthrange(date_last.year, date_last.month)[1]
-        Qo.append(Qo_rate[-1] * days_in_month)
-        date_last += timedelta(days=days_in_month)
-    return Qo_rate, Ql_rate
+# from datetime import (date, timedelta)
+# import calendar
+# def fluid_production_mod(period, model_corey_well, model_arps_well, date_last, oil_recovery_factor, initial_reserves):
+#     """
+#     Построение профиля жидкости !!!! требует изменения под новый формат
+#     :param period: период расчета (мес.)
+#     :param model_corey_well: параметры функции Кори для скважины
+#     :param model_arps_well: параметры Арпса
+#     :param date_last: дата начала прогноза
+#     :param oil_recovery_factor: текущая выработка
+#     :param initial_reserves: НИЗ
+#     :return: [Qo_rate, Ql_rate] - набор списков добыча нефти и добыча жидкости
+#     """
+#     Co, Cw, mef = model_corey_well
+#     k1, k2, starting_index, starting_productivity = model_arps_well
+#     k1 = float(k1)
+#     k2 = float(k2)
+#     starting_index = int(float(starting_index))
+#     starting_productivity = float(starting_productivity)
+#     date_last = date(date_last[0], date_last[1], date_last[2])
+#
+#     Qo, Qo_rate, Ql_rate, water_cut = [0], [], [], []
+#     for month in range(period):
+#         oil_recovery_factor = oil_recovery_factor + Qo[-1] / initial_reserves / 1000
+#         if oil_recovery_factor >= 1:
+#             oil_recovery_factor = 0.99999999999
+#         water_cut.append(mef * oil_recovery_factor ** Cw /
+#                          ((1 - oil_recovery_factor) ** Co + mef * oil_recovery_factor ** Cw))
+#         Ql_rate.append(starting_productivity * (1 + k1 * k2 * (starting_index - 1)) ** (-1 / k2))
+#         starting_index += 1
+#         Qo_rate.append(Ql_rate[-1] * (1 - water_cut[-1]))
+#         days_in_month = calendar.monthrange(date_last.year, date_last.month)[1]
+#         Qo.append(Qo_rate[-1] * days_in_month)
+#         date_last += timedelta(days=days_in_month)
+#     return Qo_rate, Ql_rate

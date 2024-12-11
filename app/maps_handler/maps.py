@@ -70,14 +70,14 @@ class Map:
         os.remove(filename_copy)
         os.remove(filename.replace(".grd", "") + ".grd.aux.xml")
 
-    def convert_coord(self, array):
+    def convert_coord_to_pix(self, array):
         """Преобразование координат массива в пиксельные координаты в соответствии с geo_transform карты"""
         x, y = array
         conv_x = np.where(x != 0, ((x - self.geo_transform[0]) / self.geo_transform[1]).astype(int), np.nan)
         conv_y = np.where(y != 0, ((self.geo_transform[3] - y) / abs(self.geo_transform[5])).astype(int), np.nan)
         return conv_x, conv_y
 
-    def convert_coord_from_pixel(self, array):
+    def convert_coord_to_geo(self, array):
         """Преобразование координат массива из пиксельных координат в соответствии с geo_transform карты"""
         conv_x, conv_y = array
         x = np.where(conv_x != 0, (conv_x * self.geo_transform[1] + self.geo_transform[0]), np.nan)
@@ -89,8 +89,7 @@ class Map:
         Получить значения с карты по спискам x и y
         Parameters
         ----------
-        x - array координаты x скважины (не в пикселях)
-        y - array координаты y скважины (не в пикселях)
+        x, y - array координаты x, y в пикселях
 
         Returns
         -------
@@ -99,12 +98,12 @@ class Map:
         interpolated_values, values_out = [], []
 
         # Создаем массивы координат
-        x_coords = self.geo_transform[0] + np.arange(self.data.shape[1]) * self.geo_transform[1]
-        y_coords = self.geo_transform[3] + np.arange(self.data.shape[0]) * self.geo_transform[5]
+        x_coords = np.arange(self.data.shape[1])
+        y_coords = np.arange(self.data.shape[0])
 
         # Проверка, чтобы не выйти за пределы изображения
         mask_x_in = (x >= x_coords[0]) & (x <= x_coords[-1])
-        mask_y_in = (y >= y_coords[-1]) & (y <= y_coords[0])
+        mask_y_in = (y >= y_coords[0]) & (y <= y_coords[-1])
         mask_all_in = mask_x_in & mask_y_in
         x_in, y_in = list(np.array(x)[mask_all_in]), list(np.array(y)[mask_all_in])
 
@@ -121,14 +120,14 @@ class Map:
         values = list(interpolated_values) + values_out
         return values
 
-    def save_img(self, filename, data_wells=None, list_zones=None, info_clusterization_zones=None):
+    def save_img(self, filename, data_wells=None, list_zones=None, info_clusterization_zones=None, project_wells=None):
         import matplotlib.pyplot as plt
 
         # Определение размера осей
         x = (self.geo_transform[0], self.geo_transform[0] + self.geo_transform[1] * self.data.shape[1])
         y = (self.geo_transform[3] + self.geo_transform[5] * self.data.shape[0], self.geo_transform[3])
-        x_plt = self.convert_coord((np.array(x), np.array(y)))[0]
-        y_plt = self.convert_coord((np.array(x), np.array(y)))[1]
+        x_plt = self.convert_coord_to_pix((np.array(x), np.array(y)))[0]
+        y_plt = self.convert_coord_to_pix((np.array(x), np.array(y)))[1]
         d_x, d_y = abs(x_plt[1] - x_plt[0]), abs(y_plt[1] - y_plt[0])
         count = len(str(int(min(d_x, d_y))))
 
@@ -142,16 +141,16 @@ class Map:
 
         # Отображение списка скважин на карте
         if data_wells is not None:
-            column_lim_x = ['T1_x', 'T3_x']
+            column_lim_x = ['T1_x_geo', 'T3_x_geo']
             for column in column_lim_x:
                 data_wells = data_wells.loc[((data_wells[column] <= x[1]) & (data_wells[column] >= x[0]))]
-            column_lim_y = ['T1_y', 'T3_y']
+            column_lim_y = ['T1_y_geo', 'T3_y_geo']
             for column in column_lim_y:
                 data_wells = data_wells.loc[((data_wells[column] <= y[1]) & (data_wells[column] >= y[0]))]
 
-            # Преобразование координат скважин в пиксельные координаты
-            x_t1, y_t1 = self.convert_coord((data_wells.T1_x, data_wells.T1_y))
-            x_t3, y_t3 = self.convert_coord((data_wells.T3_x, data_wells.T3_y))
+            # координаты скважин в пиксельных координатах
+            x_t1, y_t1 = (data_wells.T1_x_pix, data_wells.T1_y_pix)
+            x_t3, y_t3 = (data_wells.T3_x_pix, data_wells.T3_y_pix)
 
             # Отображение скважин на карте
             plt.plot([x_t1, x_t3], [y_t1, y_t3], c='black', linewidth=element_size * 0.3)
@@ -180,18 +179,22 @@ class Map:
                 zone = list_zones[labels.index(i)]
                 x_zone = zone.x_coordinates
                 y_zone = zone.y_coordinates
-                mean_index = np.mean(zone.opportunity_index_values)
-                max_index = np.max(zone.opportunity_index_values)
                 plt.scatter(x_zone, y_zone, color=c, alpha=0.6, s=1)
 
                 if i != -1:
-                    # Отображение среднего и максимального индексов рядом с кластерами
-                    plt.text(x_zone[int(len(x_zone) / 2)], y_zone[int(len(y_zone) / 2)],
-                             f"OI_mean = {np.round(mean_index, 3)}",
-                             fontsize=font_size, ha='left', color="black")
-                    plt.text(x_zone[int(len(x_zone) / 2)], y_zone[int(len(y_zone) / 2)] - 10,
-                             f"OI_max = {np.round(max_index, 3)}",
-                             fontsize=font_size, ha='left', color="black")
+                    #  Отрисовка проектного фонда
+                    if project_wells:
+                        for well in zone.list_project_wells:
+                            # координаты скважин в пиксельных координатах
+                            x_t1, y_t1 = (well.POINT_T1_pix.x, well.POINT_T1_pix.y)
+                            x_t3, y_t3 = (well.POINT_T3_pix.x, well.POINT_T3_pix.y)
+
+                            # Отображение скважин на карте
+                            plt.plot([x_t1, x_t3], [y_t1, y_t3], c='red', linewidth=element_size * 0.3)
+                            plt.scatter(x_t1, y_t1, s=element_size, c='red', marker="o", linewidths=0.1)
+
+                            # Отображение имен скважин рядом с точками T1
+                            plt.text(x_t1 + 3, y_t1 - 3, well.well_number, fontsize=font_size, ha='left')
 
             if info_clusterization_zones is not None:
                 title = (f"Epsilon = {info_clusterization_zones['epsilon']}\n "
@@ -267,25 +270,37 @@ def read_array(data_wells, name_column_map, type_map, geo_transform, size,
         data_wells_with_work = data_wells[(data_wells.Ql_rate > 0)]
 
         with warnings.catch_warnings(action='ignore', category=pd.errors.SettingWithCopyWarning):
-            data_wells_with_work[name_column_map] = np.where(data_wells_with_work['well type'] == 'horizontal',
+            data_wells_with_work[name_column_map] = np.where(data_wells_with_work['well_type'] == 'horizontal',
                                                              data_wells_with_work[name_column_map] /
-                                                             data_wells_with_work["length of well T1-3"],
+                                                             data_wells_with_work["length_geo"],
                                                              data_wells_with_work[name_column_map])
-            data_wells_with_work[name_column_map] = data_wells_with_work.groupby('well type')[
+            data_wells_with_work[name_column_map] = data_wells_with_work.groupby('well_type')[
                 name_column_map].transform(lambda x: (x - x.min()) / (x.max() - x.min()))
 
         """Обработка колонок last_rate_oil и init_rate_oil через коэффициент
         NNS_mean_init_Ql = data_wells[(data_wells['init_Ql_rate'] != 0) &
-                                      (data_wells['well type'] == 'vertical')]['init_Ql_rate'].mean()
+                                      (data_wells['well_type'] == 'vertical')]['init_Ql_rate'].mean()
         GS_mean_init_Ql = data_wells[(data_wells['init_Ql_rate'] != 0) &
-                                     (data_wells['well type'] == 'horizontal')]['init_Ql_rate'].mean()
+                                     (data_wells['well_type'] == 'horizontal')]['init_Ql_rate'].mean()
         coefficient_GS_to_NNS = round(NNS_mean_init_Ql / GS_mean_init_Ql, 1)
         logger.info(f'Коэффициент соотношения дебитов жидкости ННС и ГС: {coefficient_GS_to_NNS}')
 
         with warnings.catch_warnings(action='ignore', category=pd.errors.SettingWithCopyWarning):
-            data_wells_with_work[name_column_map] = np.where(data_wells_with_work['well type'] == 'horizontal',
+            data_wells_with_work[name_column_map] = np.where(data_wells_with_work['well_type'] == 'horizontal',
                                                          data_wells_with_work[name_column_map] * coefficient_GS_to_NNS,
                                                          data_wells_with_work[name_column_map])"""
+    elif type_map == "permeability_fact_wells":
+        permeability_column = data_wells[data_wells['permeability_fact'] > 0]['permeability_fact']
+        # Рассчитываем квартили
+        q1 = np.percentile(permeability_column, 25)
+        q3 = np.percentile(permeability_column, 75)
+        iqr = q3 - q1
+        # Определяем порог для отсеивания "выбросов"
+        upper_bound = q3 + 1.5 * iqr
+        # Выбираем только ту проницаемость, которая меньше или равна верхнему пределу
+        data_wells = data_wells[(data_wells['permeability_fact'] <= upper_bound)
+                                & (data_wells['permeability_fact'] > 0)].reset_index(drop=True)
+        data_wells_with_work = data_wells
     else:
         data_wells_with_work = pd.DataFrame()
         if type_map not in list_names_map:
@@ -294,10 +309,11 @@ def read_array(data_wells, name_column_map, type_map, geo_transform, size,
     if accounting_GS:
         # Формирование списка точек для ствола каждой скважины
         coordinates = data_wells_with_work.apply(
-            lambda row: pd.Series(trajectory_break_points(row['well type'], row['T1_x'], row['T1_y'], row['T3_x'],
-                                                          row['T3_y'], row['length of well T1-3'],
+            lambda row: pd.Series(trajectory_break_points(row['well_type'], row['T1_x_geo'],
+                                                          row['T1_y_geo'], row['T3_x_geo'],
+                                                          row['T3_y_geo'], row['length_geo'],
                                                           default_size=geo_transform[1]),
-                                  index=['x_coords', 'y_coords']), axis=1)
+                                                          index=['x_coords', 'y_coords']), axis=1)
         # Объединяем координаты и с исходным df
         data_wells_with_work = pd.concat([data_wells_with_work, coordinates], axis=1)
 
@@ -312,7 +328,7 @@ def read_array(data_wells, name_column_map, type_map, geo_transform, size,
 
     else:
         # Построение карт по значениям T1
-        x, y = np.array(data_wells_with_work.T1_x), np.array(data_wells_with_work.T1_y)
+        x, y = np.array(data_wells_with_work.T1_x_geo), np.array(data_wells_with_work.T1_y_geo)
         well_coord = np.column_stack((x, y))
         # Выделяем значения для карты
         values = np.array(data_wells_with_work[name_column_map])
@@ -338,7 +354,7 @@ def read_array(data_wells, name_column_map, type_map, geo_transform, size,
     grid_points_mask = grid_points[points_mask]
 
     # Использование RBFInterpolator
-    rbf_interpolator = RBFInterpolator(well_coord, values, kernel='linear')  # сглаживание smoothing=0.5
+    rbf_interpolator = RBFInterpolator(well_coord, values, kernel='linear', epsilon=10)  # сглаживание smoothing=0.5
 
     # Предсказание значений на сетке
     valid_grid_z = rbf_interpolator(grid_points_mask)
@@ -346,7 +362,7 @@ def read_array(data_wells, name_column_map, type_map, geo_transform, size,
     grid_z.ravel()[points_mask] = valid_grid_z
 
     # Применяем ограничения на минимальное и максимальное значения карты
-    grid_z = np.clip(grid_z, 0, 100).T
+    grid_z = np.clip(grid_z, values.min(), values.max()).T
 
     # Определение геотрансформации
     geo_transform = [x_min, (x_max - x_min) / grid_z.shape[1], 0, y_max, 0, -((y_max - y_min) / grid_z.shape[0])]

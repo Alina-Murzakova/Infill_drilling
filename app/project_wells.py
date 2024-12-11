@@ -1,234 +1,149 @@
+import geopandas as gpd
 import pandas as pd
 import numpy as np
-import time
-import geopandas as gpd
-import matplotlib.pyplot as plt
-from shapely.geometry import Point, LineString, Polygon, MultiPolygon
+
 from loguru import logger
-from app.input_output import get_save_path
-from app.drill_zones.functions import (get_nearest_wells, get_params_nearest_wells)
+
+from app.decline_rate.decline_rate import get_avg_decline_rates
 from app.well_active_zones import get_value_map
-from app.ranking_drilling.starting_rates import (get_geo_phys_and_default_params, calculate_starting_rate)
-
-
-@logger.catch
-def init_locate_project_wells(maps, list_zones, data_wells, save_directory, init_profit_cum_oil, init_area_well,
-                              default_size_pixel, buffer_project_wells):
-    """
-    Размещение проектного фонда в зонах с высоким индексом возможности OI
-    Parameters
-    ----------
-    maps - список всех карт
-    data_wells - фрейм фактических скважин
-    Returns
-    -------
-    gdf_project_wells - фрейм проектных скважин
-    """
-    list_zones = list_zones[1:]
-    type_maps_list = list(map(lambda raster: raster.type_map, maps))
-    # инициализация карты ОИЗ
-    map_residual_recoverable_reserves = maps[type_maps_list.index("residual_recoverable_reserves")]
-
-    list_project_wells = []
-
-    start_time = time.time()
-    for drill_zone in list_zones:
-        drill_zone.get_init_project_wells(map_residual_recoverable_reserves, data_wells, init_profit_cum_oil,
-                                               init_area_well, default_size_pixel, buffer_project_wells)
-        list_project_wells.extend(drill_zone.list_project_wells)
-
-    end_time = time.time()
-    print(f"Время выполнения: {end_time - start_time} секунд")
-    # Создаем GeoDataFrame из списка проектных скважин
-    gdf_project_wells = gpd.GeoDataFrame({'well_number': [well.well_number for well in list_project_wells],
-                                          'well_type': [well.well_type for well in list_project_wells],
-                                          'geometry': [well.linestring for well in list_project_wells],
-                                          'cluster': [well.cluster for well in list_project_wells],
-                                          'POINT T1': [well.point_T1 for well in list_project_wells]})
-
-    gdf_project_wells['buffer'] = gdf_project_wells.geometry.buffer(buffer_project_wells)
-
-    logger.info("Сохраняем .png карту с начальным расположением проектного фонда")
-    fig, ax = plt.subplots(figsize=(10, 10))
-
-    gdf_project_wells.set_geometry("cluster").plot(ax=ax, cmap="viridis", linewidth=0.5)
-    gdf_project_wells.set_geometry("buffer").plot(edgecolor="gray", facecolor="white", alpha=0.5, ax=ax)
-    gdf_project_wells.set_geometry("geometry").plot(ax=ax, color='red', linewidth=1, markersize=1)
-
-    # Отображение точек T1 на графике
-    gdf_project_wells.set_geometry('POINT T1').plot(color='red', markersize=10, ax=ax)
-
-    # Добавление текста с именами скважин рядом с точками T1
-    for point, name in zip(gdf_project_wells['POINT T1'], gdf_project_wells['well_number']):
-        if point is not None:
-            plt.text(point.x + 2, point.y - 2, name, fontsize=6, ha='left')
-
-    plt.gca().invert_yaxis()
-
-    plt.savefig(f"{save_directory}/init_project_wells.png", dpi=400)
-
-    return list_project_wells, gdf_project_wells
+from app.ranking_drilling.starting_rates import calculate_starting_rate
 
 
 class ProjectWell:
-    def __init__(self, well_number, cluster, point_T1, point_T3, linestring, azimuth, well_type):
+    def __init__(self, well_number, cluster, POINT_T1_pix, POINT_T3_pix, LINESTRING_pix, azimuth, well_type):
         self.well_number = well_number
         self.cluster = cluster
-        self.point_T1 = point_T1
-        self.point_T3 = point_T3
-        self.linestring = linestring
+        self.POINT_T1_pix = POINT_T1_pix
+        self.POINT_T3_pix = POINT_T3_pix
+        self.LINESTRING_pix = LINESTRING_pix
         self.azimuth = azimuth
         self.well_type = well_type
+
+        self.length_geo = None
+        self.length_pix = None
+        self.POINT_T1_geo = None
+        self.POINT_T3_geo = None
+        self.LINESTRING_geo = None
+
         self.P_well_init = None
         self.gdf_nearest_wells = None
-        self.P_res = None
-        self.NNT = None # должен быть эффективный для РБ
-        self.initial_oil_saturation = None
+        self.P_reservoir = None
+        self.NNT = None  # должен быть эффективный для РБ
+        self.So = None
         self.water_cut = None
-        self.porosity = None
+        self.m = None
         self.permeability = None
-        self.Q_liq = None
-        self.Q_oil = None
-        self.point_T1_geo = None
-        self.point_T3_geo = None
+        self.Ql = None
+        self.Qo = None
+        self.decline_rates = None
 
-    def get_params(self, gdf_fact_wells, maps, dict_geo_phys_properties, default_size_pixel):
-        # Получение параметров со скважин окружения
-        gdf_fact_wells_one_type = gdf_fact_wells[gdf_fact_wells["well type"] == self.well_type].reset_index(drop=True)
+    def get_nearest_wells(self, df_wells, threshold, k=5):
+        """
+        Получаем ближайшее окружение скважины
+        Parameters
+        ----------
+        gdf_fact_wells - gdf с фактическими скважинами
+        k=5 - количество ближайших фактических скважин
+        threshold = 2500 / default_size_pixel - максимальное расстояние для исключения скважины
+                                                из ближайших скважин, пиксели
+        """
+        gdf_wells = gpd.GeoDataFrame(df_wells, geometry="LINESTRING_pix")
+        # GeoDataFrame со скважинами того же типа
+        gdf_fact_wells = gdf_wells[gdf_wells["well_type"] == self.well_type].reset_index(drop=True)
+        if gdf_fact_wells.empty:
+            logger.warning(f"На объекте нет фактических скважин типа {self.well_type}! \n "
+                           "Необходимо задать азимут, длину, Рзаб проектных скважин вручную.")
 
-        self.P_well_init = get_params_nearest_wells(self.linestring, gdf_fact_wells_one_type, default_size_pixel,
-                                                    'P_well_init_prod')
-        # Получение параметров с карт
+        # Вычисляем расстояния до всех скважин
+        distances = self.LINESTRING_pix.distance(gdf_fact_wells["LINESTRING_pix"])
+        sorted_distances = distances.nsmallest(k)
+        nearest_hor_wells_index = [sorted_distances.index[0]]  # Ближайшая скважина всегда включается
+
+        for i in range(1, len(sorted_distances)):
+            # Проверяем разницу с первой добавленной ближайшей скважиной
+            if sorted_distances.iloc[i] - sorted_distances.iloc[0] < threshold:
+                nearest_hor_wells_index.append(sorted_distances.index[i])
+
+        # Извлечение строк GeoDataFrame по индексам
+        self.gdf_nearest_wells = gdf_fact_wells.loc[nearest_hor_wells_index]
+        self.permeability = gdf_fact_wells.loc[nearest_hor_wells_index]
+        pass
+
+    def get_params_nearest_wells(self):
+        """Получаем параметры для проектной скважины с ближайших фактических"""
+        # Проверка на наличие ближайшего окружения
+        if self.gdf_nearest_wells.empty:
+            logger.warning(f"Проверьте наличие окружения для проектной скважины {self.well_number}!")
+        # Расчет средних параметров по выбранному окружению
+        self.P_well_init = np.mean(self.gdf_nearest_wells['init_P_well_prod'])
+        self.permeability = np.mean(self.gdf_nearest_wells['permeability_fact'])
+        pass
+
+    def get_params_maps(self, maps):
+        """Значения с карт для скважины"""
         type_map_list = list(map(lambda raster: raster.type_map, maps))
+        list_arguments = (self.well_type, self.POINT_T1_pix.x, self.POINT_T1_pix.y,
+                          self.POINT_T3_pix.x, self.POINT_T3_pix.y, self.length_pix)
+        self.P_reservoir = get_value_map(*list_arguments, raster=maps[type_map_list.index('pressure')])
+        self.NNT = get_value_map(*list_arguments, raster=maps[type_map_list.index('NNT')])
+        self.m = get_value_map(*list_arguments, raster=maps[type_map_list.index('porosity')])
+        self.So = get_value_map(*list_arguments, raster=maps[type_map_list.index('initial_oil_saturation')])
+        self.water_cut = get_value_map(*list_arguments, raster=maps[type_map_list.index('water_cut')])
+        pass
 
-        # Инициализация всех необходимых карт
-        map_pressure = maps[type_map_list.index("pressure")]
-        map_NNT = maps[type_map_list.index("NNT")]
-        map_initial_oil_saturation = maps[type_map_list.index("initial_oil_saturation")]
-        map_water_cut = maps[type_map_list.index("water_cut")]
-        map_porosity = maps[type_map_list.index("porosity")]
-        map_permeability = maps[type_map_list.index("permeability")]
+    def get_starting_rates(self, maps, dict_parameters_coefficients):
 
-        # Преобразование координат скважин в пиксельные координаты
-        self.point_T1_geo = Point(map_pressure.convert_coord_from_pixel((self.point_T1.x, self.point_T1.y)))
-        self.point_T3_geo = Point(map_pressure.convert_coord_from_pixel((self.point_T3.x, self.point_T3.y)))
+        self.get_params_maps(maps)
 
+        reservoir_params = dict_parameters_coefficients['reservoir_params']
+        fluid_params = dict_parameters_coefficients['fluid_params']
+        well_params = dict_parameters_coefficients['well_params']
+        coefficients = dict_parameters_coefficients['coefficients']
 
-        # Снимаем значения с карт
-        self.P_res = get_value_map(self.well_type, self.point_T1_geo.x, self.point_T1_geo.y, self.point_T3_geo.x, self.point_T3_geo.y,
-                                   self.linestring.length * default_size_pixel, raster=map_pressure)
-        self.NNT = get_value_map(self.well_type, self.point_T1_geo.x, self.point_T1_geo.y, self.point_T3_geo.x, self.point_T3_geo.y,
-                                 self.linestring.length * default_size_pixel, raster=map_NNT)
-        self.initial_oil_saturation = get_value_map(self.well_type, self.point_T1_geo.x, self.point_T1_geo.y, self.point_T3_geo.x,
-                                                    self.point_T3_geo.y, self.linestring.length * default_size_pixel,
-                                                    raster=map_initial_oil_saturation)
-        self.water_cut = get_value_map(self.well_type, self.point_T1_geo.x, self.point_T1_geo.y, self.point_T3_geo.x,
-                                       self.point_T3_geo.y, self.linestring.length * default_size_pixel, raster=map_water_cut)
-        self.porosity = get_value_map(self.well_type, self.point_T1_geo.x, self.point_T1_geo.y, self.point_T3_geo.x,
-                                      self.point_T3_geo.y, self.linestring.length * default_size_pixel, raster=map_porosity)
-        self.permeability = get_value_map(self.well_type, self.point_T1_geo.x, self.point_T1_geo.y, self.point_T3_geo.x,
-                                          self.point_T3_geo.y, self.linestring.length * default_size_pixel, raster=map_permeability)
-
-        # Параметры для расчета РБ - !!! надо этот вызов переместить и добавить параметры в аргументы
-        reservoir_params, fluid_params, well_params, coefficients = get_geo_phys_and_default_params(dict_geo_phys_properties)
         reservoir_params['f_w'] = self.water_cut
-        reservoir_params['Phi'] = self.porosity
+        reservoir_params['Phi'] = self.m
         reservoir_params['h'] = self.NNT
         reservoir_params['k_h'] = self.permeability
-        reservoir_params['Pr'] = self.P_res
+        reservoir_params['Pr'] = self.P_reservoir
 
-        well_params['L'] = self.linestring.length * default_size_pixel
+        well_params['L'] = self.length_geo
         well_params['Pwf'] = self.P_well_init
-        print(reservoir_params, fluid_params, well_params, coefficients)
-        print("Расчет запускных")
-        self.Q_liq, self.Q_oil = calculate_starting_rate(reservoir_params, fluid_params, well_params, coefficients)
-        print(f"жидкость - {self.Q_liq}, нефть - {self.Q_oil}")
+        self.Ql, self.Qo = calculate_starting_rate(reservoir_params, fluid_params, well_params, coefficients)
+        logger.info(f"Для проектной скважины {self.well_number}: Q_liq = {self.Ql}, Q_oil = {self.Qo}")
+
+    def get_production_profile(self, data_decline_rate_stat, period=25*12):
+        if self.Qo is None or self.Ql is None:
+            logger.warning(f"Проверьте расчет запускных для проектной скважины {self.well_number}!")
+        else:
+            # Рассчитываем средние коэффициенты скважин из окружения
+            list_nearest_wells = self.gdf_nearest_wells.well_number.unique()
+            data_decline_rate_stat = data_decline_rate_stat[data_decline_rate_stat.well_number.is_in(list_nearest_wells)]
+            self.decline_rates = get_avg_decline_rates(data_decline_rate_stat, self.Ql, self.Qo)
+            # Восстанавливаем профиль для проектной скважины
+            model_arps_ql = self.decline_rates[0]
+            model_arps_qo = self.decline_rates[1]
+
+            success_arps_ql = model_arps_ql[0]
+            success_arps_qo = model_arps_qo[0]
+            if success_arps_ql and success_arps_qo:
+                print(1)
+            else:
+                logger.warning(f"Проверьте среднего темпа для проектной скважины {self.well_number}!")
+        pass
 
 
-if __name__ == '__main__':
-    import matplotlib.pyplot as plt
-    from app.input_output import load_wells_data, load_geo_phys_properties, get_save_path
-    from app.local_parameters import paths, parameters_calculation, default_well_params, default_coefficients
-    from app.maps_handler.functions import mapping
-    from app.well_active_zones import calculate_effective_radius
-    from app.drill_zones.drilling_zones import (calculate_drilling_zones)
-
-    data_well_directory = paths["data_well_directory"]
-    maps_directory = paths["maps_directory"]
-    path_geo_phys_properties = paths["path_geo_phys_properties"]
-    epsilon = parameters_calculation["epsilon"]
-    min_samples = parameters_calculation["min_samples"]
-    percent_low = 100 - parameters_calculation["percent_top"]
-    default_size_pixel = parameters_calculation["default_size_pixel"]
-    init_profit_cum_oil = parameters_calculation["init_profit_cum_oil"]
-    init_area_well = parameters_calculation["init_area_well"]
-    buffer_project_wells = parameters_calculation["buffer_project_wells"] / default_size_pixel
-
-    _, data_wells, info = load_wells_data(data_well_directory=data_well_directory)
-    name_field, name_object = info["field"], info["object_value"]
-
-    save_directory = get_save_path("Infill_drilling", name_field, name_object.replace('/', '-'))
-
-    dict_geo_phys_properties = load_geo_phys_properties(path_geo_phys_properties, name_field, name_object)
-
-    maps = mapping(maps_directory=maps_directory,
-                   data_wells=data_wells,
-                   dict_properties=dict_geo_phys_properties,
-                   default_size_pixel=default_size_pixel)
-
-    data_wells = calculate_effective_radius(data_wells, dict_geo_phys_properties, maps)
-    type_maps_list = list(map(lambda raster: raster.type_map, maps))
-    # инициализация всех необходимых карт из списка
-    map_opportunity_index = maps[type_maps_list.index("opportunity_index")]
-
-    map_residual_recoverable_reserves = maps[type_maps_list.index("residual_recoverable_reserves")]
-
-    list_zones, info_clusterization_zones = calculate_drilling_zones(maps=maps,
-                                                                     epsilon=epsilon,
-                                                                     min_samples=min_samples,
-                                                                     percent_low=percent_low,
-                                                                     data_wells=data_wells)
-
-    list_project_wells, data_project_wells = init_locate_project_wells(maps=maps,
-                                                                       list_zones=list_zones,
-                                                                       data_wells=data_wells,
-                                                                       save_directory=save_directory,
-                                                                       init_profit_cum_oil=init_profit_cum_oil,
-                                                                       init_area_well=init_area_well,
-                                                                       default_size_pixel=default_size_pixel,
-                                                                       buffer_project_wells=buffer_project_wells)
-
-    data_wells_work = data_wells[(data_wells['Qo_cumsum'] > 0)|(data_wells['Winj_cumsum'] > 0)].reset_index(drop=True)
-    import warnings
-
-    with warnings.catch_warnings(action='ignore', category=pd.errors.SettingWithCopyWarning):
-        data_wells_work["POINT T1"] = list(
-            map(lambda x, y: Point(x, y), data_wells_work.T1_x_conv, data_wells_work.T1_y_conv))
-        data_wells_work["POINT T3"] = list(
-            map(lambda x, y: Point(x, y), data_wells_work.T3_x_conv, data_wells_work.T3_y_conv))
-        data_wells_work["LINESTRING"] = list(
-            map(lambda x, y: LineString([x, y]), data_wells_work["POINT T1"], data_wells_work["POINT T3"]))
-        data_wells_work["LINESTRING"] = np.where(data_wells_work["POINT T1"] == data_wells_work["POINT T3"],
-                                                data_wells_work["POINT T1"],
-                                                list(map(lambda x, y: LineString([x, y]), data_wells_work["POINT T1"],
-                                                         data_wells_work["POINT T3"])))
-    gdf_wells_work = gpd.GeoDataFrame(data_wells_work, geometry="LINESTRING")
-    gdf_wells_work['length_conv'] = gdf_wells_work.apply(lambda row: row['POINT T1'].distance(row['POINT T3']),
-                                                           axis=1)
-
-    for well in list_project_wells:
-        well.get_params(gdf_wells_work, maps, dict_geo_phys_properties, default_size_pixel)
-
-    gdf_project_wells = gpd.GeoDataFrame({'well_number': [well.well_number for well in list_project_wells],
-                                          'well_type': [well.well_type for well in list_project_wells],
-                                          'length': [well.linestring.length for well in list_project_wells],
-                                          'water_cut': [well.water_cut for well in list_project_wells],
-                                          'Q_liq': [well.Q_liq for well in list_project_wells],
-                                          'Q_oil': [well.Q_oil for well in list_project_wells]}
-    )
-
-    gdf_project_wells.to_excel(save_directory + r'\all.xlsx', sheet_name='РБ', index=False)
-
-
+def save_ranking_drilling_to_excel(list_zones, filename):
+    gdf_result = gpd.GeoDataFrame()
+    for drill_zone in list_zones:
+        if drill_zone.rating != -1:
+            gdf_project_wells = gpd.GeoDataFrame(
+                {'well_number': [well.well_number for well in drill_zone.list_project_wells],
+                 'well_type': [well.well_type for well in drill_zone.list_project_wells],
+                 'length': [well.length_geo for well in drill_zone.list_project_wells],
+                 'water_cut': [well.water_cut for well in drill_zone.list_project_wells],
+                 'Q_liq': [well.Ql for well in drill_zone.list_project_wells],
+                 'Q_oil': [well.Qo for well in drill_zone.list_project_wells]}
+            )
+            gdf_result = pd.concat([gdf_result, gdf_project_wells], ignore_index=True)
+    gdf_result.to_excel(filename, sheet_name='РБ', index=False)
     pass
-

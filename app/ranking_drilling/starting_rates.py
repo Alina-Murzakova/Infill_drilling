@@ -1,8 +1,9 @@
 import math
 
+from loguru import logger
+from scipy.optimize import root_scalar
 from .one_phase_model import get_one_phase_model
 from .pressure_drop_for_Jd import get_dimensionless_delta_pressure
-from app.local_parameters import default_well_params, default_coefficients
 
 
 def calculate_starting_rate(reservoir_params, fluid_params, well_params, coefficients,
@@ -78,6 +79,51 @@ def calculate_starting_rate(reservoir_params, fluid_params, well_params, coeffic
 
     Q_oil = Q_liq * rho * (1 - f_w / 100)
     return Q_liq, Q_oil
+
+
+def calculate_permeability_fact_wells(row, dict_parameters_coefficients,
+                                      kv_kh=0.1, Swc=0.2, Sor=0.3, Fw=0.3, m1=1, Fo=1, m2=1, Bw=1):
+    """
+    Находит значение k_h, при котором расчетный Q_liq совпадает с фактическим Q_liq ('init_Ql_rate_TR')
+    Parameters
+    ----------
+
+    Returns
+    -------
+    k_h: найденное значение проницаемости (мД)
+    """
+    reservoir_params = dict_parameters_coefficients['reservoir_params']
+    fluid_params = dict_parameters_coefficients['fluid_params']
+    well_params = dict_parameters_coefficients['well_params']
+    coefficients = dict_parameters_coefficients['coefficients']
+
+    reservoir_params['f_w'] = row['init_water_cut_TR']
+    reservoir_params['Phi'] = row['m']
+    reservoir_params['h'] = row['NNT']
+    reservoir_params['Pr'] = row['init_P_reservoir_prod']
+    well_params['L'] = row['length_geo']
+    well_params['Pwf'] = row['init_P_well_prod']
+
+    if (row.init_Ql_rate_TR > 0 and row.init_P_well_prod > 0
+            and row.init_P_reservoir_prod > 0 and row.init_P_reservoir_prod > row.init_P_well_prod):
+        def error_function(k_h):
+            reservoir_params['k_h'] = k_h
+            # Расчет дебитов
+            Q_liq, _ = calculate_starting_rate(reservoir_params, fluid_params, well_params, coefficients,
+                                               kv_kh, Swc, Sor, Fw, m1, Fo, m2, Bw)
+            # Ошибка между расчетным и известным Q_liq
+            abs_error = float(Q_liq) - row['init_Ql_rate_TR']
+            return abs_error
+
+        # Оптимизация - ищем k_h, при котором ошибка минимальна
+        result = root_scalar(error_function, bracket=[1e-3, 1e3], method='brentq', xtol=1e-3, rtol=1e-2, maxiter=100)
+        if result.converged:
+            return result.root
+        else:
+            logger.info(f'Не удалось найти значение k_h для фактической скважины №{row.well_number}')
+            return 0
+    else:
+        return 0
 
 
 def get_delta_pressure(reservoir_params, fluid_params, well_params):
@@ -185,18 +231,3 @@ def get_well_productivity(mu, c_t, B, reservoir_params, well_params, coefficient
     J = (k_h * h) / (18.42 * B * mu) * Jd  # Продуктивность скважины
     PI = KUBS * J  # Продуктивность скважины с учетом успешности
     return PI
-
-
-def get_geo_phys_and_default_params(dict_geo_phys_properties):
-    reservoir_params = {'c_r': dict_geo_phys_properties['formation_compressibility'] / 100000} # 'k_h': dict_geo_phys_properties['permeability']
-    fluid_params = {'mu_w': dict_geo_phys_properties['water_viscosity_in_situ'],
-                    'mu_o': dict_geo_phys_properties['oil_viscosity_in_situ'],
-                    'c_o': dict_geo_phys_properties['oil_compressibility'] / 100000,
-                    'c_w': dict_geo_phys_properties['water_compressibility'] / 100000,
-                    'Bo': dict_geo_phys_properties['Bo'],
-                    'Pb': dict_geo_phys_properties['bubble_point_pressure'] * 10,
-                    'rho': dict_geo_phys_properties['oil_density_at_surf']}
-    well_params = default_well_params
-    coefficients = default_coefficients
-
-    return reservoir_params, fluid_params, well_params, coefficients

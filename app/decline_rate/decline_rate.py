@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import app.decline_rate.config as cfg
 
 from tqdm import tqdm
@@ -10,7 +11,7 @@ from app.decline_rate.model_Arps import calculation_model_arps
 
 
 @logger.catch
-def get_decline_rate(data_history, data_wells, maps=None, type_reserves=None):
+def get_decline_rates(data_history, data_wells, maps=None, type_reserves=None):
     logger.info("Подготовка истории работы скважин для расчета темпов падения")
     max_delta = cfg.STOPPING_TIME_LIMIT_OF_WELL
     df_initial = history_processing(data_history, max_delta=max_delta)
@@ -57,3 +58,32 @@ def get_decline_rate(data_history, data_wells, maps=None, type_reserves=None):
         df_wells_decline_rates.loc[well] = [well, coefficients_Ql_rate, coefficients_Qo_rate,
                                             cumulative_oil_production]
     return df_wells_decline_rates, df_initial, data_wells
+
+
+def get_avg_decline_rates(data_decline_rate, Ql_start, Qo_start):
+    neighboring_wells = data_decline_rate.well_number.unique()
+    if not data_decline_rate.empty:
+        avg_coeff_arps_ql, avg_coeff_arps_qo = [], []
+        for well in neighboring_wells:
+            # Выделение исходных данных для скважины
+            decline_rate = data_decline_rate.loc[data_decline_rate.well_number == well]
+            # данные по Арпсу Ql
+            model_arps_ql = decline_rate["coefficients_Ql_rate"].iloc[0]
+            success_arps_ql = model_arps_ql[0]
+            # данные по Арпсу Qo
+            model_arps_qo = decline_rate["coefficients_Qo_rate"].iloc[0]
+            success_arps_qo = model_arps_qo[0]
+            # если оптимизация сошлась - добавляем коэффициенты к среднему
+            if success_arps_ql:
+                avg_coeff_arps_ql.append(model_arps_ql[1])
+            if success_arps_qo:
+                avg_coeff_arps_qo.append(model_arps_qo[1])
+
+        avg_coeff_arps_ql = np.mean(np.array(avg_coeff_arps_ql), axis=0)
+        avg_coeff_arps_qo = np.mean(np.array(avg_coeff_arps_qo), axis=0)
+
+        return ([True, avg_coeff_arps_ql, Ql_start, 0, f"средний темп скважин: {neighboring_wells}"],
+                [True, avg_coeff_arps_qo, Qo_start, 0, f"средний темп скважин: {neighboring_wells}"])
+    else:
+        return ([False, None, None, 0, f"отсутствуют темпы у соседних скважин"],
+                [False, None, None, 0, f"отсутствуют темпы у соседних скважин"])
