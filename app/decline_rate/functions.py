@@ -9,17 +9,13 @@ def history_processing(history, max_delta):
     :param max_delta Максимальный период остановки, дни
     :return: измененный DataFrame
     """
-    last_data = np.sort(history.date.unique())[-1]
+    # last_data = np.sort(history.date.unique())[-1]
     # Пересчет дебитов через добычу
     history['Ql_rate'] = history.Ql / history.time_work_prod * 24
     history['Qo_rate'] = history.Qo / history.time_work_prod * 24
     history = history[(history.Ql_rate != 0) & (history.Qo_rate != 0) &
                       (history.time_work_prod != 0) & (history.objects != 0)]  # Оставляем не нулевые строки
 
-    # оставляем скважины с историей по объектам на дату расчета
-    list_objects = history[history.date == last_data].groupby(['well_number'])['objects'].apply(list)
-    history = history[history.well_number.isin(list_objects.index.unique())]
-    history = history[history.apply(lambda x: x.objects in list_objects[x.well_number], axis=1)]
     history = history.sort_values(['well_number', 'date'], ascending=True)
     history = history.reset_index(drop=True)
 
@@ -28,6 +24,10 @@ def history_processing(history, max_delta):
 
     for well in unique_wells:
         slice_well = history.loc[history.well_number == well].copy()
+        work_object = slice_well['objects'].iloc[-1]
+        slice_well = slice_well[slice_well['objects'] == work_object]
+        # ? удаление скважины, если она остановлена больше max_delta от текущей даты расчета
+        # last_data_well = np.sort(slice_well.date.unique())[-1]
 
         next_dates = slice_well.date.iloc[1:]
         next_dates.loc[-1] = slice_well.date.iloc[-1]
@@ -48,38 +48,56 @@ def history_processing(history, max_delta):
     del history_new["next_date"]
     return history_new
 
-# from datetime import (date, timedelta)
-# import calendar
-# def fluid_production_mod(period, model_corey_well, model_arps_well, date_last, oil_recovery_factor, initial_reserves):
-#     """
-#     Построение профиля жидкости !!!! требует изменения под новый формат
-#     :param period: период расчета (мес.)
-#     :param model_corey_well: параметры функции Кори для скважины
-#     :param model_arps_well: параметры Арпса
-#     :param date_last: дата начала прогноза
-#     :param oil_recovery_factor: текущая выработка
-#     :param initial_reserves: НИЗ
-#     :return: [Qo_rate, Ql_rate] - набор списков добыча нефти и добыча жидкости
-#     """
-#     Co, Cw, mef = model_corey_well
-#     k1, k2, starting_index, starting_productivity = model_arps_well
-#     k1 = float(k1)
-#     k2 = float(k2)
-#     starting_index = int(float(starting_index))
-#     starting_productivity = float(starting_productivity)
-#     date_last = date(date_last[0], date_last[1], date_last[2])
-#
-#     Qo, Qo_rate, Ql_rate, water_cut = [0], [], [], []
-#     for month in range(period):
-#         oil_recovery_factor = oil_recovery_factor + Qo[-1] / initial_reserves / 1000
-#         if oil_recovery_factor >= 1:
-#             oil_recovery_factor = 0.99999999999
-#         water_cut.append(mef * oil_recovery_factor ** Cw /
-#                          ((1 - oil_recovery_factor) ** Co + mef * oil_recovery_factor ** Cw))
-#         Ql_rate.append(starting_productivity * (1 + k1 * k2 * (starting_index - 1)) ** (-1 / k2))
-#         starting_index += 1
-#         Qo_rate.append(Ql_rate[-1] * (1 - water_cut[-1]))
-#         days_in_month = calendar.monthrange(date_last.year, date_last.month)[1]
-#         Qo.append(Qo_rate[-1] * days_in_month)
-#         date_last += timedelta(days=days_in_month)
-#     return Qo_rate, Ql_rate
+
+def production_model(period, model_arps_ql, model_arps_qo, reserves, day_in_month=29, well_efficiency=0.95):
+    """
+    Построение профиля жидкости и нефти
+    Parameters
+    ----------
+    period период расчета, мес
+    model_arps_ql параметры Арпса жидкости
+    model_arps_qo параметры Арпса нефти
+    reserves - запасы на скважину, т
+    well_efficiency - коэффициент эксплуатации скважины
+    day_in_month -  количество дней в месяце
+    Returns
+    -------
+    [Ql_rates, Qo_rates], [Ql, Qo]
+    """
+    rates, productions = [], []
+    # восстановление кривой Арпса
+    for model in [model_arps_ql, model_arps_qo]:
+        k1, k2 = model[1]
+        starting_productivity = model[2]
+        starting_index = model[3]
+
+        range_period = np.array(range(starting_index, starting_index + period + 1))
+        rate = starting_productivity * (1 + k1 * k2 * range_period) ** (-1 / k2)
+        production = rate * day_in_month * well_efficiency
+        rates.append(rate)
+        productions.append(production)
+
+    # проверка превышения запасов
+    Qo_сumsum = np.cumsum(productions[1])
+    mask_reserves = Qo_сumsum > reserves
+    if True in mask_reserves:
+        index_argmax = np.argmax(mask_reserves)
+        Qo_argmax = rates[1][index_argmax]
+        rates[1] = np.where(mask_reserves, 0, rates[1])
+        productions[1] = np.where(mask_reserves, 0, productions[1])
+        if index_argmax > 0:
+            if Qo_сumsum[index_argmax - 1] != reserves:
+                rates[1][index_argmax] = Qo_argmax
+                productions[1][index_argmax] = reserves - Qo_сumsum[index_argmax - 1]
+        else:
+            rates[1][index_argmax] = Qo_argmax
+            productions[1][index_argmax] = reserves
+
+    # проверка снижение обводненности - полка по жидкости
+    Wc = (rates[0] - rates[1]) / rates[0]
+    mask_wc = (Wc[1:] - Wc[:-1]) < 0
+    if True in mask_wc:
+        index_argmax = np.argmax(mask_wc)
+        rates[0][index_argmax:] = rates[0][index_argmax - 1]
+        productions[0] = rates[0] * day_in_month * well_efficiency
+    return rates, productions

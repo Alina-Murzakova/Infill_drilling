@@ -76,7 +76,7 @@ if __name__ == '__main__':
                                 list_zones, info_clusterization_zones)
         else:
             raster.save_img(f"{save_directory}/{raster.type_map}.png", data_wells)
-    # data_wells.to_excel('1.xlsx')
+
     map_rrr = maps[type_map_list.index('residual_recoverable_reserves')]
     logger.info("Начальное размещение проектных скважин")
     for drill_zone in list_zones:
@@ -86,6 +86,7 @@ if __name__ == '__main__':
             logger.info(f"Расчет запускных параметров проектных скважин зоны: {drill_zone.rating}")
             for project_well in drill_zone.list_project_wells:
                 project_well.get_starting_rates(maps, dict_parameters_coefficients)
+                project_well.get_production_profile(data_decline_rate_stat)
 
     logger.info(f"Сохраняем .png с начальным расположением проектного фонда в кластерах и карту ОИ с проектным фондом")
     save_picture_clustering_zones(list_zones, f"{save_directory}/init_project_wells.png", buffer_project_wells)

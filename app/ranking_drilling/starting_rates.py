@@ -78,7 +78,7 @@ def calculate_starting_rate(reservoir_params, fluid_params, well_params, coeffic
         Q_liq = Q_max
 
     Q_oil = Q_liq * rho * (1 - f_w / 100)
-    return Q_liq, Q_oil
+    return float(Q_liq), float(Q_oil)
 
 
 def calculate_permeability_fact_wells(row, dict_parameters_coefficients,

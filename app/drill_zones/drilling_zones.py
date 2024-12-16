@@ -78,8 +78,7 @@ class DrillZone:
                 project_well.length_geo = project_well.LINESTRING_geo.length
                 # Определение ближайшего окружения и параметров с него
                 # Подготовка GeoDataFrame с фактическими скважинами
-                df_fact_wells = (data_wells[(data_wells['Qo_cumsum'] > 0) |
-                                            (data_wells['Winj_cumsum'] > 0)].reset_index(drop=True))
+                df_fact_wells = (data_wells[(data_wells['Qo_cumsum'] > 0)].reset_index(drop=True))
                 project_well.get_nearest_wells(df_fact_wells, threshold=2500 / default_size_pixel)
                 project_well.get_params_nearest_wells()
                 self.list_project_wells.append(project_well)

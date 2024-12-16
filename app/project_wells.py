@@ -5,6 +5,7 @@ import numpy as np
 from loguru import logger
 
 from app.decline_rate.decline_rate import get_avg_decline_rates
+from app.decline_rate.functions import production_model
 from app.well_active_zones import get_value_map
 from app.ranking_drilling.starting_rates import calculate_starting_rate
 
@@ -24,6 +25,7 @@ class ProjectWell:
         self.POINT_T1_geo = None
         self.POINT_T3_geo = None
         self.LINESTRING_geo = None
+        self.reserves = 50000
 
         self.P_well_init = None
         self.gdf_nearest_wells = None
@@ -33,9 +35,14 @@ class ProjectWell:
         self.water_cut = None
         self.m = None
         self.permeability = None
-        self.Ql = None
-        self.Qo = None
+        self.init_Ql_rate = None
+        self.init_Qo_rate = None
         self.decline_rates = None
+
+        self.Qo_rate = None
+        self.Ql_rate = None
+        self.Qo = None
+        self.Ql = None
 
     def get_nearest_wells(self, df_wells, threshold, k=5):
         """
@@ -108,17 +115,20 @@ class ProjectWell:
 
         well_params['L'] = self.length_geo
         well_params['Pwf'] = self.P_well_init
-        self.Ql, self.Qo = calculate_starting_rate(reservoir_params, fluid_params, well_params, coefficients)
-        logger.info(f"Для проектной скважины {self.well_number}: Q_liq = {self.Ql}, Q_oil = {self.Qo}")
+        self.init_Ql_rate, self.init_Qo_rate = calculate_starting_rate(reservoir_params, fluid_params,
+                                                                       well_params, coefficients)
+        logger.info(f"Для проектной скважины {self.well_number}: Q_liq = {self.init_Ql_rate},"
+                    f" Q_oil = {self.init_Qo_rate}")
 
     def get_production_profile(self, data_decline_rate_stat, period=25*12):
-        if self.Qo is None or self.Ql is None:
+        if self.init_Qo_rate is None or self.init_Ql_rate is None:
             logger.warning(f"Проверьте расчет запускных для проектной скважины {self.well_number}!")
         else:
             # Рассчитываем средние коэффициенты скважин из окружения
             list_nearest_wells = self.gdf_nearest_wells.well_number.unique()
-            data_decline_rate_stat = data_decline_rate_stat[data_decline_rate_stat.well_number.is_in(list_nearest_wells)]
-            self.decline_rates = get_avg_decline_rates(data_decline_rate_stat, self.Ql, self.Qo)
+            list_nearest_wells = np.append(list_nearest_wells,'default_decline_rates')
+            data_decline_rate_stat = data_decline_rate_stat[data_decline_rate_stat.well_number.isin(list_nearest_wells)]
+            self.decline_rates = get_avg_decline_rates(data_decline_rate_stat, self.init_Ql_rate, self.init_Qo_rate)
             # Восстанавливаем профиль для проектной скважины
             model_arps_ql = self.decline_rates[0]
             model_arps_qo = self.decline_rates[1]
@@ -126,9 +136,11 @@ class ProjectWell:
             success_arps_ql = model_arps_ql[0]
             success_arps_qo = model_arps_qo[0]
             if success_arps_ql and success_arps_qo:
-                print(1)
+                rates, productions = production_model(period, model_arps_ql, model_arps_qo, self.reserves)
+                self.Ql_rate, self.Qo_rate = rates
+                self.Ql, self.Qo = productions
             else:
-                logger.warning(f"Проверьте среднего темпа для проектной скважины {self.well_number}!")
+                logger.warning(f"Проверьте расчет среднего темпа для проектной скважины {self.well_number}!")
         pass
 
 
@@ -141,8 +153,12 @@ def save_ranking_drilling_to_excel(list_zones, filename):
                  'well_type': [well.well_type for well in drill_zone.list_project_wells],
                  'length': [well.length_geo for well in drill_zone.list_project_wells],
                  'water_cut': [well.water_cut for well in drill_zone.list_project_wells],
-                 'Q_liq': [well.Ql for well in drill_zone.list_project_wells],
-                 'Q_oil': [well.Qo for well in drill_zone.list_project_wells]}
+                 'init_Ql': [well.init_Ql_rate for well in drill_zone.list_project_wells],
+                 'init_Qo': [well.init_Qo_rate for well in drill_zone.list_project_wells],
+                 'Qo_nak_25_years': [np.sum(well.Qo) for well in drill_zone.list_project_wells],
+                 'Ql_nak_25_years': [np.sum(well.Ql) for well in drill_zone.list_project_wells],
+                 'nearest_wells': [well.gdf_nearest_wells.well_number.unique() for well in drill_zone.list_project_wells],
+                 'message_arps': [well.decline_rates[0][4] for well in drill_zone.list_project_wells]}
             )
             gdf_result = pd.concat([gdf_result, gdf_project_wells], ignore_index=True)
     gdf_result.to_excel(filename, sheet_name='РБ', index=False)
