@@ -238,3 +238,68 @@ def calculate_effective_radius(data_wells, dict_properties):
     del data_wells['Bo']
     del data_wells['rho']
     return data_wells
+
+
+def save_picture_voronoi(df_Coordinates, filename, type_coord="geo", default_size_pixel=1):
+    """Сохранение картинки с ячейками Вороных"""
+    import matplotlib.pyplot as plt
+    if type_coord == 'geo':
+        LINESTRING = 'LINESTRING_geo'
+        length_well = 'length_geo'
+    elif type_coord == 'pix':
+        LINESTRING = 'LINESTRING_pix'
+        length_well = 'length_pix'
+    else:
+        LINESTRING = None
+        length_well = None
+        logger.error("Неверный тип координат.")
+    gdf_Coordinates = gpd.GeoDataFrame(df_Coordinates, geometry=LINESTRING)
+    # буферизация скважин || тк вороные строятся для полигонов буферизируем точки и линии скважин
+    gdf_Coordinates["Polygon"] = gdf_Coordinates.set_geometry(LINESTRING).buffer(1, resolution=3)
+
+    # Выпуклая оболочка - будет служить контуром для ячеек вороного || отступаем от границ фонда на 1000 м
+    convex_hull = gdf_Coordinates.set_geometry("Polygon").union_all().convex_hull
+    convex_hull = gpd.GeoDataFrame(geometry=[convex_hull]).buffer(1000 / default_size_pixel).boundary
+
+    # Подготовим данные границы и полигонов скважины в нужном формате для алгоритма
+    def rounded_geometry(geometry, precision=0):
+        """ Округление координат точек в полигоне || на вход voronoiDiagram4plg надо подавать целые координаты """
+        if isinstance(geometry, Polygon):
+            rounded_exterior = [(round(x, precision), round(y, precision)) for x, y in geometry.exterior.coords]
+            return Polygon(rounded_exterior)
+
+    # Данные полигонов скважин polygon
+    polygons_wells = gdf_Coordinates[["Polygon"]].copy()
+    polygons_wells.columns = ["geometry"]
+    polygons_wells["geometry"] = polygons_wells["geometry"].apply(rounded_geometry)
+
+    # Граница в формате MultiPolygon
+    boundary = MultiPolygon([rounded_geometry(Polygon(convex_hull[0]))])
+    boundary = gpd.GeoDataFrame({'geometry': [boundary]})
+
+    # Вороные
+    boundary = boundary.set_geometry('geometry')
+    polygons_wells = polygons_wells.set_geometry('geometry')
+    vd = voronoiDiagram4plg(polygons_wells, boundary)
+
+    fig, ax = plt.subplots(figsize=(20, 50))
+
+    boundary.plot(color='white', edgecolor='black', ax=ax)
+    vd.plot(ax=ax, color='blue')  # cmap="winter"
+    vd.boundary.plot(ax=ax, color='white')
+
+    gdf_Coordinates_current = gdf_Coordinates[gdf_Coordinates['work_marker'].notna()].copy()
+    gdf_Coordinates_current.set_geometry("LINESTRING_geo").plot(color='black', markersize=50, ax=ax)
+    gdf_Coordinates_current.set_geometry("POINT_T1_geo").plot(color='black', markersize=10, ax=ax)
+
+    gdf_Coordinates_project = gdf_Coordinates[gdf_Coordinates['work_marker'].isna()].copy()
+    gdf_Coordinates_project.set_geometry("LINESTRING_geo").plot(color='red', markersize=50, ax=ax)
+    gdf_Coordinates_project.set_geometry("POINT_T1_geo").plot(color='red', markersize=10, ax=ax)
+
+    # Добавление текста с именами скважин рядом с точками T1
+    for point, name in zip(gdf_Coordinates['POINT_T1_geo'], gdf_Coordinates['well_number']):
+        if point is not None:  # Проверяем, что линия не пустая
+            plt.text(point.x + 30, point.y - 30, name, fontsize=6, ha='left')  # Координаты (x, y)
+    plt.savefig(filename)
+    pass
+

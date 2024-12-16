@@ -9,5 +9,6 @@
 /app/test.py
 .ipynb_checkpoints/
 init_well_position.ipynb
+init_project_well_position.ipynb
 /картинки_ПФ/
 /*.png

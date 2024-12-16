@@ -8,7 +8,7 @@ from app.decline_rate.decline_rate import get_decline_rates
 from app.maps_handler.functions import mapping, save_map_permeability_fact_wells
 from well_active_zones import calculate_effective_radius
 from drill_zones.drilling_zones import calculate_drilling_zones, save_picture_clustering_zones
-from project_wells import save_ranking_drilling_to_excel
+from project_wells import save_ranking_drilling_to_excel, calculate_reserves_by_voronoi
 
 if __name__ == '__main__':
     logger.add('logs.log', mode='w')
@@ -47,7 +47,7 @@ if __name__ == '__main__':
     data_wells['permeability_fact'] = data_wells.apply(calculate_permeability_fact_wells,
                                                        args=(dict_parameters_coefficients,),
                                                        axis=1)
-    logger.info("Сохранение карты фактической проницаемости для через РБ")
+    logger.info("Сохранение карты фактической проницаемости через РБ")
     map_pressure = maps[type_map_list.index('pressure')]
     save_map_permeability_fact_wells(data_wells, map_pressure, f"{save_directory}/permeability_fact_wells.png")
 
@@ -55,7 +55,7 @@ if __name__ == '__main__':
     data_wells = calculate_effective_radius(data_wells, dict_properties=dict_parameters_coefficients['fluid_params'])
 
     logger.info("Оценка темпов падения для текущего фонда")
-    data_decline_rate_stat, _, _ = get_decline_rates(data_history, data_wells)
+    # data_decline_rate_stat, _, _ = get_decline_rates(data_history, data_wells)
 
     logger.info("Расчет зон с высоким индексом бурения")
     list_zones, info_clusterization_zones = calculate_drilling_zones(maps=maps,
@@ -83,6 +83,12 @@ if __name__ == '__main__':
         if drill_zone.rating != -1:
             drill_zone.get_init_project_wells(map_rrr, data_wells, init_profit_cum_oil,
                                               default_size_pixel, buffer_project_wells)
+
+    logger.info("Расчет запасов для проектных скважин")
+    calculate_reserves_by_voronoi(list_zones, data_wells, map_rrr, save_directory)
+
+    for drill_zone in list_zones:
+        if drill_zone.rating != -1:
             logger.info(f"Расчет запускных параметров проектных скважин зоны: {drill_zone.rating}")
             for project_well in drill_zone.list_project_wells:
                 project_well.get_starting_rates(maps, dict_parameters_coefficients)

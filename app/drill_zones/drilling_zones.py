@@ -27,6 +27,8 @@ class DrillZone:
     def calculate_reserves(self, map_rrr):
         """Расчет ОИЗ перспективной зоны, тыс.т"""
         array_rrr = map_rrr.data[self.y_coordinates, self.x_coordinates]
+        # 10000 - перевод т/га в т/м2
+        # 1000 - перевод т в тыс.т
         self.reserves = np.sum(array_rrr * map_rrr.geo_transform[1] ** 2 / 10000) / 1000
         pass
 
@@ -37,7 +39,7 @@ class DrillZone:
 
     @logger.catch
     def get_init_project_wells(self, map_rrr, data_wells, init_profit_cum_oil, default_size_pixel,
-                               buffer_project_wells):
+                               buffer_project_wells, threshold=2500):
         """Расчет количества проектных скважин в перспективной зоне"""
         self.calculate_reserves(map_rrr)
         self.calculate_area(map_rrr)
@@ -59,7 +61,9 @@ class DrillZone:
                                                                 default_size_pixel, buffer_project_wells)
             # Количество проектных скважин в перспективной зоне
             self.num_project_wells = len(gdf_project_wells)
-
+            # Подготовка GeoDataFrame с фактическими скважинами
+            df_fact_wells = (data_wells[(data_wells['Qo_cumsum'] > 0) |
+                                        (data_wells['Winj_cumsum'] > 0)].reset_index(drop=True))
             # Преобразуем строки gdf_project_wells в объекты ProjectWell
             for _, row in gdf_project_wells.iterrows():
                 project_well = ProjectWell(row["well_number"], row["cluster"], row["POINT_T1_pix"], row["POINT_T3_pix"],
@@ -77,10 +81,7 @@ class DrillZone:
                     project_well.LINESTRING_geo = LineString([project_well.POINT_T1_geo, project_well.POINT_T3_geo])
                 project_well.length_geo = project_well.LINESTRING_geo.length
                 # Определение ближайшего окружения и параметров с него
-                # Подготовка GeoDataFrame с фактическими скважинами
-                df_fact_wells = (data_wells[(data_wells['Qo_cumsum'] > 0) |
-                                            (data_wells['Winj_cumsum'] > 0)].reset_index(drop=True))
-                project_well.get_nearest_wells(df_fact_wells, threshold=2500 / default_size_pixel)
+                project_well.get_nearest_wells(df_fact_wells, threshold / default_size_pixel)
                 project_well.get_params_nearest_wells()
                 self.list_project_wells.append(project_well)
         pass
@@ -107,7 +108,6 @@ class DrillZone:
         for point, name in zip(gdf_project_wells['POINT_T1_pix'], gdf_project_wells['well_number']):
             if point is not None:
                 plt.text(point.x + 2, point.y - 2, name, fontsize=6, ha='left')
-        plt.gca().invert_yaxis()
         return ax
 
 
@@ -145,6 +145,7 @@ def save_picture_clustering_zones(list_zones, filename, buffer_project_wells):
     fig, ax = plt.subplots(figsize=(10, 10))
     for drill_zone in list_zones:
         ax = drill_zone.picture_clustering(ax, buffer_project_wells)
+    plt.gca().invert_yaxis()
     plt.savefig(filename, dpi=400)
     pass
 

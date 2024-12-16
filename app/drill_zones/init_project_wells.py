@@ -9,7 +9,8 @@ from shapely.ops import unary_union, nearest_points
 from sklearn.cluster import KMeans
 
 
-def get_project_wells_from_clusters(name_cluster, gdf_clusters, data_wells, default_size_pixel, buffer_project_wells):
+def get_project_wells_from_clusters(name_cluster, gdf_clusters, data_wells, default_size_pixel, buffer_project_wells,
+                                    threshold=2500):
     """Получаем GeoDataFrame с начальными координатами проектных скважин"""
     # Подготовка GeoDataFrame с проектными скважинами
     gdf_project = gdf_clusters.copy()
@@ -32,7 +33,7 @@ def get_project_wells_from_clusters(name_cluster, gdf_clusters, data_wells, defa
     # Находим ближайшие фактические ГС для проектных точек и рассчитываем параметры по окружению
     gdf_project[["azimuth", 'length_pix']] = (gdf_project["POINT_T2_pix"].apply(
         lambda center: pd.Series(get_well_path_nearest_wells(center, gdf_fact_hor_wells,
-                                                             threshold=2500/default_size_pixel))))
+                                                             threshold/default_size_pixel))))
     # Получаем точки T1 и T3 на основе центров кластеров (T2)
     gdf_project[['POINT_T1_pix', 'POINT_T3_pix']] = gdf_project.apply(compute_t1_t3_points, axis=1,
                                                                       result_type='expand')
@@ -88,7 +89,7 @@ def clusterize_drill_zone(tuple_points, map_rrr, num_project_wells, init_profit_
 
 
 def create_gdf_with_polygons(tuple_points, labels):
-    """Преобразование точек кластеров в полигоны и создание gdf с кластерами"""
+    """Преобразование точек кластеров в полигоны и создание gdf с кластерами для расположения в них проектных скважин"""
     points = np.column_stack(tuple_points)
     # Преобразуем точки кластера в GeoDataFrame
     gdf_points = gpd.GeoDataFrame(geometry=[Point(p) for p in points])
@@ -124,7 +125,7 @@ def convert_multipolygon(row, gdf_clusters, coef_area=0.4):
     Функция преобразования MultiPolygon в Polygon - перераспределения несвязанных кластеров (MultiPolygon)
     Parameters
     ----------
-    row - строка
+    row - строка gdf_clusters
     gdf_clusters - GeoDataFrame с полигонами/мультиполигонами под проектные скважины
     coef_area - доля площади, необходимая для выделения самостоятельного полигона из мультиполигона
 
