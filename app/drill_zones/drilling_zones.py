@@ -62,8 +62,7 @@ class DrillZone:
             # Количество проектных скважин в перспективной зоне
             self.num_project_wells = len(gdf_project_wells)
             # Подготовка GeoDataFrame с фактическими скважинами
-            df_fact_wells = (data_wells[(data_wells['Qo_cumsum'] > 0) |
-                                        (data_wells['Winj_cumsum'] > 0)].reset_index(drop=True))
+            df_fact_wells = (data_wells[(data_wells['Qo_cumsum'] > 0)].reset_index(drop=True))
             # Преобразуем строки gdf_project_wells в объекты ProjectWell
             for _, row in gdf_project_wells.iterrows():
                 project_well = ProjectWell(row["well_number"], row["cluster"], row["POINT_T1_pix"], row["POINT_T3_pix"],
