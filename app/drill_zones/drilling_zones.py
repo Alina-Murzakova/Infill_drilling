@@ -46,7 +46,7 @@ class DrillZone:
         # Начальное количество скважин на основе запасов/площади
         num_project_wells = int(self.reserves // init_profit_cum_oil)
 
-        logger.info(f"Проверка зоны на размещение {num_project_wells} скважин")
+        logger.info(f"Проверка зоны на размещение {num_project_wells} скважин в зоне {self.rating}")
         # Рассматриваем только зоны, куда можно вписать >=1 скважину
         if num_project_wells >= 1:
             logger.info(f"Кластеризация перспективной зоны {self.rating}")
@@ -137,16 +137,6 @@ def calculate_drilling_zones(maps, epsilon, min_samples, percent_low, data_wells
     logger.info("Кластеризация зон")
     list_zones, info = clusterization_zones(modified_map_opportunity_index, epsilon, min_samples, percent_low)
     return list_zones, info
-
-
-def save_picture_clustering_zones(list_zones, filename, buffer_project_wells):
-    import matplotlib.pyplot as plt
-    fig, ax = plt.subplots(figsize=(10, 10))
-    for drill_zone in list_zones:
-        ax = drill_zone.picture_clustering(ax, buffer_project_wells)
-    plt.gca().invert_yaxis()
-    plt.savefig(filename, dpi=400)
-    pass
 
 
 def clusterization_zones(map_opportunity_index, epsilon, min_samples, percent_low):

@@ -5,7 +5,7 @@ from osgeo import gdal, ogr
 
 from .maps import (Map, read_array, read_raster, get_map_reservoir_score, get_map_potential_score,
                    get_map_risk_score, get_map_opportunity_index)
-from ..input_output import create_shapely_types
+from ..input_output.input import create_shapely_types
 from ..well_active_zones import get_value_map
 
 
@@ -342,16 +342,3 @@ def cut_map_by_mask(base_map, mask, blank_value=np.nan):
                        base_map.type_map)
 
     return modified_map
-
-
-def save_map_permeability_fact_wells(data_wells, map_pressure, filename):
-    map_permeability_fact_wells = read_array(data_wells,
-                                             name_column_map="permeability_fact",
-                                             type_map="permeability_fact_wells",
-                                             geo_transform=map_pressure.geo_transform,
-                                             size=map_pressure.data.shape)
-
-    map_permeability_fact_wells.data = np.where(np.isnan(map_permeability_fact_wells.data), 0,
-                                                map_permeability_fact_wells.data)
-    map_permeability_fact_wells.save_img(filename, data_wells)
-    pass

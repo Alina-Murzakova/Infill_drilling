@@ -3,13 +3,13 @@ import pandas as pd
 import numpy as np
 
 from loguru import logger
-from shapely import Point
 
 from app.decline_rate.decline_rate import get_avg_decline_rates
-from app.well_active_zones import get_value_map, get_parameters_voronoi_cells, save_picture_voronoi
+from app.well_active_zones import get_parameters_voronoi_cells, save_picture_voronoi
 from app.decline_rate.functions import production_model
 from app.well_active_zones import get_value_map
 from app.ranking_drilling.starting_rates import calculate_starting_rate
+from app.decline_rate.residual_reserves import prepare_mesh_map_rrr
 
 
 class ProjectWell:
@@ -40,7 +40,7 @@ class ProjectWell:
         self.init_Qo_rate = None
         self.decline_rates = None
         self.r_eff = None
-        self.reserves = None
+        self.reserves = None  # тыс. т
 
         self.Qo_rate = None
         self.Ql_rate = None
@@ -123,13 +123,13 @@ class ProjectWell:
         logger.info(f"Для проектной скважины {self.well_number}: Q_liq = {self.init_Ql_rate},"
                     f" Q_oil = {self.init_Qo_rate}")
 
-    def get_production_profile(self, data_decline_rate_stat, period=25*12):
+    def get_production_profile(self, data_decline_rate_stat, period=25 * 12):
         if self.init_Qo_rate is None or self.init_Ql_rate is None:
             logger.warning(f"Проверьте расчет запускных для проектной скважины {self.well_number}!")
         else:
             # Рассчитываем средние коэффициенты скважин из окружения
             list_nearest_wells = self.gdf_nearest_wells.well_number.unique()
-            list_nearest_wells = np.append(list_nearest_wells,'default_decline_rates')
+            list_nearest_wells = np.append(list_nearest_wells, 'default_decline_rates')
             data_decline_rate_stat = data_decline_rate_stat[data_decline_rate_stat.well_number.isin(list_nearest_wells)]
             self.decline_rates = get_avg_decline_rates(data_decline_rate_stat, self.init_Ql_rate, self.init_Qo_rate)
             # Восстанавливаем профиль для проектной скважины
@@ -139,64 +139,27 @@ class ProjectWell:
             success_arps_ql = model_arps_ql[0]
             success_arps_qo = model_arps_qo[0]
             if success_arps_ql and success_arps_qo:
-                rates, productions = production_model(period, model_arps_ql, model_arps_qo, self.reserves)
+                rates, productions = production_model(period, model_arps_ql, model_arps_qo, self.reserves * 1000)
                 self.Ql_rate, self.Qo_rate = rates
                 self.Ql, self.Qo = productions
             else:
                 logger.warning(f"Проверьте расчет среднего темпа для проектной скважины {self.well_number}!")
         pass
 
-    def calculate_reserves(self, gdf_project_wells, map_rrr):
+    def calculate_reserves(self, map_rrr,  gdf_mesh, mesh_pixel):
         """Расчет ОИЗ проектной скважины, тыс.т"""
-        # Радиус дренирования проектной скважины согласно Вороным
-        self.r_eff = gdf_project_wells[gdf_project_wells['well_number'] == self.well_number]['r_eff_voronoy'].iloc[0]
+
         # Создаем буфер вокруг скважины
         buffer = self.LINESTRING_geo.buffer(self.r_eff)
-        # Определение границ карты
-        x_min, x_max = [map_rrr.geo_transform[0], map_rrr.geo_transform[0] + map_rrr.geo_transform[1] *
-                        map_rrr.data.shape[1]]
-        y_min, y_max = [map_rrr.geo_transform[3] + map_rrr.geo_transform[5] * map_rrr.data.shape[0],
-                        map_rrr.geo_transform[3]]
-        size_pixel = map_rrr.geo_transform[1]
-        # Создание сетки
-        grid_x, grid_y = np.mgrid[x_min:x_max:size_pixel, y_max:y_min:-size_pixel]
-        grid_points = np.column_stack((grid_x.ravel(), grid_y.ravel()))
 
         # Проверка принадлежности точек буферу
-        mask_flat = np.array([buffer.contains(Point(x, y)) for x, y in grid_points])
-
-        # Преобразование в 2D-маску
-        mask = mask_flat.reshape(map_rrr.data.shape)
-        # Расчет ОИЗ проектной скважины
-        # 10000 - перевод т/га в т/м2
-        # 1000 - перевод т в тыс.т
-        self.reserves = np.sum(map_rrr.data[mask] * map_rrr.geo_transform[1] ** 2 / 10000) / 1000
+        points_index = list(gdf_mesh[buffer.contains(gdf_mesh["Mesh_Points"])].index)
+        array_rrr = map_rrr.data[mesh_pixel.loc[points_index, 'y_coords'], mesh_pixel.loc[points_index, 'x_coords']]
+        self.reserves = np.sum(array_rrr * map_rrr.geo_transform[1] ** 2 / 10000) / 1000
         pass
 
 
-def save_ranking_drilling_to_excel(list_zones, filename):
-    gdf_result = gpd.GeoDataFrame()
-    for drill_zone in list_zones:
-        if drill_zone.rating != -1:
-            gdf_project_wells = gpd.GeoDataFrame([well.__dict__ for well in drill_zone.list_project_wells])
-            # gdf_project_wells = gpd.GeoDataFrame(
-            #     {'well_number': [well.well_number for well in drill_zone.list_project_wells],
-            #      'well_type': [well.well_type for well in drill_zone.list_project_wells],
-            #      'length': [well.length_geo for well in drill_zone.list_project_wells],
-            #      'water_cut': [well.water_cut for well in drill_zone.list_project_wells],
-            #      'init_Ql': [well.init_Ql_rate for well in drill_zone.list_project_wells],
-            #      'init_Qo': [well.init_Qo_rate for well in drill_zone.list_project_wells],
-            #      'Qo_nak_25_years': [np.sum(well.Qo) for well in drill_zone.list_project_wells],
-            #      'Ql_nak_25_years': [np.sum(well.Ql) for well in drill_zone.list_project_wells],
-            #      'nearest_wells': [well.gdf_nearest_wells.well_number.unique() for well in drill_zone.list_project_wells],
-            #      'message_arps': [well.decline_rates[0][4] for well in drill_zone.list_project_wells]}
-            # )
-            gdf_result = pd.concat([gdf_result, gdf_project_wells], ignore_index=True)
-    gdf_result.to_excel(filename, sheet_name='РБ', index=False)
-    pass
-
-
-def calculate_reserves_by_voronoi(list_zones, df_fact_wells, map_rrr, save_directory):
+def calculate_reserves_by_voronoi(list_zones, df_fact_wells, map_rrr, save_directory=None):
     """Расчет запасов для проектных скважин с помощью ячеек Вороных"""
     df_fact_wells = (df_fact_wells[(df_fact_wells['Qo_cumsum'] > 0) |
                                    (df_fact_wells['Winj_cumsum'] > 0)].reset_index(drop=True))[['well_number',
@@ -208,7 +171,6 @@ def calculate_reserves_by_voronoi(list_zones, df_fact_wells, map_rrr, save_direc
     gdf_project_wells = gpd.GeoDataFrame()
     for drill_zone in list_zones:
         if drill_zone.rating != -1:
-            # gdf_project_wells_zone = gpd.GeoDataFrame([well.__dict__ for well in drill_zone.list_project_wells])
             gdf_project_wells_zone = gpd.GeoDataFrame(
                 {'well_number': [well.well_number for well in drill_zone.list_project_wells],
                  'well_type': [well.well_type for well in drill_zone.list_project_wells],
@@ -222,12 +184,22 @@ def calculate_reserves_by_voronoi(list_zones, df_fact_wells, map_rrr, save_direc
     # расчет Вороных
     gdf_all_wells[['area_voronoi', 'r_eff_voronoy']] = get_parameters_voronoi_cells(gdf_all_wells)
     # сохранение картинки Вороных
-    save_picture_voronoi(gdf_all_wells, f"{save_directory}/voronoy.png", type_coord="geo", default_size_pixel=1)
+    if save_directory:
+        save_picture_voronoi(gdf_all_wells, f"{save_directory}/voronoy.png",
+                             type_coord="geo", default_size_pixel=1)
     # оставляем только проектные скважины
     gdf_project_wells = gdf_all_wells[gdf_all_wells['work_marker'].isna()].reset_index(drop=True)
+    # Подготовка сетки точек к расчету запасов
+    gdf_mesh, mesh_pixel = prepare_mesh_map_rrr(map_rrr)
+
     for drill_zone in list_zones:
         if drill_zone.rating != -1:
             logger.info(f"Расчет ОИЗ проектных скважин зоны: {drill_zone.rating}")
             for project_well in drill_zone.list_project_wells:
-                project_well.calculate_reserves(gdf_project_wells, map_rrr)
+                # Радиус дренирования проектной скважины согласно Вороным
+                project_well.r_eff = \
+                    gdf_project_wells[gdf_project_wells['well_number'] == project_well.well_number][
+                        'r_eff_voronoy'].iloc[0]
+                # Запасы проектной скважины согласно Вороным
+                project_well.calculate_reserves(map_rrr, gdf_mesh, mesh_pixel)
     pass

@@ -131,22 +131,8 @@ def get_reserves_by_map(data_wells, map_rrr, min_reserves=2):
     default_size = map_rrr.geo_transform[1]
     area_cell = default_size ** 2
 
-    # Определение границ сетки карты в географических координатах
-    x_min, x_max = [map_rrr.geo_transform[0],
-                    map_rrr.geo_transform[0] + map_rrr.geo_transform[1] * map_rrr.data.shape[1]]
-    y_min, y_max = [map_rrr.geo_transform[3] + map_rrr.geo_transform[5] * map_rrr.data.shape[0],
-                    map_rrr.geo_transform[3]]
-
     # Создание географической и пиксельной сеток
-    grid_x, grid_y = np.mgrid[x_min:x_max:default_size, y_max:y_min:-default_size]
-    grid_points = np.column_stack((grid_x.ravel(), grid_y.ravel()))
-    grid_x_pixel, grid_y_pixel = np.mgrid[0: map_rrr.data.shape[1]:1, 0: map_rrr.data.shape[0]:1]
-    grid_points_pixel = np.column_stack((grid_x_pixel.ravel(), grid_y_pixel.ravel()))
-
-    mesh = list(map(lambda x, y: Point(x, y), grid_points[:, 0], grid_points[:, 1]))
-    mesh = pd.DataFrame(mesh, columns=['Mesh_Points'])
-    gdf_mesh = gpd.GeoDataFrame(mesh, geometry="Mesh_Points")
-    mesh_pixel = pd.DataFrame(grid_points_pixel, columns=['x_coords', 'y_coords'])
+    gdf_mesh, mesh_pixel = prepare_mesh_map_rrr(map_rrr)
 
     gdf_data_wells = gpd.GeoDataFrame(data_wells, geometry="LINESTRING_geo")
     gdf_data_wells["polygon_r_eff_voronoy"] = gdf_data_wells.buffer(gdf_data_wells["r_eff_voronoy"])
@@ -163,6 +149,27 @@ def get_reserves_by_map(data_wells, map_rrr, min_reserves=2):
         if value_rrr == 0 or value_rrr < min_reserves:
             gdf_data_wells.loc[index, "reserves"] = min_reserves
     return gdf_data_wells["reserves"]
+
+
+def prepare_mesh_map_rrr(map_rrr):
+    """Вспомогательная функция для формирования gdp массива гео-координат карты и df сетки пиксельных координат"""
+    # Определение границ сетки карты в географических координатах
+    x_min, x_max = [map_rrr.geo_transform[0],
+                    map_rrr.geo_transform[0] + map_rrr.geo_transform[1] * map_rrr.data.shape[1]]
+    y_min, y_max = [map_rrr.geo_transform[3] + map_rrr.geo_transform[5] * map_rrr.data.shape[0],
+                    map_rrr.geo_transform[3]]
+
+    # Создание географической и пиксельной сеток
+    grid_x, grid_y = np.mgrid[x_min:x_max:map_rrr.geo_transform[1], y_max:y_min:-map_rrr.geo_transform[1]]
+    grid_points = np.column_stack((grid_x.ravel(), grid_y.ravel()))
+    grid_x_pixel, grid_y_pixel = np.mgrid[0: map_rrr.data.shape[1]:1, 0: map_rrr.data.shape[0]:1]
+    grid_points_pixel = np.column_stack((grid_x_pixel.ravel(), grid_y_pixel.ravel()))
+
+    mesh = list(map(lambda x, y: Point(x, y), grid_points[:, 0], grid_points[:, 1]))
+    mesh = pd.DataFrame(mesh, columns=['Mesh_Points'])
+    gdf_mesh = gpd.GeoDataFrame(mesh, geometry="Mesh_Points")
+    mesh_pixel = pd.DataFrame(grid_points_pixel, columns=['x_coords', 'y_coords'])
+    return gdf_mesh, mesh_pixel
 
 
 def calculate_reserves_statistics(df_well, name_well, marker="all_period"):
