@@ -1,82 +1,21 @@
 import os
 import pandas as pd
 import numpy as np
-import yaml
 from dateutil.relativedelta import relativedelta
 from loguru import logger
 import xlwings as xw
+#
+# from economy.economy_functions import (select_analogue, expenditure_side, revenue_side, estimated_revenue, taxes,
+#                                        Profit, FCF, DCF)
+# from economy.economy_utilities import (add_on_sheet, check_economy_data_is_exist, dict_business_plan,
+#                                        dict_macroeconomics, name_columns_FPA, preparation_business_plan,
+#                                        preparation_coefficients, prepare_long_business_plan,
+#                                        preparation_macroeconomics, prepare_fpa)
 
-from Utility_function import get_save_path
 
-from economy.economy_functions import (select_analogue, expenditure_side, revenue_side, estimated_revenue, taxes,
-                                       Profit, FCF, DCF)
-from economy.economy_utilities import (add_on_sheet, check_economy_data_is_exist, dict_business_plan,
-                                       dict_macroeconomics, name_columns_FPA, preparation_business_plan,
-                                       preparation_coefficients, prepare_long_business_plan,
-                                       preparation_macroeconomics, prepare_fpa)
 
 
 def calculate_economy(reservoir):
-    logger.info("1. Подготовка данных для расчета экономики")
-    dir_path = f"{os.getcwd()}"
-    economy_path = os.path.join(dir_path, "economy\\Экономика")
-
-    with open(os.path.join(dir_path, "conf_files\\liquid_groups.yml")) as f:
-        liquid_groups = pd.DataFrame(yaml.safe_load(f))
-    liquid_groups = liquid_groups.astype("float")
-
-    check_economy_data_is_exist(economy_path)
-
-    # Инициализируем необходимые переменные
-    coefficients = pd.read_excel(economy_path + "\\НРФ.xlsx", sheet_name="Расчет НДПИ", header=1, nrows=41)
-    macroeconomics = pd.read_excel(economy_path + "\\Макра_оперативная_текущий_год.xlsx", nrows=15,
-                                   usecols="A, B, O")  # Данные по макре за текущий год (напр: 2024)
-    df_fpa = pd.read_excel(economy_path + "\\НРФ.xlsx", sheet_name="Ш-01.02.01.07-01, вер. 1.0",
-                           usecols=name_columns_FPA, header=4).fillna(0)
-    reservoirs_NDD = pd.read_excel(economy_path + "\\НРФ.xlsx", sheet_name="МР с НДД",
-                                   header=None).replace({'2': '', '6': '', ' ЮЛ': ''}).drop_duplicates(keep='last')
-    business_plan = pd.read_excel(economy_path + "\\Макра_оперативная_БП.xlsx", usecols="A, N:R",
-                                  header=3)  # Данные по макре за следующие 5 лет (напр: 2025, 26, 27, 28, 29)
-    business_plan_long = pd.read_excel(economy_path + "\\Макра_долгосрочная.xlsx", usecols="A, H:M",
-                                       header=3)  # Данные по макре за следующие 6 лет (напр: 2030 - 35)
-
-    logger.info("Предварительная обработка и подготовка файлов")
-    macroeconomics = preparation_macroeconomics(macroeconomics, dict_macroeconomics)
-    business_plan = preparation_business_plan(business_plan, dict_business_plan)
-    coefficients = preparation_coefficients(coefficients)
-    df_fpa = prepare_fpa(df_fpa, liquid_groups)
-
-    macroeconomics = macroeconomics.merge(business_plan, left_on='Параметр', right_on='Параметр', how='outer')
-    macroeconomics = macroeconomics.fillna(method='bfill', axis=1)
-    macroeconomics.at[
-        macroeconomics.loc[macroeconomics["Параметр"] == "r", "Параметр"].index[0], "Ед.изм."] = "Д.ед."
-
-    dict_business_plan[
-        'Нетбэк нефти для  Хантоса, СПД, Томскнефти, Мегиона, ГПН-Востока, Пальян, Толедо'] = 'Netback'
-    business_plan_long = prepare_long_business_plan(business_plan_long, dict_business_plan)
-
-    macroeconomics = macroeconomics.merge(business_plan_long, left_on='Параметр', right_on='Параметр', how='outer')
-    macroeconomics = macroeconomics.fillna(method='ffill', axis=1)
-
-    logger.info("check the content of output")
-    if __name__ == "__main__":
-        path_to_save = os.path.join(dir_path, "injection_profitability_output")
-    else:
-        try:
-            path_to_save = get_save_path("injection_profitability")
-        except PermissionError:
-            return "Нет прав доступа для записи"
-
-    file_data_reservoir = path_to_save + f"\\{reservoir}.xlsx"
-
-    if not os.path.isfile(file_data_reservoir):
-        logger.warning(f"Отсутствует расчет физики для месторождения - {reservoir}")
-        raise f"Отсутствует расчет физики для месторождения - {reservoir}"
-
-    # Dataframes:
-    df_prod_well = pd.read_excel(file_data_reservoir, sheet_name="Прирост доб")
-    df_prod_well[['№ добывающей', 'Ячейка']] = df_prod_well[['№ добывающей', 'Ячейка']].astype("str")
-
     years = pd.Series(df_prod_well.columns[7:]).dt.to_period("A")
     last_year = years.iloc[-1]
     last_data = df_prod_well.columns[-1]
@@ -96,33 +35,6 @@ def calculate_economy(reservoir):
     df_forecasts = pd.read_excel(file_data_reservoir, sheet_name="Прогноз_суммарный").iloc[:, 1:]
     df_forecasts['Ячейка'] = df_forecasts['Ячейка'].astype("str")
 
-    logger.info(f"Объединение факта с прогнозом для добычи")
-    if df_forecasts.shape[1] > 3:
-
-        df_forecasts.columns = df_forecasts.columns[:3].to_list() + \
-                               [pd.to_datetime(last_data) + relativedelta(months=i + 1) for i in
-                                range(df_forecasts.shape[1] - 3)]
-        del df_forecasts["Последняя дата работы"]
-        df_forecasts.set_index("Ячейка", inplace=True)
-
-        df_fQliq = df_forecasts[df_forecasts["Параметр"] == "delta_Qliq, tons/day"]
-        df_fQoil = df_forecasts[df_forecasts["Параметр"] == "delta_Qoil, tons/day"]
-
-        sum_Qliq = df_Qliq[['Ячейка', last_data]].groupby(by=['Ячейка']).sum()
-        sum_Qoil = df_Qoil[['Ячейка', last_data]].groupby(by=['Ячейка']).sum()
-
-        df_ratio_liq = df_Qliq[['Ячейка', "№ добывающей", last_data]]
-        df_ratio_oil = df_Qoil[['Ячейка', "№ добывающей", last_data]]
-
-        df_ratio_liq["ratio"] = df_ratio_liq.apply(lambda row: row[last_data] / sum_Qliq.loc[row['Ячейка']],
-                                                   axis=1).fillna(0)
-        df_ratio_oil["ratio"] = df_ratio_oil.apply(lambda row: row[last_data] / sum_Qoil.loc[row['Ячейка']],
-                                                   axis=1).fillna(0)
-        for column in df_forecasts.columns[1:]:
-            df_Qliq[column] = df_ratio_liq.apply(lambda row: row["ratio"] * df_fQliq[column].loc[row['Ячейка']],
-                                                 axis=1).fillna(0)
-            df_Qoil[column] = df_ratio_oil.apply(lambda row: row["ratio"] * df_fQoil[column].loc[row['Ячейка']],
-                                                 axis=1).fillna(0)
 
     logger.info(f"Проверка наличия всех скважин в НРФ")
     df_fpa.rename(columns={'№скв.': '№ добывающей'}, inplace=True)
@@ -236,5 +148,8 @@ def calculate_economy(reservoir):
 
 
 if __name__ == "__main__":
+    from app.local_parameters import paths
+    from app.input_output.input import load_economy_data
+    path_economy = paths['path_economy']
     # для консольного расчета экономики
-    calculate_economy("Западно-Усть-Балыкское")
+    load_economy_data(path_economy)

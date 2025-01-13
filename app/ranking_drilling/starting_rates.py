@@ -117,10 +117,14 @@ def calculate_permeability_fact_wells(row, dict_parameters_coefficients,
             return abs_error
 
         # Оптимизация - ищем k_h, при котором ошибка минимальна
-        result = root_scalar(error_function, bracket=[1e-3, 1e3], method='brentq', xtol=1e-3, rtol=1e-2, maxiter=100)
-        if result.converged:
-            return result.root
-        else:
+        try:
+            result = root_scalar(error_function, bracket=[1e-3, 1e3], method='brentq', xtol=1e-3, rtol=1e-2, maxiter=100)
+            if result.converged:
+                return result.root
+            else:
+                logger.info(f'Не удалось найти значение k_h для фактической скважины №{row.well_number}')
+            return 0
+        except ValueError:
             logger.info(f'Не удалось найти значение k_h для фактической скважины №{row.well_number}')
             return 0
     else:
@@ -137,7 +141,9 @@ def get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients, swi
         data_wells['permeability_fact'] = np.where(data_wells['permeability_fact'] > permeability_upper_bound,
                                                    0, data_wells['permeability_fact'])
     avg_permeability = data_wells[data_wells['permeability_fact'] != 0]['permeability_fact'].mean()
-    return data_wells, avg_permeability
+    # Перезапись значения проницаемости по объекту из ГФХ на среднюю по фактическому фонду
+    dict_parameters_coefficients['reservoir_params']['k_h'] = avg_permeability
+    return data_wells, dict_parameters_coefficients
 
 
 def apply_iqr_filter(data_wells, name_column):

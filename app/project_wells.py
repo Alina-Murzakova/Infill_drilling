@@ -78,23 +78,24 @@ class ProjectWell:
         self.gdf_nearest_wells = gdf_fact_wells.loc[nearest_hor_wells_index]
         pass
 
-    def get_params_nearest_wells(self, avg_permeability):
+    def get_params_nearest_wells(self, dict_parameters_coefficients):
         """Получаем параметры для проектной скважины с ближайших фактических"""
         # Проверка на наличие ближайшего окружения
         if self.gdf_nearest_wells.empty:
             logger.warning(f"Проверьте наличие окружения для проектной скважины {self.well_number}!")
-        # Расчет средних параметров по выбранному окружению
+        # Расчет средних параметров по выбранному окружению.
         # Выбираем только те строки, где значение Рзаб больше 0
         self.P_well_init = np.mean(self.gdf_nearest_wells[(self.gdf_nearest_wells['init_P_well_prod'] > 0) &
                                                           (self.gdf_nearest_wells['init_P_well_prod'].notna())]
                                    ['init_P_well_prod'])
+        if not self.P_well_init > 0:
+            self.P_well_init = self.P_reservoir - dict_parameters_coefficients["well_params"]['pressure_drawdown']
         # Выбираем только те строки, где значение проницаемости больше 0 и не nan
         self.permeability = np.mean(self.gdf_nearest_wells[(self.gdf_nearest_wells['permeability_fact'] > 0) &
                                                            (self.gdf_nearest_wells['permeability_fact'].notna())]
                                     ['permeability_fact'])
-
         if np.isnan(self.permeability):
-            self.permeability = avg_permeability
+            self.permeability = dict_parameters_coefficients['reservoir_params']['k_h']
         pass
 
     def get_params_maps(self, maps):
@@ -165,6 +166,10 @@ class ProjectWell:
         points_index = list(gdf_mesh[buffer.contains(gdf_mesh["Mesh_Points"])].index)
         array_rrr = map_rrr.data[mesh_pixel.loc[points_index, 'y_coords'], mesh_pixel.loc[points_index, 'x_coords']]
         self.reserves = np.sum(array_rrr * map_rrr.geo_transform[1] ** 2 / 10000) / 1000
+        pass
+
+    def calculate_economy(self, economy_info, start_date, period=25):
+
         pass
 
 

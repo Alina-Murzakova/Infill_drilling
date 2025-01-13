@@ -63,8 +63,9 @@ def get_project_wells_from_clusters(name_cluster, gdf_clusters, data_wells, defa
 
     gdf_project["POINT_T1_pix"] = gdf_project["LINESTRING_pix"].apply(lambda x: Point(x.coords[0]))
     gdf_project["POINT_T3_pix"] = gdf_project["LINESTRING_pix"].apply(lambda x: Point(x.coords[-1]))
-    gdf_project.loc[gdf_project["POINT_T1_pix"] == gdf_project["POINT_T3_pix"], "well_type"] = "vertical"
-    gdf_project.loc[gdf_project["POINT_T1_pix"] != gdf_project["POINT_T3_pix"], "well_type"] = "horizontal"
+    if not gdf_project.empty:
+        gdf_project.loc[gdf_project["POINT_T1_pix"] == gdf_project["POINT_T3_pix"], "well_type"] = "vertical"
+        gdf_project.loc[gdf_project["POINT_T1_pix"] != gdf_project["POINT_T3_pix"], "well_type"] = "horizontal"
     return gdf_project
 
 

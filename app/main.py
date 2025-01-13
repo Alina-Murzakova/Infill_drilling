@@ -19,6 +19,7 @@ if __name__ == '__main__':
     data_well_directory = paths["data_well_directory"]
     maps_directory = paths["maps_directory"]
     path_geo_phys_properties = paths["path_geo_phys_properties"]
+    path_economy = paths['path_economy']
 
     # Параметры кластеризации
     default_size_pixel = parameters_calculation["default_size_pixel"]
@@ -29,6 +30,10 @@ if __name__ == '__main__':
     # Параметры для расстановки проектного фонда
     init_profit_cum_oil = parameters_calculation["init_profit_cum_oil"]
     buffer_project_wells = parameters_calculation["buffer_project_wells"] / default_size_pixel
+
+    # Параметры расчета потока
+    period_calculation = parameters_calculation["period_calculation"]
+    start_date = parameters_calculation["start_date"]
 
     logger.info("Загрузка скважинных данных")
     data_history, data_wells, info_object_calculation = load_wells_data(data_well_directory=data_well_directory)
@@ -47,7 +52,8 @@ if __name__ == '__main__':
     type_map_list = list(map(lambda raster: raster.type_map, maps))
 
     logger.info("Расчет проницаемости для фактических скважин через РБ")
-    data_wells, avg_permeability = get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients, switch=True)
+    data_wells, dict_parameters_coefficients = get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients,
+                                                                              switch=True)
 
     logger.info("Расчет радиусов дренирования и нагнетания для скважин")
     data_wells = calculate_effective_radius(data_wells, dict_properties=dict_parameters_coefficients['fluid_params'])
@@ -67,7 +73,7 @@ if __name__ == '__main__':
     for drill_zone in list_zones:
         if drill_zone.rating != -1:
             drill_zone.get_init_project_wells(map_rrr, data_wells, init_profit_cum_oil,
-                                              default_size_pixel, buffer_project_wells, avg_permeability)
+                                              default_size_pixel, buffer_project_wells, dict_parameters_coefficients)
 
     logger.info("Расчет запасов для проектных скважин")
     calculate_reserves_by_voronoi(list_zones, data_wells, map_rrr, save_directory)
@@ -77,7 +83,9 @@ if __name__ == '__main__':
             logger.info(f"Расчет запускных параметров и профиля добычи проектных скважин зоны: {drill_zone.rating}")
             for project_well in drill_zone.list_project_wells:
                 project_well.get_starting_rates(maps, dict_parameters_coefficients)
-                project_well.get_production_profile(data_decline_rate_stat)
+                project_well.get_production_profile(data_decline_rate_stat, period_calculation * 12)
 
     logger.info(f"Выгрузка данных расчета:")
     upload_data(save_directory, data_wells, maps, list_zones, info_clusterization_zones, buffer_project_wells)
+
+    logger.info(f"Загрузка исходных данных для расчета экономики")

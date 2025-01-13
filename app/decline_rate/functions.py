@@ -2,14 +2,15 @@ import numpy as np
 import pandas as pd
 
 
-def history_processing(history, max_delta):
+def history_processing(history, max_delta, month_stop=120):
     """
     Предварительная обработка МЭР
     :param history: DataFrame
     :param max_delta Максимальный период остановки, дни
+    :param month_stop Количество месяцев остановки для отнесения скважин к действующим (10 лет)
     :return: измененный DataFrame
     """
-    # last_data = np.sort(history.date.unique())[-1]
+    last_date = np.sort(history.date.unique())[-1]
     # Пересчет дебитов через добычу
     history['Ql_rate'] = history.Ql / history.time_work_prod * 24
     history['Qo_rate'] = history.Qo / history.time_work_prod * 24
@@ -26,8 +27,10 @@ def history_processing(history, max_delta):
         slice_well = history.loc[history.well_number == well].copy()
         work_object = slice_well['objects'].iloc[-1]
         slice_well = slice_well[slice_well['objects'] == work_object]
-        # ? удаление скважины, если она остановлена больше max_delta от текущей даты расчета
-        # last_data_well = np.sort(slice_well.date.unique())[-1]
+        # удаление скважины, если она остановлена больше month_stop от текущей даты расчета
+        no_work_time = round((last_date - slice_well.date.iloc[-1]).days / 29.3)
+        if no_work_time > month_stop:
+            continue
 
         next_dates = slice_well.date.iloc[1:]
         next_dates.loc[-1] = slice_well.date.iloc[-1]
