@@ -103,7 +103,7 @@ def calculate_permeability_fact_wells(row, dict_parameters_coefficients,
     reservoir_params['Pr'] = row['init_P_reservoir_prod']
     well_params['L'] = row['length_geo']
     well_params['Pwf'] = row['init_P_well_prod']
-
+    # logger.info(f'{row.well_number, reservoir_params, fluid_params, well_params, coefficients}')
     if (row.init_Ql_rate_TR > 0 and row.init_P_well_prod > 0
             and row.init_P_reservoir_prod > 0 and row.init_P_reservoir_prod > row.init_P_well_prod):
         def error_function(k_h):
@@ -116,10 +116,14 @@ def calculate_permeability_fact_wells(row, dict_parameters_coefficients,
             return abs_error
 
         # Оптимизация - ищем k_h, при котором ошибка минимальна
-        result = root_scalar(error_function, bracket=[1e-3, 1e3], method='brentq', xtol=1e-3, rtol=1e-2, maxiter=100)
-        if result.converged:
-            return result.root
-        else:
+        try:
+            result = root_scalar(error_function, bracket=[1e-3, 1e3], method='brentq', xtol=1e-3, rtol=1e-2, maxiter=100)
+            if result.converged:
+                return result.root
+            else:
+                logger.info(f'Не удалось найти значение k_h для фактической скважины №{row.well_number}')
+            return 0
+        except ValueError:
             logger.info(f'Не удалось найти значение k_h для фактической скважины №{row.well_number}')
             return 0
     else:

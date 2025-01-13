@@ -5,7 +5,7 @@ import numpy as np
 from loguru import logger
 from shapely.geometry import Point, LineString
 
-from app.config import columns_name, gpch_column_name, dict_work_marker, sample_data_wells
+from app.config import columns_name, gpch_column_name, dict_work_marker, sample_data_wells, macroeconomics_rows_name
 
 
 @logger.catch
@@ -218,15 +218,57 @@ def load_geo_phys_properties(path_geo_phys_properties, name_field, name_object):
         return formatting_dict_geo_phys_properties(dict_geo_phys_properties_field)
 
 
+@logger.catch
+def load_economy_data(economy_path):
+    # # Инициализируем необходимые переменные
+    # with pd.ExcelFile(economy_path) as xls:
+    #     # коэффициенты Кв Кз Кд	Кдв	Ккан Кк	Кман Кабдт
+    #     coefficients = pd.read_excel(xls, sheet_name="Налоги_константы", header=None)
+    #     macroeconomics = pd.read_excel(xls, sheet_name="Макропараметры", header=3)  # Основная макра
+    #     # месторождения с НДД
+    #     reservoirs_NDD = pd.read_excel(xls, sheet_name="МР с НДД", header=None)
+    #     # НРФ для уделок
+    #     # df_fpa = pd.read_excel(economy_path + "\\НРФ.xlsx", sheet_name="Ш-01.02.01.07-01, вер. 1.0",
+    #     #                        usecols=name_columns_FPA, header=4).fillna(0)
+    #     # business_plan = pd.read_excel(economy_path + "\\Макра_оперативная_БП.xlsx", usecols="A, N:R",
+    #     #                               header=3)  # Данные по макре за следующие 5 лет (напр: 2025, 26, 27, 28, 29)
+    #     # business_plan_long = pd.read_excel(economy_path + "\\Макра_долгосрочная.xlsx", usecols="A, H:M",
+    #     #                                    header=3)  # Данные по макре за следующие 6 лет (напр: 2030 - 35)
+    #
+    # # Подготовка файлов
+    # name_first_column = macroeconomics.columns[0]
+    # macroeconomics = macroeconomics.iloc[:, ~macroeconomics.columns.str.match('Unnamed').fillna(False)]
+    # macroeconomics = macroeconomics[macroeconomics[name_first_column].isin(macroeconomics_rows_name.keys())]
+    # macroeconomics.replace(macroeconomics_rows_name, inplace=True)
+    # macroeconomics = macroeconomics.fillna(method='ffill', axis=1).reset_index(drop=True)
+    #
+    # urals = macroeconomics[macroeconomics[name_first_column] == 'Urals'].values.flatten()[1:]
+    # exchange_rate = macroeconomics[macroeconomics[name_first_column] == 'exchange_rate'].values.flatten()[1:]
+    # base_rate_MET = macroeconomics[macroeconomics[name_first_column] == 'base_rate_MET'].values.flatten()[1:]
+    # K_k = macroeconomics[macroeconomics[name_first_column] == 'K_k'].values.flatten()[1:]
+    # K_abdt = macroeconomics[macroeconomics[name_first_column] == 'K_abdt'].values.flatten()[1:]
+    # K_man = macroeconomics[macroeconomics[name_first_column] == 'K_man'].values.flatten()[1:]
+    # # Расчет НДПИ
+    # k_c = (urals - 15) * exchange_rate / 261
+    # MET = base_rate_MET * k_c - 'Кндпи(до маневра)' * k_c * (1 - k_d * k_v * k_z * k_kan) + K_k + K_abdt + K_man
+    #
+    # macroeconomics = macroeconomics.fillna(method='ffill', axis=1).reset_index(drop=True)
+    #
+    # macroeconomics.loc[macroeconomics.shape[0] + 1] = \
+    #     [well, coefficients_Ql_rate, coefficients_Qo_rate, cumulative_oil_production]
+    pass
+
+
 """___________Вспомогательные функции___________"""
 
 
 def formatting_dict_geo_phys_properties(dict_geo_phys_properties):
     """Формирование словаря со всеми необходимыми свойствами из ГФХ в требуемых размерностях
-    !!! указать размерности !!!
+    !!! Указать размерности !!!
     """
     return {'reservoir_params': {'c_r': dict_geo_phys_properties['formation_compressibility'] / 100000,
-                                 'P_init': dict_geo_phys_properties['init_pressure'] * 10},
+                                 'P_init': dict_geo_phys_properties['init_pressure'] * 10,
+                                 'k_h': dict_geo_phys_properties['permeability']},
             'fluid_params': {'mu_w': dict_geo_phys_properties['water_viscosity_in_situ'],
                              'mu_o': dict_geo_phys_properties['oil_viscosity_in_situ'],
                              'c_o': dict_geo_phys_properties['oil_compressibility'] / 100000,

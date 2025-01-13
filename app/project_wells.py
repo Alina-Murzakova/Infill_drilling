@@ -112,10 +112,14 @@ class ProjectWell:
         reservoir_params['f_w'] = self.water_cut
         reservoir_params['Phi'] = self.m
         reservoir_params['h'] = self.NNT
+        if not self.permeability > 0:
+            self.permeability = reservoir_params['k_h']
         reservoir_params['k_h'] = self.permeability
         reservoir_params['Pr'] = self.P_reservoir
 
         well_params['L'] = self.length_geo
+        if not self.P_well_init > 0:
+            self.P_well_init = self.P_reservoir - well_params['pressure_drawdown']
         well_params['Pwf'] = self.P_well_init
         well_params['r_e'] = self.r_eff
         self.init_Ql_rate, self.init_Qo_rate = calculate_starting_rate(reservoir_params, fluid_params,
@@ -146,7 +150,7 @@ class ProjectWell:
                 logger.warning(f"Проверьте расчет среднего темпа для проектной скважины {self.well_number}!")
         pass
 
-    def calculate_reserves(self, map_rrr,  gdf_mesh, mesh_pixel):
+    def calculate_reserves(self, map_rrr, gdf_mesh, mesh_pixel):
         """Расчет ОИЗ проектной скважины, тыс.т"""
 
         # Создаем буфер вокруг скважины
@@ -156,6 +160,10 @@ class ProjectWell:
         points_index = list(gdf_mesh[buffer.contains(gdf_mesh["Mesh_Points"])].index)
         array_rrr = map_rrr.data[mesh_pixel.loc[points_index, 'y_coords'], mesh_pixel.loc[points_index, 'x_coords']]
         self.reserves = np.sum(array_rrr * map_rrr.geo_transform[1] ** 2 / 10000) / 1000
+        pass
+
+    def calculate_economy(self, economy_info, start_date, period=25):
+
         pass
 
 

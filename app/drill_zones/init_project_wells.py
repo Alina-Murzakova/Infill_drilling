@@ -44,6 +44,7 @@ def get_project_wells_from_clusters(name_cluster, gdf_clusters, data_wells, defa
     gdf_project['convex_hull'] = gdf_project['cluster'].apply(lambda x: x.convex_hull)
     # Создаем буферы, чтобы искать пересечения зон скважин (для фактических скважин - радиусы дренирования)
     gdf_fact_wells.set_geometry("LINESTRING_pix", inplace=True)
+    gdf_project.set_geometry("LINESTRING_pix", inplace=True)
     gdf_fact_wells['buffer'] = gdf_fact_wells.geometry.buffer(gdf_fact_wells["r_eff"] / default_size_pixel)
     gdf_project['buffer'] = gdf_project.geometry.buffer(buffer_project_wells)
     # Пересекающийся с проектным и/или фактическим фондом проектный фонд скважин
@@ -60,8 +61,9 @@ def get_project_wells_from_clusters(name_cluster, gdf_clusters, data_wells, defa
 
     gdf_project["POINT_T1_pix"] = gdf_project["LINESTRING_pix"].apply(lambda x: Point(x.coords[0]))
     gdf_project["POINT_T3_pix"] = gdf_project["LINESTRING_pix"].apply(lambda x: Point(x.coords[-1]))
-    gdf_project.loc[gdf_project["POINT_T1_pix"] == gdf_project["POINT_T3_pix"], "well_type"] = "vertical"
-    gdf_project.loc[gdf_project["POINT_T1_pix"] != gdf_project["POINT_T3_pix"], "well_type"] = "horizontal"
+    if not gdf_project.empty:
+        gdf_project.loc[gdf_project["POINT_T1_pix"] == gdf_project["POINT_T3_pix"], "well_type"] = "vertical"
+        gdf_project.loc[gdf_project["POINT_T1_pix"] != gdf_project["POINT_T3_pix"], "well_type"] = "horizontal"
     return gdf_project
 
 

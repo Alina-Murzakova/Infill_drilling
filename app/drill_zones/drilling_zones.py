@@ -190,8 +190,9 @@ def clusterization_zones(map_opportunity_index, epsilon, min_samples, percent_lo
 if __name__ == '__main__':
     # Скрипт для перебора гиперпараметров DBSCAN по карте cut_map_opportunity_index.grd
     import matplotlib.pyplot as plt
-    from app.input_output import load_wells_data, load_geo_phys_properties, get_save_path
-    from app.local_parameters import paths, parameters_calculation
+    from app.input_output.input import load_wells_data, load_geo_phys_properties
+    from app.input_output.output import get_save_path
+    from app.local_parameters import paths, parameters_calculation, default_well_params, default_coefficients
     from app.well_active_zones import calculate_effective_radius
     from app.maps_handler.functions import mapping
 
@@ -199,6 +200,7 @@ if __name__ == '__main__':
     maps_directory = paths["maps_directory"]
     path_geo_phys_properties = paths["path_geo_phys_properties"]
 
+    logger.info("Загрузка скважинных данных")
     _, data_wells, info = load_wells_data(data_well_directory=data_well_directory)
     name_field, name_object = info["field"], info["object_value"]
 
@@ -210,15 +212,19 @@ if __name__ == '__main__':
 
     default_size_pixel = parameters_calculation["default_size_pixel"]
 
+    logger.info(f"Загрузка ГФХ по пласту {name_object.replace('/', '-')} месторождения {name_field}")
+    dict_parameters_coefficients = load_geo_phys_properties(path_geo_phys_properties, name_field, name_object)
+    dict_parameters_coefficients.update({"well_params": default_well_params, 'coefficients': default_coefficients})
+
     maps, data_wells = mapping(maps_directory=maps_directory,
                                data_wells=data_wells,
-                               dict_properties=dict_geo_phys_properties,
+                               dict_properties=dict_parameters_coefficients['reservoir_params'],
                                default_size_pixel=default_size_pixel)
 
     type_maps_list = list(map(lambda raster: raster.type_map, maps))
     # инициализация всех необходимых карт из списка
     map_opportunity_index = maps[type_maps_list.index("opportunity_index")]
-    data_wells = calculate_effective_radius(data_wells, dict_geo_phys_properties, maps)
+    data_wells = calculate_effective_radius(data_wells, dict_properties=dict_parameters_coefficients['fluid_params'])
 
     # Перебор параметров DBSCAN c сеткой графиков 5 х 3
     pairs_of_hyperparams = [[4, 10], [4, 30], [4, 50],
