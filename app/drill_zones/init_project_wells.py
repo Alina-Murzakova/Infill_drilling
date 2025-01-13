@@ -12,6 +12,8 @@ from sklearn.cluster import KMeans
 def get_project_wells_from_clusters(name_cluster, gdf_clusters, data_wells, default_size_pixel, buffer_project_wells,
                                     threshold=2500):
     """Получаем GeoDataFrame с начальными координатами проектных скважин"""
+    # threshold = 2500 - максимальное расстояние для исключения скважины из ближайших скважин, пиксели
+
     # Подготовка GeoDataFrame с проектными скважинами
     gdf_project = gdf_clusters.copy()
     gdf_project['well_number'] = [f'{name_cluster}_{i}' for i in range(1, len(gdf_project) + 1)]
@@ -44,6 +46,7 @@ def get_project_wells_from_clusters(name_cluster, gdf_clusters, data_wells, defa
     gdf_project['convex_hull'] = gdf_project['cluster'].apply(lambda x: x.convex_hull)
     # Создаем буферы, чтобы искать пересечения зон скважин (для фактических скважин - радиусы дренирования)
     gdf_fact_wells.set_geometry("LINESTRING_pix", inplace=True)
+    gdf_project.set_geometry("LINESTRING_pix", inplace=True)
     gdf_fact_wells['buffer'] = gdf_fact_wells.geometry.buffer(gdf_fact_wells["r_eff"] / default_size_pixel)
     gdf_project['buffer'] = gdf_project.geometry.buffer(buffer_project_wells)
     # Пересекающийся с проектным и/или фактическим фондом проектный фонд скважин
@@ -421,28 +424,28 @@ def get_orientation(line):
 def determine_shift_direction(proj_well, intersect_well):
     """Определение направления для сдвига (вверх/вниз/влево/вправо)
     в зависимости от расположения ближайшей пересекающей скважины"""
-    proj_centroid, intersect_centroid = nearest_points(proj_well, intersect_well)
+    proj_point, intersect_point = nearest_points(proj_well, intersect_well)
     directions = []
     # Если ориентация вдоль x
     if get_orientation(proj_well) == 'x':
-        if intersect_centroid.y < proj_centroid.y:
+        if intersect_point.y < proj_point.y:
             directions = ['down', 'up']
         else:
             directions = ['up', 'down']
 
-        if intersect_centroid.x < proj_centroid.x:
+        if intersect_point.x < proj_point.x:
             directions += ['right', 'left']
         else:
             directions += ['left', 'right']
 
     # Если ориентация вдоль y
     elif get_orientation(proj_well) == 'y':
-        if intersect_centroid.x < proj_centroid.x:
+        if intersect_point.x < proj_point.x:
             directions = ['right', 'left']
         else:
             directions = ['left', 'right']
 
-        if intersect_centroid.y < proj_centroid.y:
+        if intersect_point.y < proj_point.y:
             directions += ['down', 'up']
         else:
             directions += ['up', 'down']

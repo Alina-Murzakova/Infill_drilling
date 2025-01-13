@@ -2,6 +2,7 @@
 /input/
 /output/
 /other_files/
+/init_project_wells_jupyter/
 /app/logs.log
 .idea/
 /app/local_parameters.py
@@ -9,6 +10,6 @@
 /app/test.py
 .ipynb_checkpoints/
 init_well_position.ipynb
-init_project_well_position.ipynb
 /картинки_ПФ/
 /*.png
+pickle.txt

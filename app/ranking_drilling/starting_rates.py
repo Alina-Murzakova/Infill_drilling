@@ -1,4 +1,5 @@
 import math
+import numpy as np
 
 from loguru import logger
 from scipy.optimize import root_scalar
@@ -15,7 +16,7 @@ def calculate_starting_rate(reservoir_params, fluid_params, well_params, coeffic
     Свойства пласта - reservoir_params(6):
     f_w - ожидаемая обводненность| %
     c_r - сжимаемость породы | 1/атм
-    Phi - пористость | %
+    Phi - пористость | д.ед.
     h - эффективная мощность пласта (общая) | м
     k_h - ожидаемая проницаемость - горизонтальная проницаемость (в плоскости XY) | мД
     Pr - текущее пластовое давление | атм
@@ -24,7 +25,7 @@ def calculate_starting_rate(reservoir_params, fluid_params, well_params, coeffic
     mu_w - вязкость воды | сП
     mu_o - вязкость нефти | сП
     c_o - сжимаемость нефти | 1/атм
-    c_w - сжимаемость воды | 1/амт
+    c_w - сжимаемость воды | 1/атм
     Bo - объемный коэффициент расширения нефти | м3/м3
     Pb - давление насыщения | атм
     rho - плотность нефти | г/см3
@@ -125,6 +126,30 @@ def calculate_permeability_fact_wells(row, dict_parameters_coefficients,
     else:
         return 0
 
+
+def get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients, switch):
+    data_wells['permeability_fact'] = data_wells.apply(calculate_permeability_fact_wells,
+                                                       args=(dict_parameters_coefficients,),
+                                                       axis=1)
+    if switch:
+        # Верхняя граница для фильтрации выбросов (метод IQR)
+        permeability_upper_bound = apply_iqr_filter(data_wells, name_column='permeability_fact')
+        data_wells['permeability_fact'] = np.where(data_wells['permeability_fact'] > permeability_upper_bound,
+                                                   0, data_wells['permeability_fact'])
+    avg_permeability = data_wells[data_wells['permeability_fact'] != 0]['permeability_fact'].mean()
+    return data_wells, avg_permeability
+
+
+def apply_iqr_filter(data_wells, name_column):
+    """Функция определения верхней границы выбросов методом межквартильного размаха IQR"""
+    column = data_wells[data_wells[name_column] > 0][name_column]
+    # Рассчитываем квартили
+    q1 = np.percentile(column, 25)
+    q3 = np.percentile(column, 75)
+    iqr = q3 - q1
+    # Определяем порог для отсеивания "выбросов"
+    upper_bound = q3 + 1.5 * iqr
+    return upper_bound
 
 def get_delta_pressure(reservoir_params, fluid_params, well_params):
     """

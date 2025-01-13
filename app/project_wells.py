@@ -78,14 +78,23 @@ class ProjectWell:
         self.gdf_nearest_wells = gdf_fact_wells.loc[nearest_hor_wells_index]
         pass
 
-    def get_params_nearest_wells(self):
+    def get_params_nearest_wells(self, avg_permeability):
         """Получаем параметры для проектной скважины с ближайших фактических"""
         # Проверка на наличие ближайшего окружения
         if self.gdf_nearest_wells.empty:
             logger.warning(f"Проверьте наличие окружения для проектной скважины {self.well_number}!")
         # Расчет средних параметров по выбранному окружению
-        self.P_well_init = np.mean(self.gdf_nearest_wells['init_P_well_prod'])
-        self.permeability = np.mean(self.gdf_nearest_wells['permeability_fact'])
+        # Выбираем только те строки, где значение Рзаб больше 0
+        self.P_well_init = np.mean(self.gdf_nearest_wells[(self.gdf_nearest_wells['init_P_well_prod'] > 0) &
+                                                          (self.gdf_nearest_wells['init_P_well_prod'].notna())]
+                                   ['init_P_well_prod'])
+        # Выбираем только те строки, где значение проницаемости больше 0 и не nan
+        self.permeability = np.mean(self.gdf_nearest_wells[(self.gdf_nearest_wells['permeability_fact'] > 0) &
+                                                           (self.gdf_nearest_wells['permeability_fact'].notna())]
+                                    ['permeability_fact'])
+
+        if np.isnan(self.permeability):
+            self.permeability = avg_permeability
         pass
 
     def get_params_maps(self, maps):
@@ -146,7 +155,7 @@ class ProjectWell:
                 logger.warning(f"Проверьте расчет среднего темпа для проектной скважины {self.well_number}!")
         pass
 
-    def calculate_reserves(self, map_rrr,  gdf_mesh, mesh_pixel):
+    def calculate_reserves(self, map_rrr, gdf_mesh, mesh_pixel):
         """Расчет ОИЗ проектной скважины, тыс.т"""
 
         # Создаем буфер вокруг скважины

@@ -222,8 +222,21 @@ def load_geo_phys_properties(path_geo_phys_properties, name_field, name_object):
 
 
 def formatting_dict_geo_phys_properties(dict_geo_phys_properties):
-    """Формирование словаря со всеми необходимыми свойствами из ГФХ в требуемых размерностях
-    !!! указать размерности !!!
+    """
+    Формирование словаря со всеми необходимыми свойствами из ГФХ в требуемых размерностях
+
+    - reservoir_params:
+    c_r - сжимаемость породы | (1/МПа)×10-4 --> 1/атм
+    P_init - текущее пластовое давление | МПа --> атм
+
+    - fluid_params:
+    mu_w - вязкость воды | сП или мПа*с
+    mu_o - вязкость нефти | сП или мПа*с
+    c_o - сжимаемость нефти | (1/МПа)×10-4 --> 1/атм
+    c_w - сжимаемость воды | (1/МПа)×10-4 --> 1/атм
+    Bo - объемный коэффициент расширения нефти | м3/м3
+    Pb - давление насыщения | МПа --> атм
+    rho - плотность нефти | г/см3
     """
     return {'reservoir_params': {'c_r': dict_geo_phys_properties['formation_compressibility'] / 100000,
                                  'P_init': dict_geo_phys_properties['init_pressure'] * 10},

@@ -1,6 +1,6 @@
 from loguru import logger
 
-from app.ranking_drilling.starting_rates import calculate_permeability_fact_wells
+from app.ranking_drilling.starting_rates import get_df_permeability_fact_wells
 from local_parameters import paths, parameters_calculation, default_well_params, default_coefficients
 from input_output.input import load_wells_data, load_geo_phys_properties
 
@@ -47,9 +47,7 @@ if __name__ == '__main__':
     type_map_list = list(map(lambda raster: raster.type_map, maps))
 
     logger.info("Расчет проницаемости для фактических скважин через РБ")
-    data_wells['permeability_fact'] = data_wells.apply(calculate_permeability_fact_wells,
-                                                       args=(dict_parameters_coefficients,),
-                                                       axis=1)
+    data_wells, avg_permeability = get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients, switch=True)
 
     logger.info("Расчет радиусов дренирования и нагнетания для скважин")
     data_wells = calculate_effective_radius(data_wells, dict_properties=dict_parameters_coefficients['fluid_params'])
@@ -69,7 +67,7 @@ if __name__ == '__main__':
     for drill_zone in list_zones:
         if drill_zone.rating != -1:
             drill_zone.get_init_project_wells(map_rrr, data_wells, init_profit_cum_oil,
-                                              default_size_pixel, buffer_project_wells)
+                                              default_size_pixel, buffer_project_wells, avg_permeability)
 
     logger.info("Расчет запасов для проектных скважин")
     calculate_reserves_by_voronoi(list_zones, data_wells, map_rrr, save_directory)

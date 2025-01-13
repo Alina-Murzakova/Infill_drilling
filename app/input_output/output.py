@@ -26,15 +26,19 @@ def upload_data(save_directory, data_wells, maps, list_zones, info_clusterizatio
         else:
             raster.save_img(f"{save_directory}/{raster.type_map}.png", data_wells)
 
+    data_project_wells = create_df_project_wells(list_zones)
+    data_all_wells = pd.concat([data_wells, data_project_wells], ignore_index=True)
+
     logger.info("Сохранение карты фактической проницаемости через РБ")
     map_pressure = maps[type_map_list.index('pressure')]
-    save_map_permeability_fact_wells(data_wells, map_pressure, f"{save_directory}/permeability_fact_wells.png")
+    save_map_permeability_fact_wells(data_all_wells, map_pressure, f"{save_directory}/permeability_fact_wells.png")
 
     logger.info(f"Сохраняем .png с начальным расположением проектного фонда в кластерах и карту ОИ с проектным фондом")
     save_picture_clustering_zones(list_zones, f"{save_directory}/init_project_wells.png", buffer_project_wells)
     map_opportunity_index = maps[type_map_list.index('residual_recoverable_reserves')]
     map_opportunity_index.save_img(f"{save_directory}/map_opportunity_index_with_project_wells.png", data_wells,
                                    list_zones, info_clusterization_zones, project_wells=True)
+    logger.info("Сохранение рейтинг бурения проектных скважин в формате .xlsx")
     save_ranking_drilling_to_excel(list_zones, f"{save_directory}/ranking_drilling.xlsx")
     pass
 
@@ -163,3 +167,21 @@ def save_map_permeability_fact_wells(data_wells, map_pressure, filename):
     map_permeability_fact_wells.save_img(filename, data_wells)
     pass
 
+
+def create_df_project_wells(list_zones):
+    df_result_project_wells = pd.DataFrame()
+    for drill_zone in list_zones:
+        if drill_zone.rating != -1:
+            data_project_wells = pd.DataFrame([well.__dict__ for well in drill_zone.list_project_wells])
+            df_result_project_wells = pd.concat([df_result_project_wells, data_project_wells], ignore_index=True)
+
+    df_result_project_wells['T1_x_geo'] = df_result_project_wells['POINT_T1_geo'].apply(lambda point: point.x)
+    df_result_project_wells['T1_y_geo'] = df_result_project_wells['POINT_T1_geo'].apply(lambda point: point.y)
+    df_result_project_wells['T3_x_geo'] = df_result_project_wells['POINT_T3_geo'].apply(lambda point: point.x)
+    df_result_project_wells['T3_y_geo'] = df_result_project_wells['POINT_T3_geo'].apply(lambda point: point.y)
+    df_result_project_wells['T1_x_pix'] = df_result_project_wells['POINT_T1_pix'].apply(lambda point: point.x)
+    df_result_project_wells['T1_y_pix'] = df_result_project_wells['POINT_T1_pix'].apply(lambda point: point.y)
+    df_result_project_wells['T3_x_pix'] = df_result_project_wells['POINT_T3_pix'].apply(lambda point: point.x)
+    df_result_project_wells['T3_y_pix'] = df_result_project_wells['POINT_T3_pix'].apply(lambda point: point.y)
+    df_result_project_wells['permeability_fact'] = df_result_project_wells['permeability']
+    return df_result_project_wells

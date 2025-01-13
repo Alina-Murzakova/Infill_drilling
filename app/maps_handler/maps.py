@@ -290,16 +290,17 @@ def read_array(data_wells, name_column_map, type_map, geo_transform, size,
                                                          data_wells_with_work[name_column_map] * coefficient_GS_to_NNS,
                                                          data_wells_with_work[name_column_map])"""
     elif type_map == "permeability_fact_wells":
-        permeability_column = data_wells[data_wells['permeability_fact'] > 0]['permeability_fact']
-        # Рассчитываем квартили
-        q1 = np.percentile(permeability_column, 25)
-        q3 = np.percentile(permeability_column, 75)
-        iqr = q3 - q1
-        # Определяем порог для отсеивания "выбросов"
-        upper_bound = q3 + 1.5 * iqr
-        # Выбираем только ту проницаемость, которая меньше или равна верхнему пределу
-        data_wells = data_wells[(data_wells['permeability_fact'] <= upper_bound)
-                                & (data_wells['permeability_fact'] > 0)].reset_index(drop=True)
+        # permeability_column = data_wells[data_wells['permeability_fact'] > 0]['permeability_fact']
+        # # Рассчитываем квартили
+        # q1 = np.percentile(permeability_column, 25)
+        # q3 = np.percentile(permeability_column, 75)
+        # iqr = q3 - q1
+        # # Определяем порог для отсеивания "выбросов"
+        # upper_bound = q3 + 1.5 * iqr
+        # # Выбираем только ту проницаемость, которая меньше или равна верхнему пределу
+        # data_wells = data_wells[(data_wells['permeability_fact'] <= upper_bound)
+        #                         & (data_wells['permeability_fact'] > 0)].reset_index(drop=True)
+        data_wells = data_wells[(data_wells['permeability_fact'] > 0)].reset_index(drop=True)
         data_wells_with_work = data_wells
     else:
         data_wells_with_work = pd.DataFrame()

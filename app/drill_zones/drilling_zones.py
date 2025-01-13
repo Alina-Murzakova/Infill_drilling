@@ -39,8 +39,9 @@ class DrillZone:
 
     @logger.catch
     def get_init_project_wells(self, map_rrr, data_wells, init_profit_cum_oil, default_size_pixel,
-                               buffer_project_wells, threshold=2500):
+                               buffer_project_wells, avg_permeability, threshold=2500):
         """Расчет количества проектных скважин в перспективной зоне"""
+        # threshold = 2500 - максимальное расстояние для исключения скважины из ближайших скважин, пиксели
         self.calculate_reserves(map_rrr)
         self.calculate_area(map_rrr)
         # Начальное количество скважин на основе запасов/площади
@@ -81,7 +82,7 @@ class DrillZone:
                 project_well.length_geo = project_well.LINESTRING_geo.length
                 # Определение ближайшего окружения и параметров с него
                 project_well.get_nearest_wells(df_fact_wells, threshold / default_size_pixel)
-                project_well.get_params_nearest_wells()
+                project_well.get_params_nearest_wells(avg_permeability)
                 self.list_project_wells.append(project_well)
         pass
 
