@@ -10,9 +10,9 @@ from sklearn.cluster import KMeans
 
 
 def get_project_wells_from_clusters(name_cluster, gdf_clusters, data_wells, default_size_pixel, buffer_project_wells,
-                                    threshold=2500):
+                                    threshold, k_wells, min_length):
     """Получаем GeoDataFrame с начальными координатами проектных скважин"""
-    # threshold = 2500 - максимальное расстояние для исключения скважины из ближайших скважин, пиксели
+    # threshold - максимальное расстояние для исключения скважины из ближайших скважин, пиксели
 
     # Подготовка GeoDataFrame с проектными скважинами
     gdf_project = gdf_clusters.copy()
@@ -35,7 +35,7 @@ def get_project_wells_from_clusters(name_cluster, gdf_clusters, data_wells, defa
     # Находим ближайшие фактические ГС для проектных точек и рассчитываем параметры по окружению
     gdf_project[["azimuth", 'length_pix']] = (gdf_project["POINT_T2_pix"].apply(
         lambda center: pd.Series(get_well_path_nearest_wells(center, gdf_fact_hor_wells,
-                                                             threshold/default_size_pixel))))
+                                                             threshold / default_size_pixel, k=k_wells))))
     # Получаем точки T1 и T3 на основе центров кластеров (T2)
     gdf_project[['POINT_T1_pix', 'POINT_T3_pix']] = gdf_project.apply(compute_t1_t3_points, axis=1,
                                                                       result_type='expand')
@@ -58,7 +58,7 @@ def get_project_wells_from_clusters(name_cluster, gdf_clusters, data_wells, defa
     # Смещаем, вращаем, сокращаем пересекающихся проектный фонд скважин, при наличии такового
     if not intersecting_proj_wells.empty:
         update_and_shift_proj_wells(gdf_project, gdf_fact_wells, intersecting_proj_wells, default_size_pixel,
-                                    buffer_project_wells)
+                                    buffer_project_wells, min_length)
         gdf_project = gdf_project[gdf_project['well_marker'] != 'удалить']
 
     gdf_project["POINT_T1_pix"] = gdf_project["LINESTRING_pix"].apply(lambda x: Point(x.coords[0]))
@@ -245,13 +245,14 @@ def compute_t1_t3_points(row):
 
 
 def update_and_shift_proj_wells(gdf_project, gdf_fact_wells, intersecting_proj_wells, default_size_pixel,
-                                buffer_project_wells, min_length=300):
+                                buffer_project_wells, min_length, step_length=0.1):
     """
     Функция поиска начального расположения проектных скважин без пересечений
     gdf_project
     gdf_fact_wells
     intersecting_proj_wells - пересекающиеся проектные скважины
     min_length=300 - минимальная длина ГС, иначе ННС
+    step_length=0.1 - шаг уменьшения длины ГС для вписывания в зону кластеризации
     """
     # Перебираем пересекающиеся с другим фондом проектные скважины
     for proj_idx, proj_row in intersecting_proj_wells.iterrows():
@@ -291,7 +292,7 @@ def update_and_shift_proj_wells(gdf_project, gdf_fact_wells, intersecting_proj_w
                 break
 
             # Уменьшаем длины проектной скважины
-            new_length -= 0.1 * original_length  # Уменьшаем длину на 10%
+            new_length -= step_length * original_length  # Уменьшаем длину на 10%
             if new_length < min_length / default_size_pixel:
                 new_length = 0
 

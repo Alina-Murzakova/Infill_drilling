@@ -11,7 +11,7 @@ from loguru import logger
 from app.maps_handler.maps import trajectory_break_points
 
 
-def calc_r_eff(cumulative_value, B, ro, eff_h, m, So, type_well, len_well, So_min=0.3):
+def calc_r_eff(cumulative_value, B, ro, eff_h, m, So, type_well, len_well, So_min):
     """
     calculate drainage radius of production well
     :param cumulative_value: cumulative oil production or cumulative_water_inj, tons|m3
@@ -46,7 +46,7 @@ def calc_r_eff(cumulative_value, B, ro, eff_h, m, So, type_well, len_well, So_mi
         raise NameError(f"Wrong well type: {type_well}. Allowed values: vertical or horizontal")
 
 
-def well_effective_radius(row, default_radius=50, NUMBER_MONTHS=120):
+def well_effective_radius(row, default_radius, So_min, NUMBER_MONTHS=120):
     """
     Расчет радиуса дренирования/нагнетания на основе параметров разработки
     Parameters
@@ -74,10 +74,10 @@ def well_effective_radius(row, default_radius=50, NUMBER_MONTHS=120):
             cumulative_oil_prod = row.Qo_cumsum
             Bo = row.Bo
             ro_oil = row.rho
-            R_eff = calc_r_eff(cumulative_oil_prod, Bo, ro_oil, eff_h, m, So, well_type, len_well)
+            R_eff = calc_r_eff(cumulative_oil_prod, Bo, ro_oil, eff_h, m, So, well_type, len_well, So_min)
         elif work_type_well == "inj":
             cumulative_water_inj = row.Winj_cumsum
-            R_eff = calc_r_eff(cumulative_water_inj, 1, 1, eff_h, m, So, well_type, len_well)
+            R_eff = calc_r_eff(cumulative_water_inj, 1, 1, eff_h, m, So, well_type, len_well, So_min)
         if not R_eff:
             R_eff = default_radius
         return R_eff
@@ -227,11 +227,13 @@ def calculate_effective_radius(data_wells, dict_properties):
 
     """
     # добавление колонок свойств для расчета из файла ГФХ
-    data_wells['Bo'] = dict_properties['Bo']  # объемный коэффициент нефти, д.ед
-    data_wells['rho'] = dict_properties['rho']  # плотность нефти в поверхностных условиях, г/см3
+    data_wells['Bo'] = dict_properties['fluid_params']['Bo']  # объемный коэффициент нефти, д.ед
+    data_wells['rho'] = dict_properties['fluid_params']['rho']  # плотность нефти в поверхностных условиях, г/см3
 
     # расчет радиусов по физическим параметрам
-    data_wells['r_eff_not_norm'] = data_wells.apply(well_effective_radius, axis=1)
+    default_radius = dict_properties['default_well_params']['default_radius']
+    So_min = dict_properties['default_well_params']['Sor']
+    data_wells['r_eff_not_norm'] = data_wells.apply(well_effective_radius, args=(default_radius, So_min, ), axis=1)
 
     # нормировка эффективного радиуса фонда через площади ячеек Вороного
     data_wells = voronoi_normalize_r_eff(data_wells)

@@ -9,7 +9,7 @@ import numpy as np
 from app.maps_handler.maps import read_array
 
 
-def upload_data(save_directory, data_wells, maps, list_zones, info_clusterization_zones, buffer_project_wells):
+def upload_data(save_directory, data_wells, maps, list_zones, info_clusterization_zones, **kwargs):
     """Выгрузка данных после расчета"""
     type_map_list = list(map(lambda raster: raster.type_map, maps))
 
@@ -31,10 +31,14 @@ def upload_data(save_directory, data_wells, maps, list_zones, info_clusterizatio
 
     logger.info("Сохранение карты фактической проницаемости через РБ")
     map_pressure = maps[type_map_list.index('pressure')]
-    save_map_permeability_fact_wells(data_all_wells, map_pressure, f"{save_directory}/permeability_fact_wells.png")
+    save_map_permeability_fact_wells(data_all_wells, map_pressure,
+                                     f"{save_directory}/permeability_fact_wells.png",
+                                     radius_interpolate=kwargs['radius_interpolate'],
+                                     accounting_GS=kwargs['accounting_GS'])
 
     logger.info(f"Сохраняем .png с начальным расположением проектного фонда в кластерах и карту ОИ с проектным фондом")
-    save_picture_clustering_zones(list_zones, f"{save_directory}/init_project_wells.png", buffer_project_wells)
+    save_picture_clustering_zones(list_zones, f"{save_directory}/init_project_wells.png",
+                                  buffer_project_wells=kwargs['buffer_project_wells'])
     map_opportunity_index = maps[type_map_list.index('residual_recoverable_reserves')]
     map_opportunity_index.save_img(f"{save_directory}/map_opportunity_index_with_project_wells.png", data_wells,
                                    list_zones, info_clusterization_zones, project_wells=True)
@@ -155,12 +159,14 @@ def save_picture_clustering_zones(list_zones, filename, buffer_project_wells):
     pass
 
 
-def save_map_permeability_fact_wells(data_wells, map_pressure, filename):
+def save_map_permeability_fact_wells(data_wells, map_pressure, filename, accounting_GS, radius_interpolate):
     map_permeability_fact_wells = read_array(data_wells,
                                              name_column_map="permeability_fact",
                                              type_map="permeability_fact_wells",
                                              geo_transform=map_pressure.geo_transform,
-                                             size=map_pressure.data.shape)
+                                             size=map_pressure.data.shape,
+                                             accounting_GS=accounting_GS,
+                                             radius=radius_interpolate)
 
     map_permeability_fact_wells.data = np.where(np.isnan(map_permeability_fact_wells.data), 0,
                                                 map_permeability_fact_wells.data)

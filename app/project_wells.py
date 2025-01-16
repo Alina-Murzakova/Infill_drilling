@@ -8,7 +8,7 @@ from app.decline_rate.decline_rate import get_avg_decline_rates
 from app.well_active_zones import get_parameters_voronoi_cells, save_picture_voronoi
 from app.decline_rate.functions import production_model
 from app.well_active_zones import get_value_map
-from app.ranking_drilling.starting_rates import calculate_starting_rate
+from app.ranking_drilling.starting_rates import calculate_starting_rate, check_FracCount
 from app.decline_rate.residual_reserves import prepare_mesh_map_rrr
 
 
@@ -88,8 +88,8 @@ class ProjectWell:
         self.P_well_init = np.mean(self.gdf_nearest_wells[(self.gdf_nearest_wells['init_P_well_prod'] > 0) &
                                                           (self.gdf_nearest_wells['init_P_well_prod'].notna())]
                                    ['init_P_well_prod'])
-        if not self.P_well_init > 0:
-            self.P_well_init = self.P_reservoir - dict_parameters_coefficients["well_params"]['pressure_drawdown']
+        if np.isnan(self.P_well_init):
+            self.P_well_init = None
         # Выбираем только те строки, где значение проницаемости больше 0 и не nan
         self.permeability = np.mean(self.gdf_nearest_wells[(self.gdf_nearest_wells['permeability_fact'] > 0) &
                                                            (self.gdf_nearest_wells['permeability_fact'].notna())]
@@ -111,12 +111,15 @@ class ProjectWell:
         pass
 
     def get_starting_rates(self, maps, dict_parameters_coefficients):
-
         self.get_params_maps(maps)
+
+        kv_kh, Swc, Sor, Fw, m1, Fo, m2, Bw = (
+            list(map(lambda name: dict_parameters_coefficients['default_well_params'][name],
+                     ['kv_kh', 'Swc', 'Sor', 'Fw', 'm1', 'Fo', 'm2', 'Bw'])))
 
         reservoir_params = dict_parameters_coefficients['reservoir_params']
         fluid_params = dict_parameters_coefficients['fluid_params']
-        well_params = dict_parameters_coefficients['well_params']
+        well_params = dict_parameters_coefficients['project_well_params']
         coefficients = dict_parameters_coefficients['coefficients']
 
         reservoir_params['f_w'] = self.water_cut
@@ -126,14 +129,21 @@ class ProjectWell:
         reservoir_params['Pr'] = self.P_reservoir
 
         well_params['L'] = self.length_geo
+        if not self.P_well_init > 0:
+            self.P_well_init = self.P_reservoir - dict_parameters_coefficients["well_params"]['pressure_drawdown']
         well_params['Pwf'] = self.P_well_init
         well_params['r_e'] = self.r_eff
+        well_params['FracCount'] = check_FracCount(well_params['Type_Frac'],
+                                                   well_params['length_FracStage'],
+                                                   well_params['L'])
+
         self.init_Ql_rate, self.init_Qo_rate = calculate_starting_rate(reservoir_params, fluid_params,
-                                                                       well_params, coefficients)
+                                                                       well_params, coefficients,
+                                                                       kv_kh, Swc, Sor, Fw, m1, Fo, m2, Bw)
         logger.info(f"Для проектной скважины {self.well_number}: Q_liq = {self.init_Ql_rate},"
                     f" Q_oil = {self.init_Qo_rate}")
 
-    def get_production_profile(self, data_decline_rate_stat, period=25 * 12):
+    def get_production_profile(self, data_decline_rate_stat, period=25 * 12, day_in_month=29, well_efficiency=0.95):
         if self.init_Qo_rate is None or self.init_Ql_rate is None:
             logger.warning(f"Проверьте расчет запускных для проектной скважины {self.well_number}!")
         else:
@@ -149,7 +159,8 @@ class ProjectWell:
             success_arps_ql = model_arps_ql[0]
             success_arps_qo = model_arps_qo[0]
             if success_arps_ql and success_arps_qo:
-                rates, productions = production_model(period, model_arps_ql, model_arps_qo, self.reserves * 1000)
+                rates, productions = production_model(period, model_arps_ql, model_arps_qo,
+                                                      self.reserves * 1000, day_in_month, well_efficiency)
                 self.Ql_rate, self.Qo_rate = rates
                 self.Ql, self.Qo = productions
             else:

@@ -82,8 +82,7 @@ def calculate_starting_rate(reservoir_params, fluid_params, well_params, coeffic
     return float(Q_liq), float(Q_oil)
 
 
-def calculate_permeability_fact_wells(row, dict_parameters_coefficients,
-                                      kv_kh=0.1, Swc=0.2, Sor=0.3, Fw=0.3, m1=1, Fo=1, m2=1, Bw=1):
+def calculate_permeability_fact_wells(row, dict_parameters_coefficients):
     """
     Находит значение k_h, при котором расчетный Q_liq совпадает с фактическим Q_liq ('init_Ql_rate_TR')
     Parameters
@@ -93,9 +92,14 @@ def calculate_permeability_fact_wells(row, dict_parameters_coefficients,
     -------
     k_h: найденное значение проницаемости (мД)
     """
+    # Переопределим параметры из словаря
+    kv_kh, Swc, Sor, Fw, m1, Fo, m2, Bw = (
+        list(map(lambda name: dict_parameters_coefficients['default_well_params'][name],
+                 ['kv_kh', 'Swc', 'Sor', 'Fw', 'm1', 'Fo', 'm2', 'Bw'])))
+
     reservoir_params = dict_parameters_coefficients['reservoir_params']
     fluid_params = dict_parameters_coefficients['fluid_params']
-    well_params = dict_parameters_coefficients['well_params']
+    well_params = dict_parameters_coefficients['fact_well_params']
     coefficients = dict_parameters_coefficients['coefficients']
 
     reservoir_params['f_w'] = row['init_water_cut_TR']
@@ -104,6 +108,10 @@ def calculate_permeability_fact_wells(row, dict_parameters_coefficients,
     reservoir_params['Pr'] = row['init_P_reservoir_prod']
     well_params['L'] = row['length_geo']
     well_params['Pwf'] = row['init_P_well_prod']
+    well_params['r_e'] = row['r_eff']
+    well_params['FracCount'] = check_FracCount(well_params['Type_Frac'],
+                                               well_params['length_FracStage'],
+                                               well_params['L'])
 
     if (row.init_Ql_rate_TR > 0 and row.init_P_well_prod > 0
             and row.init_P_reservoir_prod > 0 and row.init_P_reservoir_prod > row.init_P_well_prod):
@@ -118,7 +126,8 @@ def calculate_permeability_fact_wells(row, dict_parameters_coefficients,
 
         # Оптимизация - ищем k_h, при котором ошибка минимальна
         try:
-            result = root_scalar(error_function, bracket=[1e-3, 1e3], method='brentq', xtol=1e-3, rtol=1e-2, maxiter=100)
+            result = root_scalar(error_function, bracket=[1e-3, 1e3], method='brentq', xtol=1e-3, rtol=1e-2,
+                                 maxiter=100)
             if result.converged:
                 return result.root
             else:
@@ -132,6 +141,12 @@ def calculate_permeability_fact_wells(row, dict_parameters_coefficients,
 
 
 def get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients, switch):
+    """
+    Расчет проницаемости по фактическому фонду через РБ
+    Parameters
+    ----------
+    switch - фильтрация выбросов по статистике в массиве фактических проницаемостей
+    """
     data_wells['permeability_fact'] = data_wells.apply(calculate_permeability_fact_wells,
                                                        args=(dict_parameters_coefficients,),
                                                        axis=1)
@@ -156,6 +171,20 @@ def apply_iqr_filter(data_wells, name_column):
     # Определяем порог для отсеивания "выбросов"
     upper_bound = q3 + 1.5 * iqr
     return upper_bound
+
+
+def check_FracCount(type_frac, length_FracStage=1, L=1):
+    # определение FracCount
+    if type_frac is None:
+        return 0
+    elif type_frac == 'ГРП':
+        return 1
+    elif type_frac == 'МГРП':
+        return int(L / length_FracStage)
+    else:
+        logger.error(f"Некорректно задан тип ГРП: {type_frac}. Допустимые значения None, ГРМ, МГРП")
+        return None
+
 
 def get_delta_pressure(reservoir_params, fluid_params, well_params):
     """

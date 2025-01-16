@@ -10,8 +10,13 @@ from ..well_active_zones import get_value_map
 
 
 @logger.catch
-def mapping(maps_directory, data_wells, dict_properties, default_size_pixel):
+def mapping(maps_directory, data_wells, dict_properties, **kwargs):
     """Загрузка, подготовка и расчет всех необходимых карт"""
+    # Инициализация параметров загрузки
+    default_size_pixel = kwargs['default_size_pixel']
+    radius_interpolate = kwargs['radius_interpolate']
+    accounting_GS = kwargs['accounting_GS']
+
     logger.info(f"path: {maps_directory}")
     content = os.listdir(path=maps_directory)
     if content:
@@ -26,7 +31,7 @@ def mapping(maps_directory, data_wells, dict_properties, default_size_pixel):
     dst_geo_transform, dst_projection, shape = get_final_resolution(maps, default_size_pixel)
 
     logger.info(f"Построение карт на основе дискретных значений")
-    maps = maps + maps_load_df(data_wells, dst_geo_transform, shape)
+    maps = maps + maps_load_df(data_wells, dst_geo_transform, shape, accounting_GS, radius_interpolate)
 
     logger.info(f"Преобразование карт к единому размеру и сетке")
     maps = list(map(lambda raster: raster.resize(dst_geo_transform, dst_projection, shape), maps))
@@ -100,20 +105,23 @@ def maps_load_directory(maps_directory):
     return maps
 
 
-def maps_load_df(data_wells, dst_geo_transform, shape):
+def maps_load_df(data_wells, dst_geo_transform, shape, accounting_GS, radius_interpolate):
     maps = []
     #  Загрузка карт из "МЭР"
     logger.info(f"Загрузка карты обводненности на основе выгрузки МЭР")
     maps.append(read_array(data_wells, name_column_map="water_cut", type_map="water_cut",
-                           geo_transform=dst_geo_transform, size=shape))
+                           geo_transform=dst_geo_transform, size=shape,
+                           accounting_GS=accounting_GS, radius=radius_interpolate))
 
     logger.info(f"Загрузка карты последних дебитов нефти на основе выгрузки МЭР")
     maps.append(read_array(data_wells, name_column_map="Qo_rate", type_map="last_rate_oil",
-                           geo_transform=dst_geo_transform, size=shape))
+                           geo_transform=dst_geo_transform, size=shape,
+                           accounting_GS=accounting_GS, radius=radius_interpolate))
 
     logger.info(f"Загрузка карты стартовых дебитов нефти на основе выгрузки МЭР")
     maps.append(read_array(data_wells, name_column_map="init_Qo_rate", type_map="init_rate_oil",
-                           geo_transform=dst_geo_transform, size=shape))
+                           geo_transform=dst_geo_transform, size=shape,
+                           accounting_GS=accounting_GS, radius=radius_interpolate))
     return maps
 
 
