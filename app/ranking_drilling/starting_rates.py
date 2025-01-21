@@ -108,7 +108,8 @@ def calculate_permeability_fact_wells(row, dict_parameters_coefficients):
     reservoir_params['Pr'] = row['init_P_reservoir_prod']
     well_params['L'] = row['length_geo']
     well_params['Pwf'] = row['init_P_well_prod']
-    well_params['r_e'] = row['r_eff']
+    well_params['r_e'] = row['r_eff_voronoy']
+    # well_params['r_e'] = 300
     well_params['FracCount'] = check_FracCount(well_params['Type_Frac'],
                                                well_params['length_FracStage'],
                                                well_params['L'])
@@ -154,7 +155,7 @@ def get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients, swi
         # Верхняя граница для фильтрации выбросов (метод IQR)
         permeability_upper_bound = apply_iqr_filter(data_wells, name_column='permeability_fact')
         data_wells['permeability_fact'] = np.where(data_wells['permeability_fact'] > permeability_upper_bound,
-                                                   0, data_wells['permeability_fact'])
+                                                   0, data_wells['permeability_fact'])  # 0 или permeability_upper_bound
     avg_permeability = data_wells[data_wells['permeability_fact'] != 0]['permeability_fact'].mean()
     # Перезапись значения проницаемости по объекту из ГФХ на среднюю по фактическому фонду
     dict_parameters_coefficients['reservoir_params']['k_h'] = avg_permeability
