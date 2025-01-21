@@ -13,3 +13,5 @@ init_well_position.ipynb
 /картинки_ПФ/
 /*.png
 pickle.txt
+/.*ipynb
+Untitled.ipynb

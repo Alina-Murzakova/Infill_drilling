@@ -92,29 +92,25 @@ def load_wells_data(data_well_directory, min_length_hor_well=150, first_months=6
     data_first_rate = data_first_rate[data_first_rate['cum_rate_liq'] != 0]
     data_first_rate = data_first_rate.groupby('well_number').head(first_months)
     data_first_rate = (data_first_rate[data_first_rate['Ql_rate'] != 0].groupby('well_number')
-                       .agg(init_Qo_rate=('Qo_rate', 'mean'), init_Ql_rate=('Ql_rate', 'mean')).reset_index())
+                       .agg(init_Qo_rate=('Qo_rate', 'mean'), init_Ql_rate=('Ql_rate', 'mean'),
+                            init_Qo_rate_TR=('Qo_rate_TR', lambda x: x[x != 0].mean()),
+                            init_Ql_rate_TR=('Ql_rate_TR', lambda x: x[x != 0].mean()),
+                            init_P_well_prod=('P_well', lambda p_well: filter_pressure(p_well, data_first_rate.loc[
+                                p_well.index, 'P_reservoir'], type_pressure='P_well')),
+                            init_P_reservoir_prod=('P_reservoir', lambda p_res: filter_pressure(
+                                data_first_rate.loc[p_res.index, 'P_well'], p_res, type_pressure='P_reservoir')))
+                       .reset_index())
 
     data_wells = data_wells.merge(data_first_rate, how='left', on='well_number')
-    data_wells[['init_Qo_rate', 'init_Ql_rate']] = data_wells[['init_Qo_rate', 'init_Ql_rate']].fillna(0)
+    data_wells = data_wells.fillna(0)
 
     data_wells['init_water_cut'] = np.where(data_wells['init_Ql_rate'] > 0,
                                             (data_wells['init_Ql_rate'] - data_wells['init_Qo_rate']) /
                                             data_wells['init_Ql_rate'], 0)
 
-    # Определение запускных параметров ТР
-    params_TR = {'P_well': 'init_P_well_prod',
-                 'P_reservoir': 'init_P_reservoir_prod',
-                 'Ql_rate_TR': 'init_Ql_rate_TR',
-                 'Qo_rate_TR': 'init_Qo_rate_TR',
-                 'water_cut_TR': 'init_water_cut_TR'}
-
-    for param, col in params_TR.items():
-        data_param = (df_sort_date[df_sort_date.Ql_rate > 0][['well_number', param, 'date']]
-                      .groupby('well_number')
-                      .apply(lambda x: get_init_param_TR(x, param))
-                      .reset_index(name=col))
-        data_wells = data_wells.merge(data_param[['well_number', col]], how='left', on='well_number')
-    data_wells = data_wells.fillna(0)
+    data_wells['init_water_cut_TR'] = np.where(data_wells['init_Ql_rate_TR'] > 0,
+                                               (data_wells['init_Ql_rate_TR'] - data_wells['init_Qo_rate_TR']) /
+                                               data_wells['init_Ql_rate_TR'], 0)
 
     # Расчет азимута для горизонтальных скважин
     data_wells['azimuth'] = data_wells.apply(calculate_azimuth, axis=1)
@@ -316,20 +312,18 @@ def create_shapely_types(data_wells, list_names):
     return df_result
 
 
-def get_init_param_TR(df, column):
-    """Получение Рзаб в первый или второй месяц работы скважины, если в первом нет"""
-    first_value = df.iloc[0][column]
-    if first_value > 0:
-        return first_value
-
-    # Проверка, если это единственная запись в скважине
-    if len(df) == 1:
-        return 0
-
-    second_value = df.iloc[1][column]
-    if second_value > 0 and (df['date'].iloc[1] - df['date'].iloc[0]).days / 31 <= 1:
-        return second_value
-    return 0
+def filter_pressure(p_well, p_reservoir, type_pressure):
+    """Функция для фильтрации давлений - исключение месяцев с отрицательной депрессией"""
+    # Словарь для выбора рассматриваемого давления
+    dict_pressure = {'P_well': p_well,
+                      'P_reservoir': p_reservoir}
+    pressure = dict_pressure[type_pressure]
+    # Условия для поиска подходящих строк
+    # исключаем строки с отрицательной депрессией и нулевыми значениями рассматриваемого давления
+    valid_rows = ((p_reservoir - p_well) > 0) & (pressure != 0)
+    if valid_rows.any():
+        return pressure[valid_rows].mean()
+    return 0  # Возвращаем 0, если нет подходящих строк
 
 
 def calculate_azimuth(row):
