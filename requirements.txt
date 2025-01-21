@@ -12,4 +12,5 @@ geopandas~=1.0.1
 shapaly~=2.0.5
 voronoi-diagram-for-polygons~=0.1.6
 tqdm~=4.67.0
+alphashape~=1.3.1
 

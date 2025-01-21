@@ -1,49 +1,124 @@
 import os
+
+import alphashape
 import win32api
 
 from loguru import logger
 import geopandas as gpd
 import pandas as pd
 import numpy as np
+from shapely import Point, Polygon, MultiPoint
 
 from app.maps_handler.maps import read_array
 
 
+@logger.catch
 def upload_data(save_directory, data_wells, maps, list_zones, info_clusterization_zones, **kwargs):
     """Выгрузка данных после расчета"""
     type_map_list = list(map(lambda raster: raster.type_map, maps))
 
-    type_calculated_maps = ['reservoir_score', 'potential_score', 'risk_score', 'opportunity_index']
+    dict_calculated_maps = {'residual_recoverable_reserves': "ОИЗ",
+                            'water_cut': "обводненность",
+                            'reservoir_score': "оценка резервуара",
+                            'potential_score': "оценка потенциала пласта",
+                            'risk_score': "оценка риска",
+                            'opportunity_index': "индекс возможности бурения"}
+
     logger.info(f"Сохраняем исходные карты и рассчитанные в .png и .grd форматах ")
     for i, raster in enumerate(maps):
-        if raster.type_map in type_calculated_maps:
-            raster.save_img(f"{save_directory}/{raster.type_map}.png", data_wells)
-            raster.save_grd_file(f"{save_directory}/{raster.type_map}.grd")
+        if raster.type_map in dict_calculated_maps.keys():
+            raster.save_img(f"{save_directory}/{dict_calculated_maps.get(raster.type_map)}.png", data_wells)
+            raster.save_grd_file(f"{save_directory}/{dict_calculated_maps.get(raster.type_map)}.grd")
             if raster.type_map == 'opportunity_index':
                 logger.info(f"Сохраняем .png карту OI с зонами")
-                raster.save_img(f"{save_directory}/map_opportunity_index_with_zones.png", data_wells,
+                raster.save_img(f"{save_directory}/карта индекса возможности бурения с зонами.png", data_wells,
                                 list_zones, info_clusterization_zones)
-        else:
-            raster.save_img(f"{save_directory}/{raster.type_map}.png", data_wells)
 
     data_project_wells = create_df_project_wells(list_zones)
     data_all_wells = pd.concat([data_wells, data_project_wells], ignore_index=True)
 
-    logger.info("Сохранение карты фактической проницаемости через РБ")
+    logger.info("Сохранение карты фактической проницаемости через РБ в форматах .png и .grd")
     map_pressure = maps[type_map_list.index('pressure')]
     save_map_permeability_fact_wells(data_all_wells, map_pressure,
-                                     f"{save_directory}/permeability_fact_wells.png",
+                                     f"{save_directory}/фактическая проницаемость через РБ.png",
                                      radius_interpolate=kwargs['radius_interpolate'],
                                      accounting_GS=kwargs['accounting_GS'])
 
     logger.info(f"Сохраняем .png с начальным расположением проектного фонда в кластерах и карту ОИ с проектным фондом")
-    save_picture_clustering_zones(list_zones, f"{save_directory}/init_project_wells.png",
+    save_picture_clustering_zones(list_zones, f"{save_directory}/начальное расположение ПФ.png",
                                   buffer_project_wells=kwargs['buffer_project_wells'])
     map_opportunity_index = maps[type_map_list.index('residual_recoverable_reserves')]
-    map_opportunity_index.save_img(f"{save_directory}/map_opportunity_index_with_project_wells.png", data_wells,
+    map_opportunity_index.save_img(f"{save_directory}/карта индекса возможности бурения с ПФ.png", data_wells,
                                    list_zones, info_clusterization_zones, project_wells=True)
-    logger.info("Сохранение рейтинг бурения проектных скважин в формате .xlsx")
-    save_ranking_drilling_to_excel(list_zones, f"{save_directory}/ranking_drilling.xlsx")
+    logger.info("Сохранение рейтинга бурения проектных скважин в формате .xlsx")
+    save_ranking_drilling_to_excel(list_zones, f"{save_directory}/рейтинг_бурения.xlsx")
+
+    logger.info("Файл .xlsx для загрузки проектных скважин в NGT")
+    names_coords = ['T1_x_geo', 'T1_y_geo', 'T3_x_geo', 'T3_y_geo']
+    data_project_wells_NGT = data_project_wells[['well_number', 'well_type'] + names_coords]
+    data_project_wells_NGT[names_coords] = data_project_wells_NGT[names_coords].round(0)
+    data_project_wells_NGT['well_type'] = '1'
+    data_project_wells_NGT.to_excel(f"{save_directory}/проектный_фонд_координаты.xlsx", index=False)
+
+    logger.info("Сохранение контуров зон в формате .txt для загрузки в NGT")
+    save_directory_contours = f"{save_directory}/контуры зон"
+    create_new_dir(save_directory_contours)
+    save_contours(list_zones, map_opportunity_index, save_directory_contours)
+    pass
+
+
+def save_contours(list_zones, map_conv, save_directory_contours, type_calc='alpha', buffer_size=50, alpha=0.01):
+    """
+    Сохранение контуров зон в формате .txt для загрузки в NGT в отдельную папку
+    Parameters
+    ----------
+    list_zones - список объектов DrillZone
+    map_conv - карта для конвертирования пиксельных координат зон в географические
+    save_directory_contours -  путь для сохранения файлов в отдельную папку
+    type_calc - формат расчета (buffer - буфферезация точек,
+                                alpha - через библиотеку alphashape,
+                                convex_hull - выпуклая оболочка зоны)
+    buffer_size - размер буффера точек
+    alpha - параметр для объединения точек alphashape
+    """
+    for drill_zone in list_zones:
+        if drill_zone.rating != -1:
+            x_coordinates, y_coordinates = drill_zone.x_coordinates, drill_zone.y_coordinates
+            x_coordinates, y_coordinates = map_conv.convert_coord_to_geo((x_coordinates, y_coordinates))
+            if type_calc == 'buffer':
+                # Создаем список точек
+                points = MultiPoint(list(zip(x_coordinates, y_coordinates)))
+                # Строим буфер вокруг точек
+                buffered = points.buffer(buffer_size).simplify(0.01)
+                # Проверяем, что результат — полигон
+                if isinstance(buffered, Polygon):
+                    x_boundary, y_boundary = buffered.exterior.xy
+                else:
+                    raise logger.error("Не удалось построить границу зоны. Проверьте размер buffer или входные данные.")
+            elif type_calc == 'alpha':
+                # Создаем список точек
+                points = np.array(list(zip(x_coordinates, y_coordinates)))
+                # Строим alpha shape
+                alpha_shape = alphashape.alphashape(points, alpha)
+                # Проверяем, что результат — полигон
+                if isinstance(alpha_shape, Polygon):
+                    x_boundary, y_boundary = alpha_shape.exterior.xy
+                else:
+                    raise logger.error("Не удалось построить границу зоны. Проверьте параметр alpha или входные данные.")
+            elif type_calc == 'convex_hull':
+                mesh = list(map(lambda x, y: Point(x, y), x_coordinates, y_coordinates))
+                ob = Polygon(mesh)
+                # определяем границу зоны
+                boundary_drill_zone = ob.convex_hull
+                x_boundary, y_boundary = boundary_drill_zone.exterior.coords.xy
+            else:
+                raise logger.error(f"Проверьте значение параметра type_calc: {type_calc}")
+            name_txt = f'{save_directory_contours}/{drill_zone.rating}.txt'
+            with open(name_txt, "w") as file:
+                file.write(f"/\n")
+                for x, y in zip(x_boundary, y_boundary):
+                    file.write(f"{x} {y}\n")
+                file.write(f"{x_boundary[0]} {y_boundary[0]}\n")
     pass
 
 
@@ -171,6 +246,7 @@ def save_map_permeability_fact_wells(data_wells, map_pressure, filename, account
     map_permeability_fact_wells.data = np.where(np.isnan(map_permeability_fact_wells.data), 0,
                                                 map_permeability_fact_wells.data)
     map_permeability_fact_wells.save_img(filename, data_wells)
+    map_permeability_fact_wells.save_grd_file(f"{filename.replace('.png', "")}.grd")
     pass
 
 

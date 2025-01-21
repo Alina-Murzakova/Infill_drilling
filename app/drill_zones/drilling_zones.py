@@ -200,39 +200,51 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt
     from app.input_output.input import load_wells_data, load_geo_phys_properties
     from app.input_output.output import get_save_path
-    from app.local_parameters import paths, parameters_calculation, default_well_params, default_coefficients
+    from app.local_parameters import main_parameters, constants, fact_well_params
     from app.well_active_zones import calculate_effective_radius
     from app.maps_handler.functions import mapping
 
-    data_well_directory = paths["data_well_directory"]
-    maps_directory = paths["maps_directory"]
-    path_geo_phys_properties = paths["path_geo_phys_properties"]
+    # Пути
+    paths = main_parameters['paths']
+    # Параметры расчета
+    parameters_calculation = main_parameters['parameters_calculation']
+    # Параметры для скважин проектного фонда РБ
+    project_well_params = main_parameters['project_well_params']
+
+    # Константы расчета
+    load_data_param = constants['load_data_param']
+    default_coefficients = constants['default_coefficients']
+    default_well_params = constants['default_well_params']
+    project_well_params.update(constants['default_project_well_params'])
 
     logger.info("Загрузка скважинных данных")
-    _, data_wells, info = load_wells_data(data_well_directory=data_well_directory)
-    name_field, name_object = info["field"], info["object_value"]
-
+    (data_history, data_wells,
+     info_object_calculation) = load_wells_data(data_well_directory=paths["data_well_directory"],
+                                                first_months=load_data_param['first_months'])
+    name_field, name_object = info_object_calculation.get("field"), info_object_calculation.get("object_value")
     save_directory = get_save_path("Infill_drilling", name_field, name_object.replace('/', '-'))
 
     percent_low = 100 - parameters_calculation["percent_top"]
 
-    dict_geo_phys_properties = load_geo_phys_properties(path_geo_phys_properties, name_field, name_object)
-
-    default_size_pixel = parameters_calculation["default_size_pixel"]
-
     logger.info(f"Загрузка ГФХ по пласту {name_object.replace('/', '-')} месторождения {name_field}")
-    dict_parameters_coefficients = load_geo_phys_properties(path_geo_phys_properties, name_field, name_object)
-    dict_parameters_coefficients.update({"well_params": default_well_params, 'coefficients': default_coefficients})
+    dict_parameters_coefficients = load_geo_phys_properties(paths["path_geo_phys_properties"], name_field, name_object)
+    dict_parameters_coefficients.update({'project_well_params': project_well_params,
+                                         'fact_well_params': fact_well_params,
+                                         'default_well_params': default_well_params,
+                                         'coefficients': default_coefficients})
 
-    maps, data_wells = mapping(maps_directory=maps_directory,
+    logger.info("Загрузка и обработка карт")
+    maps, data_wells = mapping(maps_directory=paths["maps_directory"],
                                data_wells=data_wells,
                                dict_properties=dict_parameters_coefficients['reservoir_params'],
-                               default_size_pixel=default_size_pixel)
+                               **load_data_param)
+    default_size_pixel = maps[0].geo_transform[1]  # размер ячейки после загрузки всех карт
+    type_map_list = list(map(lambda raster: raster.type_map, maps))
 
-    type_maps_list = list(map(lambda raster: raster.type_map, maps))
     # инициализация всех необходимых карт из списка
-    map_opportunity_index = maps[type_maps_list.index("opportunity_index")]
-    data_wells = calculate_effective_radius(data_wells, dict_properties=dict_parameters_coefficients['fluid_params'])
+    map_opportunity_index = maps[type_map_list.index("opportunity_index")]
+    logger.info("Расчет радиусов дренирования и нагнетания для скважин")
+    data_wells = calculate_effective_radius(data_wells, dict_properties=dict_parameters_coefficients)
 
     # Перебор параметров DBSCAN c сеткой графиков 5 х 3
     pairs_of_hyperparams = [[4, 10], [4, 30], [4, 50],
