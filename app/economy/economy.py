@@ -148,8 +148,10 @@ def calculate_economy(reservoir):
 
 
 if __name__ == "__main__":
-    from app.local_parameters import paths
+    from app.local_parameters import main_parameters
     from app.input_output.input import load_economy_data
+
+    paths = main_parameters['paths']
     path_economy = paths['path_economy']
     # для консольного расчета экономики
     load_economy_data(path_economy)

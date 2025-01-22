@@ -89,7 +89,7 @@ class ProjectWell:
                                                           (self.gdf_nearest_wells['init_P_well_prod'].notna())]
                                    ['init_P_well_prod'])
         if np.isnan(self.P_well_init):
-            self.P_well_init = None
+            self.P_well_init = dict_parameters_coefficients['project_well_params']['init_P_well']
         # Выбираем только те строки, где значение проницаемости больше 0 и не nan
         self.permeability = np.mean(self.gdf_nearest_wells[(self.gdf_nearest_wells['permeability_fact'] > 0) &
                                                            (self.gdf_nearest_wells['permeability_fact'].notna())]
@@ -129,8 +129,6 @@ class ProjectWell:
         reservoir_params['Pr'] = self.P_reservoir
 
         well_params['L'] = self.length_geo
-        if not self.P_well_init > 0:
-            self.P_well_init = self.P_reservoir - dict_parameters_coefficients["well_params"]['pressure_drawdown']
         well_params['Pwf'] = self.P_well_init
         well_params['r_e'] = self.r_eff
         well_params['FracCount'] = check_FracCount(well_params['Type_Frac'],

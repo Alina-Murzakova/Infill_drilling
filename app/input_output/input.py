@@ -134,6 +134,9 @@ def load_wells_data(data_well_directory, min_length_hor_well=150, first_months=6
 
     # дополнение data_wells всеми необходимыми колонками
     data_wells = pd.concat([sample_data_wells, data_wells])
+
+    # оставляем для расчета только скважины с не нулевой накопленной добычей и закачкой по объекту
+    data_wells = (data_wells[(data_wells['Qo_cumsum'] > 0) | (data_wells['Winj_cumsum'] > 0)].reset_index(drop=True))
     return data_history, data_wells, info
 
 

@@ -67,7 +67,7 @@ def upload_data(save_directory, data_wells, maps, list_zones, info_clusterizatio
     pass
 
 
-def save_contours(list_zones, map_conv, save_directory_contours, type_calc='alpha', buffer_size=50, alpha=0.01):
+def save_contours(list_zones, map_conv, save_directory_contours, type_calc='alpha', buffer_size=40, alpha=0.01):
     """
     Сохранение контуров зон в формате .txt для загрузки в NGT в отдельную папку
     Parameters

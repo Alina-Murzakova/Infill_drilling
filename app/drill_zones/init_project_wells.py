@@ -22,9 +22,7 @@ def get_project_wells_from_clusters(name_cluster, gdf_clusters, data_wells, defa
     gdf_project.set_geometry("POINT_T2_pix", inplace=True)
 
     # Подготовка GeoDataFrame с фактическими скважинами
-    df_fact_wells = (data_wells[(data_wells['Qo_cumsum'] > 0)
-                                | (data_wells['Winj_cumsum'] > 0)].reset_index(drop=True))
-    gdf_fact_wells = gpd.GeoDataFrame(df_fact_wells, geometry="LINESTRING_pix")
+    gdf_fact_wells = gpd.GeoDataFrame(data_wells, geometry="LINESTRING_pix")
 
     # GeoDataFrame с фактическими ГС
     gdf_fact_hor_wells = gdf_fact_wells[gdf_fact_wells["well_type"] == "horizontal"].reset_index(drop=True)
@@ -164,7 +162,9 @@ def convert_multipolygon(row, gdf_clusters, coef_area=0.4):
 
             # Обработка зоны в случае MultiPolygon
             if isinstance(surround_poly, MultiPolygon):
-                intersecting_polygon_zones = sorted(surround_poly.geoms, key=lambda p: zone.distance(p))
+                # Оставляет только зоны на расстоянии 0 (касаются или пересекаются)
+                intersecting_polygon_zones = [nearest_zone for nearest_zone in surround_poly.geoms
+                                              if zone.distance(nearest_zone) == 0]
             # Обработка зоны в случае Polygon
             elif isinstance(surround_poly, Polygon):
                 intersecting_polygon_zones = [surround_poly]
@@ -175,7 +175,8 @@ def convert_multipolygon(row, gdf_clusters, coef_area=0.4):
             # Проверяем пересечение и размер зон
             for nearest_zone in intersecting_polygon_zones:
                 # Проверяем, пересекается ли nearest_zone с zone и проверяем площадь зоны
-                if nearest_zone.intersects(zone) and nearest_zone.area / surround_poly.area >= coef_area:
+                if (nearest_zone.intersects(zone) and nearest_zone.overlaps(zone) and
+                        nearest_zone.area / surround_poly.area >= coef_area):
                     # Добавляем зону в gdf, если она еще не добавлена
                     if nearest_zone not in gdf_clusters.at[idx, 'zones']:
                         gdf_clusters.at[idx, 'zones'].append(nearest_zone)
@@ -192,7 +193,13 @@ def convert_multipolygon(row, gdf_clusters, coef_area=0.4):
                 break  # Выход из цикла по intersecting_polygons
 
         if not zone_added:
-            logger.warning("Несвязанный кластер (MultiPolygon) не перераспределился!")
+            if zone.area / cluster_area < coef_area:
+                # Удаляем зону из текущего кластера
+                gdf_clusters.at[row.name, 'zones'].remove(zone)
+                logger.info(f"Зона {row.name} удалена. Её площадь составляет {zone.area / cluster_area} "
+                            f"от всего кластера")
+            else:
+                logger.warning(f"Несвязанный кластер {row.name} (MultiPolygon) не перераспределился!")
 
 
 def get_well_path_nearest_wells(center, gdf_fact_wells, threshold, k=5):

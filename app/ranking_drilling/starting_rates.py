@@ -159,6 +159,8 @@ def get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients, swi
     avg_permeability = data_wells[data_wells['permeability_fact'] != 0]['permeability_fact'].mean()
     # Перезапись значения проницаемости по объекту из ГФХ на среднюю по фактическому фонду
     dict_parameters_coefficients['reservoir_params']['k_h'] = avg_permeability
+    dict_parameters_coefficients['project_well_params']['init_P_well'] = data_wells[data_wells['init_P_well_prod']
+                                                                                    != 0]['init_P_well_prod'].mean()
     return data_wells, dict_parameters_coefficients
 
 

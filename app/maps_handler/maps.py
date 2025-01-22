@@ -139,27 +139,6 @@ class Map:
         cbar = plt.colorbar()
         cbar.ax.tick_params(labelsize=font_size * 8)
 
-        # Отображение списка скважин на карте
-        if data_wells is not None:
-            column_lim_x = ['T1_x_geo', 'T3_x_geo']
-            for column in column_lim_x:
-                data_wells = data_wells.loc[((data_wells[column] <= x[1]) & (data_wells[column] >= x[0]))]
-            column_lim_y = ['T1_y_geo', 'T3_y_geo']
-            for column in column_lim_y:
-                data_wells = data_wells.loc[((data_wells[column] <= y[1]) & (data_wells[column] >= y[0]))]
-
-            # координаты скважин в пиксельных координатах
-            x_t1, y_t1 = (data_wells.T1_x_pix, data_wells.T1_y_pix)
-            x_t3, y_t3 = (data_wells.T3_x_pix, data_wells.T3_y_pix)
-
-            # Отображение скважин на карте
-            plt.plot([x_t1, x_t3], [y_t1, y_t3], c='black', linewidth=element_size * 0.3)
-            plt.scatter(x_t1, y_t1, s=element_size, c='black', marker="o", linewidths=0.1)
-
-            # Отображение имен скважин рядом с точками T1
-            for x, y, name in zip(x_t1, y_t1, data_wells.well_number):
-                plt.text(x + 3, y - 3, name, fontsize=font_size, ha='left')
-
         # Отображение зон кластеризации на карте
         title = ""
         if list_zones is not None:
@@ -200,6 +179,27 @@ class Map:
                 title = (f"Epsilon = {info_clusterization_zones['epsilon']}\n "
                          f"min_samples = {info_clusterization_zones['min_samples']} \n "
                          f"with {info_clusterization_zones['n_clusters']} clusters")
+
+            # Отображение списка скважин на карте
+            if data_wells is not None:
+                column_lim_x = ['T1_x_geo', 'T3_x_geo']
+                for column in column_lim_x:
+                    data_wells = data_wells.loc[((data_wells[column] <= x[1]) & (data_wells[column] >= x[0]))]
+                column_lim_y = ['T1_y_geo', 'T3_y_geo']
+                for column in column_lim_y:
+                    data_wells = data_wells.loc[((data_wells[column] <= y[1]) & (data_wells[column] >= y[0]))]
+
+                # координаты скважин в пиксельных координатах
+                x_t1, y_t1 = (data_wells.T1_x_pix, data_wells.T1_y_pix)
+                x_t3, y_t3 = (data_wells.T3_x_pix, data_wells.T3_y_pix)
+
+                # Отображение скважин на карте
+                plt.plot([x_t1, x_t3], [y_t1, y_t3], c='black', linewidth=element_size * 0.3)
+                plt.scatter(x_t1, y_t1, s=element_size, c='black', marker="o", linewidths=0.1)
+
+                # Отображение имен скважин рядом с точками T1
+                for x, y, name in zip(x_t1, y_t1, data_wells.well_number):
+                    plt.text(x + 3, y - 3, name, fontsize=font_size, ha='left')
 
         plt.title(f"{self.type_map}\n {title}", fontsize=font_size * 8)
         plt.tick_params(axis='both', which='major', labelsize=font_size * 8)
