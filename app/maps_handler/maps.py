@@ -355,8 +355,9 @@ def read_array(data_wells, name_column_map, type_map, geo_transform, size,
     grid_points_mask = grid_points[points_mask]
 
     # Использование RBFInterpolator
-    rbf_interpolator = RBFInterpolator(well_coord, values, kernel='linear', epsilon=10)  # сглаживание smoothing=0.5
-
+    rbf_interpolator = RBFInterpolator(well_coord, values, kernel='linear', epsilon=10, smoothing=0.5) #, epsilon=10)  # сглаживание smoothing=0.5
+    # from scipy.interpolate import griddata
+    # grid_z = griddata(well_coord, values, (grid_x, grid_y), method='linear')
     # Предсказание значений на сетке
     valid_grid_z = rbf_interpolator(grid_points_mask)
     grid_z = np.full(grid_x.shape, np.nan)

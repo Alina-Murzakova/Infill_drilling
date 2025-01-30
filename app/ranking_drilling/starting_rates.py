@@ -1,5 +1,7 @@
 import math
 import numpy as np
+import copy
+import pandas as pd
 
 from loguru import logger
 from scipy.optimize import root_scalar
@@ -99,7 +101,8 @@ def calculate_permeability_fact_wells(row, dict_parameters_coefficients):
 
     reservoir_params = dict_parameters_coefficients['reservoir_params']
     fluid_params = dict_parameters_coefficients['fluid_params']
-    well_params = dict_parameters_coefficients['fact_well_params']
+    # well_params = dict_parameters_coefficients['well_params']
+    well_params = copy.deepcopy(dict_parameters_coefficients['well_params'])
     coefficients = dict_parameters_coefficients['coefficients']
 
     reservoir_params['f_w'] = row['init_water_cut_TR']
@@ -110,9 +113,9 @@ def calculate_permeability_fact_wells(row, dict_parameters_coefficients):
     well_params['Pwf'] = row['init_P_well_prod']
     well_params['r_e'] = row['r_eff_voronoy']
     # well_params['r_e'] = 300
-    well_params['FracCount'] = check_FracCount(well_params['Type_Frac'],
-                                               well_params['length_FracStage'],
-                                               well_params['L'])
+    well_params['xfr'] = row['xfr']
+    well_params['w_f'] = row['w_f']
+    well_params['FracCount'] = row['FracCount']
 
     if (row.init_Ql_rate_TR > 0 and row.init_P_well_prod > 0
             and row.init_P_reservoir_prod > 0 and row.init_P_reservoir_prod > row.init_P_well_prod):
@@ -148,19 +151,27 @@ def get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients, swi
     ----------
     switch - фильтрация выбросов по статистике в массиве фактических проницаемостей
     """
-    data_wells['permeability_fact'] = data_wells.apply(calculate_permeability_fact_wells,
-                                                       args=(dict_parameters_coefficients,),
-                                                       axis=1)
+    data_wells_for_perm = data_wells[(data_wells['init_Ql_rate_TR'] > 0) & (data_wells['init_P_well_prod'] > 0) &
+                                     (data_wells['init_P_reservoir_prod'] > 0) &
+                                     (data_wells['init_P_reservoir_prod'] > data_wells['init_P_well_prod'])].copy()
+    data_wells_for_perm['permeability_fact'] = data_wells_for_perm.apply(calculate_permeability_fact_wells,
+                                                                         args=(dict_parameters_coefficients,),
+                                                                         axis=1)
+    del data_wells['permeability_fact']
+    data_wells = data_wells.merge(data_wells_for_perm[['well_number', 'permeability_fact']],
+                                  how='left', on='well_number')
+    data_wells['permeability_fact'] = data_wells['permeability_fact'].fillna(0)
+
     if switch:
         # Верхняя граница для фильтрации выбросов (метод IQR)
         permeability_upper_bound = apply_iqr_filter(data_wells, name_column='permeability_fact')
         data_wells['permeability_fact'] = np.where(data_wells['permeability_fact'] > permeability_upper_bound,
-                                                   0, data_wells['permeability_fact'])  # 0 или permeability_upper_bound
+                                                   permeability_upper_bound, data_wells['permeability_fact'])  # 0 или permeability_upper_bound
     avg_permeability = data_wells[data_wells['permeability_fact'] != 0]['permeability_fact'].mean()
     # Перезапись значения проницаемости по объекту из ГФХ на среднюю по фактическому фонду
     dict_parameters_coefficients['reservoir_params']['k_h'] = avg_permeability
-    dict_parameters_coefficients['project_well_params']['init_P_well'] = data_wells[data_wells['init_P_well_prod']
-                                                                                    != 0]['init_P_well_prod'].mean()
+    dict_parameters_coefficients['well_params']['init_P_well'] = data_wells[data_wells['init_P_well_prod']
+                                                                            != 0]['init_P_well_prod'].mean()
     return data_wells, dict_parameters_coefficients
 
 
@@ -183,7 +194,10 @@ def check_FracCount(type_frac, length_FracStage=1, L=1):
     elif type_frac == 'ГРП':
         return 1
     elif type_frac == 'МГРП':
-        return int(L / length_FracStage)
+        if L == 0:
+            return 1
+        else:
+            return int(L / length_FracStage)
     else:
         logger.error(f"Некорректно задан тип ГРП: {type_frac}. Допустимые значения None, ГРМ, МГРП")
         return None

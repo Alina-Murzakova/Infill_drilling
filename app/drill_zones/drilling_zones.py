@@ -42,10 +42,10 @@ class DrillZone:
                                dict_parameters):
         """Расчет количества проектных скважин в перспективной зоне"""
         # Инициализация параметров
-        buffer_project_wells = dict_parameters['project_well_params']['buffer_project_wells']
-        threshold = dict_parameters['project_well_params']['threshold']
-        k_wells = dict_parameters['project_well_params']['k']
-        min_length = dict_parameters['project_well_params']['min_length']
+        buffer_project_wells = dict_parameters['well_params']['buffer_project_wells']
+        threshold = dict_parameters['well_params']['threshold']
+        k_wells = dict_parameters['well_params']['k']
+        min_length = dict_parameters['well_params']['min_length']
 
         # threshold = 2500 - максимальное расстояние для исключения скважины из ближайших скважин, пиксели
         self.calculate_reserves(map_rrr)
@@ -200,7 +200,7 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt
     from app.input_output.input import load_wells_data, load_geo_phys_properties
     from app.input_output.output import get_save_path
-    from app.local_parameters import main_parameters, constants, fact_well_params
+    from app.local_parameters import main_parameters, constants
     from app.well_active_zones import calculate_effective_radius
     from app.maps_handler.functions import mapping
 
@@ -209,13 +209,13 @@ if __name__ == '__main__':
     # Параметры расчета
     parameters_calculation = main_parameters['parameters_calculation']
     # Параметры для скважин проектного фонда РБ
-    project_well_params = main_parameters['project_well_params']
+    well_params = main_parameters['well_params']
 
     # Константы расчета
     load_data_param = constants['load_data_param']
     default_coefficients = constants['default_coefficients']
     default_well_params = constants['default_well_params']
-    project_well_params.update(constants['default_project_well_params'])
+    well_params.update(constants['default_project_well_params'])
 
     logger.info("Загрузка скважинных данных")
     (data_history, data_wells,
@@ -228,8 +228,7 @@ if __name__ == '__main__':
 
     logger.info(f"Загрузка ГФХ по пласту {name_object.replace('/', '-')} месторождения {name_field}")
     dict_parameters_coefficients = load_geo_phys_properties(paths["path_geo_phys_properties"], name_field, name_object)
-    dict_parameters_coefficients.update({'project_well_params': project_well_params,
-                                         'fact_well_params': fact_well_params,
+    dict_parameters_coefficients.update({'well_params': well_params,
                                          'default_well_params': default_well_params,
                                          'coefficients': default_coefficients})
 

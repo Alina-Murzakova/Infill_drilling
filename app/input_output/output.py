@@ -22,7 +22,9 @@ def upload_data(save_directory, data_wells, maps, list_zones, info_clusterizatio
                             'reservoir_score': "оценка резервуара",
                             'potential_score': "оценка потенциала пласта",
                             'risk_score': "оценка риска",
-                            'opportunity_index': "индекс возможности бурения"}
+                            'opportunity_index': "индекс возможности бурения",
+                            'last_rate_oil': "последний дебит",
+                            'init_rate_oil': "запускной дебит"}
 
     logger.info(f"Сохраняем исходные карты и рассчитанные в .png и .grd форматах ")
     for i, raster in enumerate(maps):
@@ -67,7 +69,7 @@ def upload_data(save_directory, data_wells, maps, list_zones, info_clusterizatio
     pass
 
 
-def save_contours(list_zones, map_conv, save_directory_contours, type_calc='alpha', buffer_size=40, alpha=0.01):
+def save_contours(list_zones, map_conv, save_directory_contours, type_calc='alpha', buffer_size=50, alpha=0.01):
     """
     Сохранение контуров зон в формате .txt для загрузки в NGT в отдельную папку
     Parameters

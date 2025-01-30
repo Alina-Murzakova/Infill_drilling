@@ -2,8 +2,8 @@ import math
 from loguru import logger
 
 from app.ranking_drilling.starting_rates import get_df_permeability_fact_wells
-from local_parameters import main_parameters, constants, fact_well_params
-from input_output.input import load_wells_data, load_geo_phys_properties
+from local_parameters import main_parameters, constants
+from input_output.input import load_wells_data, load_geo_phys_properties, load_frac_info
 
 from app.decline_rate.decline_rate import get_decline_rates
 from app.maps_handler.functions import mapping
@@ -20,14 +20,14 @@ if __name__ == '__main__':
     paths = main_parameters['paths']
     # Параметры расчета
     parameters_calculation = main_parameters['parameters_calculation']
-    # Параметры для скважин проектного фонда РБ
-    project_well_params = main_parameters['project_well_params']
+    # Параметры для скважин РБ
+    well_params = main_parameters['well_params']
 
     # Константы расчета
     load_data_param = constants['load_data_param']
     default_coefficients = constants['default_coefficients']
     default_well_params = constants['default_well_params']
-    project_well_params.update(constants['default_project_well_params'])
+    well_params.update(constants['default_project_well_params'])
 
     logger.info("Загрузка скважинных данных")
     (data_history, data_wells,
@@ -38,10 +38,12 @@ if __name__ == '__main__':
 
     logger.info(f"Загрузка ГФХ по пласту {name_object.replace('/', '-')} месторождения {name_field}")
     dict_parameters_coefficients = load_geo_phys_properties(paths["path_geo_phys_properties"], name_field, name_object)
-    dict_parameters_coefficients.update({'project_well_params': project_well_params,
-                                         'fact_well_params': fact_well_params,
+    dict_parameters_coefficients.update({'well_params': well_params,
                                          'default_well_params': default_well_params,
                                          'coefficients': default_coefficients})
+    logger.info(f"Загрузка фрак-листов")
+    data_wells, dict_parameters_coefficients = load_frac_info(paths["path_frac"], data_wells, name_object,
+                                                              dict_parameters_coefficients)
 
     logger.info("Загрузка и обработка карт")
     maps, data_wells = mapping(maps_directory=paths["maps_directory"],
@@ -75,7 +77,7 @@ if __name__ == '__main__':
 
     map_rrr = maps[type_map_list.index('residual_recoverable_reserves')]
     logger.info("Начальное размещение проектных скважин")
-    project_well_params['buffer_project_wells'] = project_well_params['buffer_project_wells'] / default_size_pixel
+    well_params['buffer_project_wells'] = well_params['buffer_project_wells'] / default_size_pixel
     for drill_zone in list_zones:
         if drill_zone.rating != -1:
             drill_zone.get_init_project_wells(map_rrr, data_wells,
@@ -93,10 +95,10 @@ if __name__ == '__main__':
                 project_well.get_starting_rates(maps, dict_parameters_coefficients)
                 project_well.get_production_profile(data_decline_rate_stat,
                                                     parameters_calculation['period_calculation'] * 12,
-                                                    project_well_params['day_in_month'],
-                                                    project_well_params['well_efficiency'])
+                                                    well_params['day_in_month'],
+                                                    well_params['well_efficiency'])
 
     logger.info(f"Выгрузка данных расчета:")
     upload_data(save_directory, data_wells, maps, list_zones, info_clusterization_zones,
-                **{**load_data_param, **project_well_params})
+                **{**load_data_param, **well_params})
     logger.info(f"Загрузка исходных данных для расчета экономики")

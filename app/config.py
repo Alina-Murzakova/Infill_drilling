@@ -33,6 +33,19 @@ columns_name = {'Дата': 'date',
 dict_work_marker = {"НЕФ": "prod",
                     "НАГ": "inj"}
 
+# Название колонок в файле фрак-лист
+columns_name_frac = {'Номер скважины': 'well_number',
+                     'Дата': 'date',
+                     'Пласт': 'object',
+                     'k': 'permeability',
+                     'Рпл': 'P_reservoir',
+                     'Xf': 'xfr',
+                     'Wf': 'w_f',
+                     'Скин-фактор': 'skin',
+                     'Верх': 'perf_upper',
+                     'Низ': 'perf_lower',
+                     'Комментарии': 'comment'}
+
 # Названия колонок в файле ГФХ
 gpch_column_name = {'Месторождение': {'field': 'str'},
                     'Тип данных': {'data_type': 'str'},
