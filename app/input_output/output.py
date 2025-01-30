@@ -63,11 +63,11 @@ def upload_data(save_directory, data_wells, maps, list_zones, info_clusterizatio
     logger.info("Сохранение контуров зон в формате .txt для загрузки в NGT")
     save_directory_contours = f"{save_directory}/контуры зон"
     create_new_dir(save_directory_contours)
-    save_contours(list_zones, map_opportunity_index, save_directory_contours)
+    save_contours(list_zones, map_opportunity_index, save_directory_contours, type_calc='alpha', buffer_size=40)
     pass
 
 
-def save_contours(list_zones, map_conv, save_directory_contours, type_calc='alpha', buffer_size=40, alpha=0.01):
+def save_contours(list_zones, map_conv, save_directory_contours, type_calc='buffer', buffer_size=60, alpha=0.01):
     """
     Сохранение контуров зон в формате .txt для загрузки в NGT в отдельную папку
     Parameters
@@ -193,7 +193,7 @@ def save_ranking_drilling_to_excel(list_zones, filename):
                  'Пористость, д.ед': [well.m for well in drill_zone.list_project_wells],
                  'Проницаемость, мД': [well.permeability for well in drill_zone.list_project_wells],
                  'Эффективный радиус, м': [well.r_eff for well in drill_zone.list_project_wells],
-                 'Запасы, тыс т': [well.P_reservoir for well in drill_zone.list_project_wells],
+                 'Запасы, тыс т': [well.reserves for well in drill_zone.list_project_wells],
                  'Накопленная добыча нефти (25 лет), т': [np.sum(well.Qo) for well in drill_zone.list_project_wells],
                  'Накопленная добыча жидкости (25 лет), т': [np.sum(well.Ql) for well in drill_zone.list_project_wells],
                  'Соседние скважины': [well.gdf_nearest_wells.well_number.unique() for

@@ -5,8 +5,9 @@ import numpy as np
 from loguru import logger
 from shapely.geometry import Point, LineString
 
-from app.config import columns_name, gpch_column_name, dict_work_marker, sample_data_wells, macroeconomics_rows_name
-
+from app.config import (columns_name, gpch_column_name, dict_work_marker, sample_data_wells,
+                        macroeconomics_rows_name, OPEX_rows_name, workover_wellservice_rows_name)
+from app.economy.financial_model import FinancialEconomicModel
 
 @logger.catch
 def load_wells_data(data_well_directory, min_length_hor_well=150, first_months=6):
@@ -218,21 +219,44 @@ def load_geo_phys_properties(path_geo_phys_properties, name_field, name_object):
 
 
 @logger.catch
-def load_economy_data(economy_path):
+def load_economy_data(economy_path, name_field):
     # Инициализируем необходимые переменные
     with pd.ExcelFile(economy_path) as xls:
         # коэффициенты Кв Кз Кд	Кдв	Ккан Кк	Кман Кабдт
-        coefficients = pd.read_excel(xls, sheet_name="Налоги_константы", header=None)
+        constants = pd.read_excel(xls, sheet_name="Налоги_константы")
         macroeconomics = pd.read_excel(xls, sheet_name="Макропараметры", header=3)  # Основная макра
-        # месторождения с НДД
-        reservoirs_NDD = pd.read_excel(xls, sheet_name="МР с НДД", header=None)
-        # НРФ для уделок
-        # df_fpa = pd.read_excel(economy_path + "\\НРФ.xlsx", sheet_name="Ш-01.02.01.07-01, вер. 1.0",
-        #                        usecols=name_columns_FPA, header=4).fillna(0)
-        # business_plan = pd.read_excel(economy_path + "\\Макра_оперативная_БП.xlsx", usecols="A, N:R",
-        #                               header=3)  # Данные по макре за следующие 5 лет (напр: 2025, 26, 27, 28, 29)
-        # business_plan_long = pd.read_excel(economy_path + "\\Макра_долгосрочная.xlsx", usecols="A, H:M",
-        #                                    header=3)  # Данные по макре за следующие 6 лет (напр: 2030 - 35)
+
+        # месторождения с НДД, проверка наличия в списке
+        reservoirs_NDD = pd.read_excel(xls, sheet_name="МР с НДД", header=None).iloc[:, 0].values.tolist()
+        type_tax_calculation = name_field in reservoirs_NDD
+
+        # OPEX
+        df_opex = pd.read_excel(xls, sheet_name="Удельный OPEX", header=0)
+        df_opex = df_opex[df_opex['Месторождение'] == name_field]
+        if df_opex.shape[0] < 3:
+            logger.error(f"В исходных данных  ФЭМ нет OPEX по месторождению {name_field}")
+            return None
+        else:
+            del df_opex['Месторождение']
+
+        # потери нефти
+        df_oil_loss = pd.read_excel(xls, sheet_name="Нормативы потерь нефти", header=0)
+        df_oil_loss = df_oil_loss[df_oil_loss['Месторождение'] == name_field]
+        if df_oil_loss.empty:
+            logger.error(f"В исходных данных ФЭМ нет потерь нефти по месторождению {name_field}")
+            return None
+        else:
+            del df_oil_loss['Месторождение']
+            df_oil_loss = df_oil_loss.set_index([pd.Index(['oil_loss'])])
+
+        # КРС_ПРС
+        df_workover_wellservice = pd.read_excel(xls, sheet_name="КРС_ПРС", header=0)
+        df_workover_wellservice = df_workover_wellservice[df_workover_wellservice['Месторождение'] == name_field]
+        if df_workover_wellservice.shape[0] < 5:
+            logger.error(f"В исходных данных ФЭМ нет КРС_ПРС по месторождению {name_field}")
+            return None
+        else:
+            del df_workover_wellservice['Месторождение']
 
     # Подготовка файлов
     name_first_column = macroeconomics.columns[0]
@@ -240,25 +264,30 @@ def load_economy_data(economy_path):
     macroeconomics = macroeconomics[macroeconomics[name_first_column].isin(macroeconomics_rows_name.keys())]
     macroeconomics.replace(macroeconomics_rows_name, inplace=True)
     macroeconomics = macroeconomics.fillna(method='ffill', axis=1).reset_index(drop=True)
+    macroeconomics = formatting_df_economy(macroeconomics)
 
-    urals = macroeconomics[macroeconomics[name_first_column] == 'Urals'].values.flatten()[1:]
-    exchange_rate = macroeconomics[macroeconomics[name_first_column] == 'exchange_rate'].values.flatten()[1:]
-    base_rate_MET = macroeconomics[macroeconomics[name_first_column] == 'base_rate_MET'].values.flatten()[1:]
-    K_k = macroeconomics[macroeconomics[name_first_column] == 'K_k'].values.flatten()[1:]
-    K_abdt = macroeconomics[macroeconomics[name_first_column] == 'K_abdt'].values.flatten()[1:]
-    K_man = macroeconomics[macroeconomics[name_first_column] == 'K_man'].values.flatten()[1:]
-    # Расчет НДПИ
-    # k_c = (urals - 15) * exchange_rate / 261
-    # MET = base_rate_MET * k_c - 'Кндпи(до маневра)' * k_c * (1 - k_d * k_v * k_z * k_kan) + K_k + K_abdt + K_man
-    #
-    # macroeconomics = macroeconomics.fillna(method='ffill', axis=1).reset_index(drop=True)
-    #
-    # macroeconomics.loc[macroeconomics.shape[0] + 1] = \
-    #     [well, coefficients_Ql_rate, coefficients_Qo_rate, cumulative_oil_production]
-    pass
+    df_opex.replace(OPEX_rows_name, inplace=True)
+    df_opex = formatting_df_economy(df_opex)
+
+    oil_loss = df_oil_loss.T
+
+    df_workover_wellservice.replace(workover_wellservice_rows_name, inplace=True)
+    df_workover_wellservice = formatting_df_economy(df_workover_wellservice)
+
+    FEM = FinancialEconomicModel(macroeconomics, constants,
+                                 df_opex, oil_loss, df_workover_wellservice,
+                                 type_tax_calculation)
+    return FEM
 
 
 """___________Вспомогательные функции___________"""
+
+
+def formatting_df_economy(df):
+    df = df.T
+    df.columns = df.iloc[0]
+    df.drop(df.index[0], inplace=True)
+    return df
 
 
 def formatting_dict_geo_phys_properties(dict_geo_phys_properties):

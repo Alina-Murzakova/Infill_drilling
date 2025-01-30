@@ -89,12 +89,11 @@ if __name__ == '__main__':
     for drill_zone in list_zones:
         if drill_zone.rating != -1:
             logger.info(f"Расчет запускных параметров и профиля добычи проектных скважин зоны: {drill_zone.rating}")
-            for project_well in drill_zone.list_project_wells:
-                project_well.get_starting_rates(maps, dict_parameters_coefficients)
-                project_well.get_production_profile(data_decline_rate_stat,
-                                                    parameters_calculation['period_calculation'] * 12,
-                                                    project_well_params['day_in_month'],
-                                                    project_well_params['well_efficiency'])
+            drill_zone.calculate_starting_rates(maps, dict_parameters_coefficients)
+            drill_zone.calculate_production(data_decline_rate_stat,
+                                            parameters_calculation['period_calculation'] * 12,
+                                            project_well_params['day_in_month'],
+                                            project_well_params['well_efficiency'])
 
     logger.info(f"Выгрузка данных расчета:")
     upload_data(save_directory, data_wells, maps, list_zones, info_clusterization_zones,

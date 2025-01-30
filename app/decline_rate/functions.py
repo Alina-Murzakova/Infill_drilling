@@ -101,6 +101,8 @@ def production_model(period, model_arps_ql, model_arps_qo, reserves, day_in_mont
     mask_wc = (Wc[1:] - Wc[:-1]) < 0
     if True in mask_wc:
         index_argmax = np.argmax(mask_wc)
+        if index_argmax == 0:
+            index_argmax = 1
         rates[0][index_argmax:] = rates[0][index_argmax - 1]
         productions[0] = rates[0] * day_in_month * well_efficiency
     return rates, productions

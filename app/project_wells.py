@@ -140,6 +140,7 @@ class ProjectWell:
                                                                        kv_kh, Swc, Sor, Fw, m1, Fo, m2, Bw)
         logger.info(f"Для проектной скважины {self.well_number}: Q_liq = {self.init_Ql_rate},"
                     f" Q_oil = {self.init_Qo_rate}")
+        pass
 
     def get_production_profile(self, data_decline_rate_stat, period=25 * 12, day_in_month=29, well_efficiency=0.95):
         if self.init_Qo_rate is None or self.init_Ql_rate is None:
@@ -177,7 +178,7 @@ class ProjectWell:
         self.reserves = np.sum(array_rrr * map_rrr.geo_transform[1] ** 2 / 10000) / 1000
         pass
 
-    def calculate_economy(self, economy_info, start_date, period=25):
+    def calculate_economy(self, FEM, start_date, period=25):
 
         pass
 

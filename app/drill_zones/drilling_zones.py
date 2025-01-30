@@ -24,6 +24,11 @@ class DrillZone:
         self.list_project_wells = []
         self.num_project_wells = None
 
+        self.Qo_rate = None
+        self.Ql_rate = None
+        self.Qo = None
+        self.Ql = None
+
     def calculate_reserves(self, map_rrr):
         """Расчет ОИЗ перспективной зоны, тыс.т"""
         array_rrr = map_rrr.data[self.y_coordinates, self.x_coordinates]
@@ -38,8 +43,7 @@ class DrillZone:
         pass
 
     @logger.catch
-    def get_init_project_wells(self, map_rrr, data_wells, default_size_pixel, init_profit_cum_oil,
-                               dict_parameters):
+    def get_init_project_wells(self, map_rrr, data_wells, default_size_pixel, init_profit_cum_oil, dict_parameters):
         """Расчет количества проектных скважин в перспективной зоне"""
         # Инициализация параметров
         buffer_project_wells = dict_parameters['project_well_params']['buffer_project_wells']
@@ -67,8 +71,6 @@ class DrillZone:
             gdf_project_wells = get_project_wells_from_clusters(self.rating, gdf_clusters, data_wells,
                                                                 default_size_pixel, buffer_project_wells,
                                                                 threshold, k_wells, min_length)
-            # Количество проектных скважин в перспективной зоне
-            self.num_project_wells = len(gdf_project_wells)
             # Подготовка GeoDataFrame с фактическими скважинами
             df_fact_wells = (data_wells[(data_wells['Qo_cumsum'] > 0)].reset_index(drop=True))
             # Преобразуем строки gdf_project_wells в объекты ProjectWell
@@ -91,6 +93,8 @@ class DrillZone:
                 project_well.get_nearest_wells(df_fact_wells, threshold / default_size_pixel, k=k_wells)
                 project_well.get_params_nearest_wells(dict_parameters)
                 self.list_project_wells.append(project_well)
+            # Количество проектных скважин в перспективной зоне
+            self.num_project_wells = len(self.list_project_wells)
         pass
 
     def picture_clustering(self, ax, buffer_project_wells):
@@ -116,6 +120,44 @@ class DrillZone:
             if point is not None:
                 plt.text(point.x + 2, point.y - 2, name, fontsize=6, ha='left')
         return ax
+
+    def calculate_starting_rates(self, maps, dict_parameters_coefficients):
+        """ Расчет запускных дебитов для всех проектных скважин в зоне"""
+        for project_well in self.list_project_wells:
+            project_well.get_starting_rates(maps, dict_parameters_coefficients)
+        pass
+
+    def calculate_production(self, data_decline_rate_stat, period, day_in_month, well_efficiency):
+        """ Расчет профиля каждой скважины зоны"""
+        for project_well in self.list_project_wells:
+            project_well.get_production_profile(data_decline_rate_stat, period, day_in_month, well_efficiency)
+        self.get_production_profile()
+        pass
+
+    def get_production_profile(self):
+        """ Расчет атрибутов профилей зоны"""
+        for project_well in self.list_project_wells:
+            if self.Qo_rate is None:
+                self.Qo_rate = project_well.Qo_rate.copy()
+            else:
+                if self.Qo_rate is not None:
+                    self.Qo_rate += project_well.Qo_rate
+            if self.Ql_rate is None:
+                self.Ql_rate = project_well.Ql_rate.copy()
+            else:
+                if self.Ql_rate is not None:
+                    self.Ql_rate += project_well.Ql_rate
+            if self.Qo is None:
+                self.Qo = project_well.Qo.copy()
+            else:
+                if self.Qo is not None:
+                    self.Qo += project_well.Qo
+            if self.Ql is None:
+                self.Ql = project_well.Ql.copy()
+            else:
+                if self.Ql is not None:
+                    self.Ql += project_well.Ql
+        pass
 
 
 @logger.catch
@@ -179,10 +221,12 @@ def clusterization_zones(map_opportunity_index, epsilon, min_samples, percent_lo
     mean_indexes = list(map(lambda label: np.mean(Z[np.where(dbscan.labels_ == label)]), labels[1:]))
     mean_indexes = pd.DataFrame({"labels": labels[1:], "mean_indexes": mean_indexes})
     mean_indexes = mean_indexes.sort_values(by=['mean_indexes'], ascending=False).reset_index(drop=True)
+    # Добавление не кластеризованных точек
+    mean_indexes.loc[len(mean_indexes)] = [-1, 0]
 
     # Создание списка объектов DrillZone
     list_zones = []
-    for label in labels:
+    for label in mean_indexes.labels:
         idx = np.where(dbscan.labels_ == label)
         x_label, y_label, z_label = X[idx], Y[idx], Z[idx]
         position = -1

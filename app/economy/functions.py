@@ -226,19 +226,3 @@ def DCF(FCF, r, year_start):
     dcf = pd.DataFrame(dcf, columns=FCF.columns, index=FCF.index)
     return dcf
 
-
-def select_analogue(df_FPA, row_nan, Qliq_fact, liquid_groups):
-    df_FPA = df_FPA[df_FPA["Месторождение"] == row_nan["Месторождение"]]
-    index = np.abs(liquid_groups['Qliq_min'].to_numpy() - Qliq_fact).argsort()[:1][0]
-    liquid_group = liquid_groups.iloc[index, 1]
-    new_row = df_FPA[df_FPA["liquid_group"] == liquid_group].mean()[-9:]
-    if new_row.sum() == 0 and liquid_group != 24:
-        while new_row.sum() == 0 and liquid_group <= 24:
-            liquid_group += 1
-            new_row = df_FPA[df_FPA["liquid_group"] == liquid_group].mean()[-9:]
-    if new_row.sum() == 0:
-        new_row = df_FPA.mean()[-9:]
-    new_row = pd.concat([row_nan[:6], new_row], axis=0, ignore_index=True)
-    new_row.index = row_nan.index
-    new_row["Кд"] = 1
-    return new_row
