@@ -10,7 +10,7 @@ from sklearn.cluster import KMeans
 
 
 def get_project_wells_from_clusters(name_cluster, gdf_clusters, data_wells, default_size_pixel, buffer_project_wells,
-                                    threshold, k_wells, min_length):
+                                    threshold, k_wells, max_length, min_length):
     """Получаем GeoDataFrame с начальными координатами проектных скважин"""
     # threshold - максимальное расстояние для исключения скважины из ближайших скважин, пиксели
 
@@ -31,9 +31,10 @@ def get_project_wells_from_clusters(name_cluster, gdf_clusters, data_wells, defa
                        "Необходимо задать азимут, длину, Рзаб проектных скважин вручную.")
 
     # Находим ближайшие фактические ГС для проектных точек и рассчитываем параметры по окружению
-    gdf_project[["azimuth", 'length_pix']] = (gdf_project["POINT_T2_pix"].apply(
+    gdf_project["azimuth"] = (gdf_project["POINT_T2_pix"].apply(
         lambda center: pd.Series(get_well_path_nearest_wells(center, gdf_fact_hor_wells,
                                                              threshold / default_size_pixel, k=k_wells))))
+    gdf_project['length_pix'] = max_length / default_size_pixel
     # Получаем точки T1 и T3 на основе центров кластеров (T2)
     gdf_project[['POINT_T1_pix', 'POINT_T3_pix']] = gdf_project.apply(compute_t1_t3_points, axis=1,
                                                                       result_type='expand')
@@ -233,8 +234,7 @@ def get_well_path_nearest_wells(center, gdf_fact_wells, threshold, k=5):
     # Расчет средний параметров по выбранному окружению
     avg_azimuth = gdf_nearest_wells.loc[(abs(gdf_nearest_wells['azimuth']
                                              - gdf_nearest_wells['azimuth'].iloc[0]) <= 90)]['azimuth'].mean()
-    avg_length = np.mean(gdf_nearest_wells['length_pix'])
-    return avg_azimuth, avg_length
+    return avg_azimuth
 
 
 def compute_t1_t3_points(row):

@@ -394,7 +394,7 @@ def formatting_dict_geo_phys_properties(dict_geo_phys_properties):
 
     - reservoir_params:
     c_r - сжимаемость породы | (1/МПа)×10-4 --> 1/атм
-    P_init - текущее пластовое давление | МПа --> атм
+    P_init - начальное пластовое давление | МПа --> атм
 
     - fluid_params:
     mu_w - вязкость воды | сП или мПа*с
