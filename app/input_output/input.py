@@ -166,7 +166,7 @@ def load_frac_info(path_frac, data_wells, name_object, dict_parameters_coefficie
 
     pattern = r"(\d+)\s*из\s*(\d+)"
     # Загрузка файла
-    data_frac = pd.read_excel(os.path.join(os.path.dirname(__file__), path_frac), header = 1)
+    data_frac = pd.read_excel(os.path.join(os.path.dirname(__file__), path_frac), header=1)
     # Переименование колонок
     data_frac = data_frac[list(columns_name_frac.keys())]
     data_frac.columns = columns_name_frac.values()
@@ -217,7 +217,8 @@ def load_frac_info(path_frac, data_wells, name_object, dict_parameters_coefficie
     # if all(x is not pd.isna(x) and x != 0 for x in [avg_xfr, avg_w_f]):
     dict_parameters_coefficients['well_params']['xfr'] = round(avg_xfr, 1)
     dict_parameters_coefficients['well_params']['w_f'] = round(avg_w_f, 1)
-    dict_parameters_coefficients['well_params']['length_FracStage'] = round(avg_length_FracStage, 0)
+    if round(avg_length_FracStage, 0) > 0:
+        dict_parameters_coefficients['well_params']['length_FracStage'] = round(avg_length_FracStage, 0)
 
     data_wells = data_wells.merge(data_frac, how='left', on='well_number')
     data_wells[['FracCount', 'xfr', 'w_f', 'length_FracStage']] = data_wells[['FracCount', 'xfr',
@@ -380,7 +381,7 @@ def formatting_dict_geo_phys_properties(dict_geo_phys_properties):
 
     - reservoir_params:
     c_r - сжимаемость породы | (1/МПа)×10-4 --> 1/атм
-    P_init - текущее пластовое давление | МПа --> атм
+    P_init - начальное пластовое давление | МПа --> атм
 
     - fluid_params:
     mu_w - вязкость воды | сП или мПа*с
@@ -432,7 +433,7 @@ def filter_pressure(p_well, p_reservoir, type_pressure):
     """Функция для фильтрации давлений - исключение месяцев с отрицательной депрессией"""
     # Словарь для выбора рассматриваемого давления
     dict_pressure = {'P_well': p_well,
-                      'P_reservoir': p_reservoir}
+                     'P_reservoir': p_reservoir}
     pressure = dict_pressure[type_pressure]
     # Условия для поиска подходящих строк
     # исключаем строки с отрицательной депрессией и нулевыми значениями рассматриваемого давления

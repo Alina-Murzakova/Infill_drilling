@@ -50,6 +50,7 @@ class DrillZone:
         threshold = dict_parameters['well_params']['threshold']
         k_wells = dict_parameters['well_params']['k']
         min_length = dict_parameters['well_params']['min_length']
+        max_length = dict_parameters['well_params']['L']
 
         # threshold = 2500 - максимальное расстояние для исключения скважины из ближайших скважин, пиксели
         self.calculate_reserves(map_rrr)
@@ -70,7 +71,8 @@ class DrillZone:
             logger.info("Получение GeoDataFrame с проектными скважинами из кластеров")
             gdf_project_wells = get_project_wells_from_clusters(self.rating, gdf_clusters, data_wells,
                                                                 default_size_pixel, buffer_project_wells,
-                                                                threshold, k_wells, min_length)
+                                                                threshold, k_wells,
+                                                                max_length, min_length)
             # Подготовка GeoDataFrame с фактическими скважинами
             df_fact_wells = (data_wells[(data_wells['Qo_cumsum'] > 0)].reset_index(drop=True))
             # Преобразуем строки gdf_project_wells в объекты ProjectWell

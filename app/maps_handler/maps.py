@@ -5,7 +5,7 @@ from osgeo import gdal
 from loguru import logger
 from scipy.interpolate import RBFInterpolator, RegularGridInterpolator
 from scipy.spatial import KDTree
-from scipy.ndimage import gaussian_filter
+# from scipy.ndimage import gaussian_filter
 
 from .config import list_names_map
 
@@ -290,16 +290,6 @@ def read_array(data_wells, name_column_map, type_map, geo_transform, size,
                                                          data_wells_with_work[name_column_map] * coefficient_GS_to_NNS,
                                                          data_wells_with_work[name_column_map])"""
     elif type_map == "permeability_fact_wells":
-        # permeability_column = data_wells[data_wells['permeability_fact'] > 0]['permeability_fact']
-        # # Рассчитываем квартили
-        # q1 = np.percentile(permeability_column, 25)
-        # q3 = np.percentile(permeability_column, 75)
-        # iqr = q3 - q1
-        # # Определяем порог для отсеивания "выбросов"
-        # upper_bound = q3 + 1.5 * iqr
-        # # Выбираем только ту проницаемость, которая меньше или равна верхнему пределу
-        # data_wells = data_wells[(data_wells['permeability_fact'] <= upper_bound)
-        #                         & (data_wells['permeability_fact'] > 0)].reset_index(drop=True)
         data_wells = data_wells[(data_wells['permeability_fact'] > 0)].reset_index(drop=True)
         data_wells_with_work = data_wells
     else:
@@ -314,7 +304,7 @@ def read_array(data_wells, name_column_map, type_map, geo_transform, size,
                                                           row['T1_y_geo'], row['T3_x_geo'],
                                                           row['T3_y_geo'], row['length_geo'],
                                                           default_size=geo_transform[1]),
-                                                          index=['x_coords', 'y_coords']), axis=1)
+                                  index=['x_coords', 'y_coords']), axis=1)
         # Объединяем координаты и с исходным df
         data_wells_with_work = pd.concat([data_wells_with_work, coordinates], axis=1)
 
@@ -347,6 +337,19 @@ def read_array(data_wells, name_column_map, type_map, geo_transform, size,
     # Создание KDTree для координат скважин
     tree = KDTree(well_coord)
 
+    #  Добавляем дополнительные точки в для интерполяции (узлы сетки рядом с точками)
+    points_in_radius_pix = tree.query_ball_point(grid_points, r=default_size)
+    for count, indices in enumerate(points_in_radius_pix):
+        if len(indices) > 0:
+            for index_point in indices:
+                well_coord = np.append(well_coord, np.round([grid_points[count]], 0), axis=0)
+                values = np.append(values, values[index_point])
+
+    # Находим уникальные координаты и удаляем дубликаты
+    _, unique_indices = np.unique(well_coord, axis=0, return_index=True)
+    well_coord = well_coord[unique_indices]
+    values = values[unique_indices]
+
     # Поиск точек сетки, которые находятся в пределах заданного радиуса от любой скважины
     points_in_radius = tree.query_ball_point(grid_points, r=radius)
 
@@ -355,7 +358,7 @@ def read_array(data_wells, name_column_map, type_map, geo_transform, size,
     grid_points_mask = grid_points[points_mask]
 
     # Использование RBFInterpolator
-    rbf_interpolator = RBFInterpolator(well_coord, values, kernel='linear', epsilon=10, smoothing=0.5) #, epsilon=10)  # сглаживание smoothing=0.5
+    rbf_interpolator = RBFInterpolator(well_coord, values, kernel='linear')  #, epsilon=10, smoothing=0.5) # сглаживание
     # from scipy.interpolate import griddata
     # grid_z = griddata(well_coord, values, (grid_x, grid_y), method='linear')
     # Предсказание значений на сетке
@@ -435,7 +438,7 @@ def get_map_risk_score(map_water_cut, map_initial_oil_saturation, map_pressure, 
     data_water_cut = np.where(mask, data_init_water_cut, map_water_cut.data)
 
     # Применение гауссова фильтра для сглаживания при объединении карт обводненности и начальной нефтенасыщенности
-    data_water_cut = gaussian_filter(data_water_cut, sigma=sigma)
+    # data_water_cut = gaussian_filter(data_water_cut, sigma=sigma)
     map_water_cut.data = data_water_cut
     norm_water_cut = map_water_cut.normalize_data()
 

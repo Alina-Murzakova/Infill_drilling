@@ -100,4 +100,5 @@ if __name__ == '__main__':
     logger.info(f"Выгрузка данных расчета:")
     upload_data(save_directory, data_wells, maps, list_zones, info_clusterization_zones,
                 **{**load_data_param, **well_params})
+
     logger.info(f"Загрузка исходных данных для расчета экономики")
