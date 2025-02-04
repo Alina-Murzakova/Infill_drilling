@@ -205,4 +205,10 @@ sample_data_wells = pd.DataFrame(columns=[
     'LINESTRING_geo',  # [55] LINESTRING для ствола скважины в географических координатах
     'POINT_T1_pix',  # [56] тип POIT для точки T1 в пикселях
     'POINT_T3_pix',  # [57] тип POIT для точки T3 в пикселях
-    'LINESTRING_pix'])  # [58] LINESTRING для ствола скважины в пикселях
+    'LINESTRING_pix',  # [58] LINESTRING для ствола скважины в пикселях
+
+    # frac_params:
+    'xfr',  # [59] полудлина трещины ГРП, м
+    'w_f',  # [60] раскрытие трещины ГРП, мм
+    'FracCount',  # [61] количество стадий ГРП, шт
+    'length_FracStage',])  # [62] шаг стадии для определения количества стадий МГРП, м

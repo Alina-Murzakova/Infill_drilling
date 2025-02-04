@@ -41,9 +41,11 @@ if __name__ == '__main__':
     dict_parameters_coefficients.update({'well_params': well_params,
                                          'default_well_params': default_well_params,
                                          'coefficients': default_coefficients})
-    logger.info(f"Загрузка фрак-листов")
-    data_wells, dict_parameters_coefficients = load_frac_info(paths["path_frac"], data_wells, name_object,
-                                                              dict_parameters_coefficients)
+
+    if dict_parameters_coefficients['well_params']['switch_avg_frac_params']:
+        logger.info(f"Загрузка фрак-листов")
+        data_wells, dict_parameters_coefficients = load_frac_info(paths["path_frac"], data_wells, name_object,
+                                                                  dict_parameters_coefficients)
 
     logger.info("Загрузка и обработка карт")
     maps, data_wells = mapping(maps_directory=paths["maps_directory"],

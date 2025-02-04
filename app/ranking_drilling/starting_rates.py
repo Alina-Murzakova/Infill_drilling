@@ -101,9 +101,17 @@ def calculate_permeability_fact_wells(row, dict_parameters_coefficients):
 
     reservoir_params = dict_parameters_coefficients['reservoir_params']
     fluid_params = dict_parameters_coefficients['fluid_params']
-    # well_params = dict_parameters_coefficients['well_params']
-    well_params = copy.deepcopy(dict_parameters_coefficients['well_params'])
     coefficients = dict_parameters_coefficients['coefficients']
+    if dict_parameters_coefficients['well_params']['switch_avg_frac_params']:
+        well_params = copy.deepcopy(dict_parameters_coefficients['well_params'])
+        well_params['xfr'] = row['xfr']
+        well_params['w_f'] = row['w_f']
+        well_params['FracCount'] = row['FracCount']
+    else:
+        well_params = dict_parameters_coefficients['well_params']
+        well_params['FracCount'] = check_FracCount(well_params['Type_Frac'],
+                                                   well_params['length_FracStage'],
+                                                   row['length_geo'])
 
     reservoir_params['f_w'] = row['init_water_cut_TR']
     reservoir_params['Phi'] = row['m']
@@ -113,10 +121,6 @@ def calculate_permeability_fact_wells(row, dict_parameters_coefficients):
     well_params['Pwf'] = row['init_P_well_prod']
     well_params['r_e'] = row['r_eff_voronoy']
     # well_params['r_e'] = 300
-    well_params['xfr'] = row['xfr']
-    well_params['w_f'] = row['w_f']
-    well_params['FracCount'] = row['FracCount']
-
     if (row.init_Ql_rate_TR > 0 and row.init_P_well_prod > 0
             and row.init_P_reservoir_prod > 0 and row.init_P_reservoir_prod > row.init_P_well_prod):
         def error_function(k_h):
