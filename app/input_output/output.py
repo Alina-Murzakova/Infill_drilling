@@ -56,10 +56,12 @@ def upload_data(save_directory, data_wells, maps, list_zones, info_clusterizatio
     save_ranking_drilling_to_excel(list_zones, f"{save_directory}/рейтинг_бурения.xlsx")
 
     logger.info("Файл .xlsx для загрузки проектных скважин в NGT")
-    names_coords = ['T1_x_geo', 'T1_y_geo', 'T3_x_geo', 'T3_y_geo']
-    data_project_wells_NGT = data_project_wells[['well_number', 'well_type'] + names_coords]
-    data_project_wells_NGT[names_coords] = data_project_wells_NGT[names_coords].round(0)
-    data_project_wells_NGT['well_type'] = '1'
+    data_project_wells_NGT = pd.DataFrame()
+    if not data_project_wells.empty:
+        names_coords = ['T1_x_geo', 'T1_y_geo', 'T3_x_geo', 'T3_y_geo']
+        data_project_wells_NGT = data_project_wells[['well_number', 'well_type'] + names_coords]
+        data_project_wells_NGT[names_coords] = data_project_wells_NGT[names_coords].round(0)
+        data_project_wells_NGT['well_type'] = '1'
     data_project_wells_NGT.to_excel(f"{save_directory}/проектный_фонд_координаты.xlsx", index=False)
 
     logger.info("Сохранение контуров зон в формате .txt для загрузки в NGT")
@@ -258,14 +260,14 @@ def create_df_project_wells(list_zones):
         if drill_zone.rating != -1:
             data_project_wells = pd.DataFrame([well.__dict__ for well in drill_zone.list_project_wells])
             df_result_project_wells = pd.concat([df_result_project_wells, data_project_wells], ignore_index=True)
-
-    df_result_project_wells['T1_x_geo'] = df_result_project_wells['POINT_T1_geo'].apply(lambda point: point.x)
-    df_result_project_wells['T1_y_geo'] = df_result_project_wells['POINT_T1_geo'].apply(lambda point: point.y)
-    df_result_project_wells['T3_x_geo'] = df_result_project_wells['POINT_T3_geo'].apply(lambda point: point.x)
-    df_result_project_wells['T3_y_geo'] = df_result_project_wells['POINT_T3_geo'].apply(lambda point: point.y)
-    df_result_project_wells['T1_x_pix'] = df_result_project_wells['POINT_T1_pix'].apply(lambda point: point.x)
-    df_result_project_wells['T1_y_pix'] = df_result_project_wells['POINT_T1_pix'].apply(lambda point: point.y)
-    df_result_project_wells['T3_x_pix'] = df_result_project_wells['POINT_T3_pix'].apply(lambda point: point.x)
-    df_result_project_wells['T3_y_pix'] = df_result_project_wells['POINT_T3_pix'].apply(lambda point: point.y)
-    df_result_project_wells['permeability_fact'] = df_result_project_wells['permeability']
+    if not df_result_project_wells.empty:
+        df_result_project_wells['T1_x_geo'] = df_result_project_wells['POINT_T1_geo'].apply(lambda point: point.x)
+        df_result_project_wells['T1_y_geo'] = df_result_project_wells['POINT_T1_geo'].apply(lambda point: point.y)
+        df_result_project_wells['T3_x_geo'] = df_result_project_wells['POINT_T3_geo'].apply(lambda point: point.x)
+        df_result_project_wells['T3_y_geo'] = df_result_project_wells['POINT_T3_geo'].apply(lambda point: point.y)
+        df_result_project_wells['T1_x_pix'] = df_result_project_wells['POINT_T1_pix'].apply(lambda point: point.x)
+        df_result_project_wells['T1_y_pix'] = df_result_project_wells['POINT_T1_pix'].apply(lambda point: point.y)
+        df_result_project_wells['T3_x_pix'] = df_result_project_wells['POINT_T3_pix'].apply(lambda point: point.x)
+        df_result_project_wells['T3_y_pix'] = df_result_project_wells['POINT_T3_pix'].apply(lambda point: point.y)
+        df_result_project_wells['permeability_fact'] = df_result_project_wells['permeability']
     return df_result_project_wells

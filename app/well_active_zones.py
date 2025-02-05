@@ -46,41 +46,47 @@ def calc_r_eff(cumulative_value, B, ro, eff_h, m, So, type_well, len_well, So_mi
         raise NameError(f"Wrong well type: {type_well}. Allowed values: vertical or horizontal")
 
 
-def well_effective_radius(row, default_radius, So_min, NUMBER_MONTHS=120):
+def well_effective_radius(row, default_radius, So_min, NUMBER_MONTHS=120, default_radius_inj=300):
     """
     Расчет радиуса дренирования/нагнетания на основе параметров разработки
     Parameters
     ----------
     row - строка из data_wells
-    default_radius - радиус по умолчанию (технически минимальный)
+    default_radius - радиус по умолчанию (технически минимальный) для добывающего фонда
     NUMBER_MONTHS - Количество месяцев для отнесения скважин к действующим
+    default_radius_inj - радиус по умолчанию (технически минимальный) для нагнетательного фонда
 
     Returns R_eff
     -------
 
     """
-    # Проверка на длительность работы
-    if row['no_work_time'] > NUMBER_MONTHS:
-        return default_radius
-    else:
-        work_type_well = row.work_marker
-        len_well = row["length_geo"]
-        well_type = row["well_type"]
-        eff_h = row["NNT"]
-        m = row["m"]
-        So = row["So"]
-        R_eff = 0
-        if work_type_well == "prod":
+    work_type_well = row.work_marker
+    len_well = row["length_geo"]
+    well_type = row["well_type"]
+    eff_h = row["NNT"]
+    m = row["m"]
+    So = row["So"]
+    if work_type_well == "prod":
+        # Проверка на длительность работы
+        if row['no_work_time'] > NUMBER_MONTHS:
+            return default_radius_inj
+        else:
             cumulative_oil_prod = row.Qo_cumsum
             Bo = row.Bo
             ro_oil = row.rho
             R_eff = calc_r_eff(cumulative_oil_prod, Bo, ro_oil, eff_h, m, So, well_type, len_well, So_min)
-        elif work_type_well == "inj":
+            if not R_eff or R_eff < default_radius_inj:
+                R_eff = default_radius_inj
+            return R_eff
+    elif work_type_well == "inj":
+        if row['no_work_time'] > NUMBER_MONTHS:
+            return default_radius
+        else:
             cumulative_water_inj = row.Winj_cumsum
             R_eff = calc_r_eff(cumulative_water_inj, 1, 1, eff_h, m, So, well_type, len_well, So_min)
-        if not R_eff:
-            R_eff = default_radius
-        return R_eff
+            if not R_eff:
+                R_eff = default_radius
+            return R_eff
 
 
 def get_value_map(well_type, T1_x, T1_y, T3_x, T3_y, length_of_well, raster):

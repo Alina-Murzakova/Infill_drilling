@@ -27,6 +27,9 @@ if __name__ == '__main__':
     load_data_param = constants['load_data_param']
     default_coefficients = constants['default_coefficients']
     default_well_params = constants['default_well_params']
+    if constants['default_project_well_params']['buffer_project_wells'] <= 0:
+        # нижнее ограничение на расстояние до фактических скважин от проектной
+        constants['default_project_well_params']['buffer_project_wells'] = 10
     well_params.update(constants['default_project_well_params'])
 
     logger.info("Загрузка скважинных данных")
