@@ -229,7 +229,7 @@ def load_frac_info(path_frac, data_wells, name_object, dict_parameters_coefficie
     # Перезапись значений по умолчанию xfr и w_f и length_FracStage по объекту на средние по фактическому фонду
     dict_parameters_coefficients['well_params']['xfr'] = round(avg_xfr, 1)
     dict_parameters_coefficients['well_params']['w_f'] = round(avg_w_f, 1)
-    if avg_length_FracStage != 0:
+    if avg_length_FracStage != 0 and not pd.isna(avg_length_FracStage):
         dict_parameters_coefficients['well_params']['length_FracStage'] = round(avg_length_FracStage, 0)
 
     data_wells.drop(columns=['xfr', 'w_f', 'FracCount', 'length_FracStage'], inplace=True)

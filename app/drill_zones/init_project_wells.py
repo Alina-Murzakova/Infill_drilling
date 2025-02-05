@@ -68,21 +68,28 @@ def get_project_wells_from_clusters(name_cluster, gdf_clusters, data_wells, defa
     return gdf_project
 
 
-def clusterize_drill_zone(tuple_points, map_rrr, num_project_wells, init_profit_cum_oil):
+def clusterize_drill_zone(tuple_points, map_rrr, num_project_wells, init_profit_cum_oil, default_size_pixel,
+                          min_area_proj_cluster):
     """Кластеризация зоны методом k-means, критерий: в каждой зоне должно быть достаточно запасов"""
     points = np.column_stack(tuple_points)
     array_rrr = map_rrr.data[tuple_points[1], tuple_points[0]]
+    weights = array_rrr / np.max(array_rrr)
+    area_pixel = default_size_pixel ** 2
 
     # Уменьшаем количество скважин и кластеризуем пока во всех кластерах не будет достаточно запасов
     while True:
         kmeans = KMeans(n_clusters=num_project_wells, max_iter=300, random_state=42)
-        kmeans.fit(points)  # , sample_weight=value_OI)
+        kmeans.fit(points, sample_weight=weights)
         labels = kmeans.labels_
         cluster_reserves = np.array([np.sum(array_rrr[labels == i]) * map_rrr.geo_transform[1] ** 2 / 10000 / 1000
                                      for i in range(num_project_wells)])
-        # Фильтрация кластеров по количеству запасов
-        valid_clusters = np.where(cluster_reserves >= init_profit_cum_oil)[0]
-
+        cluster_area = np.array([np.sum(labels == i) * area_pixel / 1000000 for i in range(num_project_wells)])
+        # Фильтрация кластеров только по количеству запасов
+        if num_project_wells == 1:
+            valid_clusters = np.where(cluster_reserves >= init_profit_cum_oil)[0]
+        else:
+            valid_clusters = np.where((cluster_reserves >= init_profit_cum_oil) &
+                                      (cluster_area >= min_area_proj_cluster))[0]
         if len(valid_clusters) == num_project_wells or num_project_wells == 1:  # минимальное кол-во кластеров = 1
             break
         else:

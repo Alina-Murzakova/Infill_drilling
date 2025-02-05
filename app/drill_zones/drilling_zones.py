@@ -51,6 +51,9 @@ class DrillZone:
         k_wells = dict_parameters['well_params']['k']
         min_length = dict_parameters['well_params']['min_length']
         max_length = dict_parameters['well_params']['L']
+        # Площадь буфера
+        min_area_proj_cluster = (2 * (buffer_project_wells * default_size_pixel) * max_length +
+                                 np.pi * (buffer_project_wells * default_size_pixel)**2) / 1000000
 
         # threshold = 2500 - максимальное расстояние для исключения скважины из ближайших скважин, пиксели
         self.calculate_reserves(map_rrr)
@@ -63,7 +66,8 @@ class DrillZone:
         if num_project_wells >= 1:
             logger.info(f"Кластеризация перспективной зоны {self.rating}")
             num_project_wells, labels = clusterize_drill_zone((self.x_coordinates, self.y_coordinates),
-                                                              map_rrr, num_project_wells, init_profit_cum_oil)
+                                                              map_rrr, num_project_wells, init_profit_cum_oil,
+                                                              default_size_pixel, min_area_proj_cluster)
 
             logger.info("Преобразование точек кластеров в полигоны и создание GeoDataFrame с кластерами")
             gdf_clusters = create_gdf_with_polygons((self.x_coordinates, self.y_coordinates), labels)
