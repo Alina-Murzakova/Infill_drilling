@@ -67,7 +67,7 @@ def upload_data(save_directory, data_wells, maps, list_zones, info_clusterizatio
     logger.info("Сохранение контуров зон в формате .txt для загрузки в NGT")
     save_directory_contours = f"{save_directory}/контуры зон"
     create_new_dir(save_directory_contours)
-    # save_contours(list_zones, map_opportunity_index, save_directory_contours, type_calc='alpha', buffer_size=40)
+    save_contours(list_zones, map_opportunity_index, save_directory_contours, type_calc='alpha', buffer_size=40)
     pass
 
 
