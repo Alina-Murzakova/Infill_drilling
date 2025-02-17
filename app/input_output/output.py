@@ -1,5 +1,5 @@
 import os
-
+import pickle
 import alphashape
 import win32api
 
@@ -63,6 +63,12 @@ def upload_data(save_directory, data_wells, maps, list_zones, info_clusterizatio
         data_project_wells_NGT[names_coords] = data_project_wells_NGT[names_coords].round(0)
         data_project_wells_NGT['well_type'] = '1'
     data_project_wells_NGT.to_excel(f"{save_directory}/проектный_фонд_координаты.xlsx", index=False)
+
+    logger.info("Сохранение pickle файлов")
+    with open(f'{save_directory}/data_wells.pickle', 'wb') as file:
+        pickle.dump(data_wells, file, protocol=pickle.HIGHEST_PROTOCOL)
+    with open(f'{save_directory}/list_zones.pickle', 'wb') as file:
+        pickle.dump(list_zones, file, protocol=pickle.HIGHEST_PROTOCOL)
 
     logger.info("Сохранение контуров зон в формате .txt для загрузки в NGT")
     save_directory_contours = f"{save_directory}/контуры зон"

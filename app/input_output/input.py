@@ -337,6 +337,9 @@ def load_economy_data(economy_path, name_field):
         else:
             del df_opex['Месторождение']
 
+        # CAPEX
+        df_capex = pd.read_excel(xls, sheet_name="CAPEX", header=0)
+
         # потери нефти
         df_oil_loss = pd.read_excel(xls, sheet_name="Нормативы потерь нефти", header=0)
         df_oil_loss = df_oil_loss[df_oil_loss['Месторождение'] == name_field]
@@ -373,8 +376,8 @@ def load_economy_data(economy_path, name_field):
     df_workover_wellservice = formatting_df_economy(df_workover_wellservice)
 
     FEM = FinancialEconomicModel(macroeconomics, constants,
-                                 df_opex, oil_loss, df_workover_wellservice,
-                                 type_tax_calculation)
+                                 df_opex, oil_loss, df_capex,
+                                 df_workover_wellservice,type_tax_calculation)
     return FEM
 
 
