@@ -84,18 +84,24 @@ class ProjectWell:
         if self.gdf_nearest_wells.empty:
             logger.warning(f"Проверьте наличие окружения для проектной скважины {self.well_number}!")
         # Расчет средних параметров по выбранному окружению.
-        # Выбираем только те строки, где значение Рзаб больше 0
+        # Рзаб - Выбираем только те строки, где значение Рзаб больше 0
         self.P_well_init = np.mean(self.gdf_nearest_wells[(self.gdf_nearest_wells['init_P_well_prod'] > 0) &
                                                           (self.gdf_nearest_wells['init_P_well_prod'].notna())]
                                    ['init_P_well_prod'])
-        if np.isnan(self.P_well_init):
+        if pd.isna(self.P_well_init):
             self.P_well_init = dict_parameters_coefficients['well_params']['init_P_well']
-        # Выбираем только те строки, где значение проницаемости больше 0 и не nan
+        # Проницаемость - Выбираем только те строки, где значение проницаемости больше 0 и не nan
         self.permeability = np.mean(self.gdf_nearest_wells[(self.gdf_nearest_wells['permeability_fact'] > 0) &
                                                            (self.gdf_nearest_wells['permeability_fact'].notna())]
                                     ['permeability_fact'])
-        if np.isnan(self.permeability):
+        if pd.isna(self.permeability):
             self.permeability = dict_parameters_coefficients['reservoir_params']['k_h']
+        # Если установлен flag water_cut_map = False (расчет обв-ти с окружения)
+        if not dict_parameters_coefficients['well_params']['water_cut_map']:
+            # Обводненность - Выбираем только те скважины, которые остановлены не более 10 лет назад
+            self.water_cut = np.mean(self.gdf_nearest_wells[(self.gdf_nearest_wells['no_work_time'] <= 12 * 10) &
+                                                            (self.gdf_nearest_wells['Ql_rate'] > 0)]
+                                     ['water_cut'])
         pass
 
     def get_params_maps(self, maps):
@@ -107,7 +113,8 @@ class ProjectWell:
         self.NNT = get_value_map(*list_arguments, raster=maps[type_map_list.index('NNT')])
         self.m = get_value_map(*list_arguments, raster=maps[type_map_list.index('porosity')])
         self.So = get_value_map(*list_arguments, raster=maps[type_map_list.index('initial_oil_saturation')])
-        self.water_cut = get_value_map(*list_arguments, raster=maps[type_map_list.index('water_cut')])
+        if pd.isna(self.water_cut):
+            self.water_cut = get_value_map(*list_arguments, raster=maps[type_map_list.index('water_cut')])
         pass
 
     def get_starting_rates(self, maps, dict_parameters_coefficients):
@@ -122,6 +129,12 @@ class ProjectWell:
         well_params = dict_parameters_coefficients['well_params']
         coefficients = dict_parameters_coefficients['coefficients']
 
+        # Проверка на отрицательную депрессию:
+        if self.P_reservoir - self.P_well_init < 0:
+            self.P_well_init = well_params['init_P_well']
+            if self.P_reservoir - self.P_well_init < 0:
+                self.P_well_init = 0.4 * self.P_reservoir
+
         reservoir_params['f_w'] = self.water_cut
         reservoir_params['Phi'] = self.m
         reservoir_params['h'] = self.NNT
@@ -134,6 +147,8 @@ class ProjectWell:
         well_params['FracCount'] = check_FracCount(well_params['Type_Frac'],
                                                    well_params['length_FracStage'],
                                                    well_params['L'])
+        # logger.info(f"reservoir_params: {reservoir_params}, well_params: {well_params},"
+        #             f"fluid_params: {fluid_params}, coefficients: {coefficients}")
         self.init_Ql_rate, self.init_Qo_rate = calculate_starting_rate(reservoir_params, fluid_params,
                                                                        well_params, coefficients,
                                                                        kv_kh, Swc, Sor, Fw, m1, Fo, m2, Bw)
@@ -219,10 +234,10 @@ def calculate_reserves_by_voronoi(list_zones, df_fact_wells, map_rrr, save_direc
         if drill_zone.rating != -1:
             logger.info(f"Расчет ОИЗ проектных скважин зоны: {drill_zone.rating}")
             for project_well in drill_zone.list_project_wells:
-                # Радиус дренирования проектной скважины согласно Вороным
-                project_well.r_eff = \
-                    gdf_project_wells[gdf_project_wells['well_number'] == project_well.well_number][
-                        'r_eff_voronoy'].iloc[0]
+                # Радиус дренирования проектной скважины согласно Вороным или 500 м, если он больше
+                project_well.r_eff = min(
+                    gdf_project_wells[gdf_project_wells['well_number'] ==
+                                      project_well.well_number]['r_eff_voronoy'].iloc[0], 500.0)
                 # Запасы проектной скважины согласно Вороным
                 project_well.calculate_reserves(map_rrr, gdf_mesh, mesh_pixel)
     pass

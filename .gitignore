@@ -12,6 +12,9 @@
 init_well_position.ipynb
 /картинки_ПФ/
 /*.png
+/*.txt
 pickle.txt
 /.*ipynb
 Untitled.ipynb
+Untitled1.ipynb
+buffer_contours.txt

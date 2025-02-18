@@ -43,7 +43,8 @@ class DrillZone:
         pass
 
     @logger.catch
-    def get_init_project_wells(self, map_rrr, data_wells, default_size_pixel, init_profit_cum_oil, dict_parameters):
+    def get_init_project_wells(self, map_rrr, data_wells, polygon_map_rrr, default_size_pixel, init_profit_cum_oil,
+                               dict_parameters):
         """Расчет количества проектных скважин в перспективной зоне"""
         # Инициализация параметров
         buffer_project_wells = dict_parameters['well_params']['buffer_project_wells']
@@ -73,11 +74,11 @@ class DrillZone:
             gdf_clusters = create_gdf_with_polygons((self.x_coordinates, self.y_coordinates), labels)
 
             logger.info("Получение GeoDataFrame с проектными скважинами из кластеров")
-            gdf_project_wells = get_project_wells_from_clusters(self.rating, gdf_clusters, data_wells,
+            gdf_project_wells = get_project_wells_from_clusters(self.rating, polygon_map_rrr, gdf_clusters, data_wells,
                                                                 default_size_pixel, buffer_project_wells,
                                                                 threshold, k_wells,
                                                                 max_length, min_length)
-            # Подготовка GeoDataFrame с фактическими скважинами
+            # Подготовка GeoDataFrame с фактическими скважинами с добычей
             df_fact_wells = (data_wells[(data_wells['Qo_cumsum'] > 0)].reset_index(drop=True))
             # Преобразуем строки gdf_project_wells в объекты ProjectWell
             for _, row in gdf_project_wells.iterrows():

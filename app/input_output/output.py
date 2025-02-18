@@ -7,7 +7,7 @@ from loguru import logger
 import geopandas as gpd
 import pandas as pd
 import numpy as np
-from shapely import Point, Polygon, MultiPoint
+from shapely import Point, Polygon, MultiPolygon, MultiPoint
 
 from app.maps_handler.maps import read_array
 
@@ -46,23 +46,14 @@ def upload_data(save_directory, data_wells, maps, list_zones, info_clusterizatio
                                      radius_interpolate=kwargs['radius_interpolate'],
                                      accounting_GS=kwargs['accounting_GS'])
 
-    logger.info(f"Сохраняем .png с начальным расположением проектного фонда в кластерах и карту ОИ с проектным фондом")
+    logger.info(f"Сохраняем .png с начальным расположением проектного фонда в кластерах и карту ОИЗ с проектным фондом")
     save_picture_clustering_zones(list_zones, f"{save_directory}/начальное расположение ПФ.png",
                                   buffer_project_wells=kwargs['buffer_project_wells'])
-    map_opportunity_index = maps[type_map_list.index('residual_recoverable_reserves')]
-    map_opportunity_index.save_img(f"{save_directory}/карта индекса возможности бурения с ПФ.png", data_wells,
+    map_residual_recoverable_reserves = maps[type_map_list.index('residual_recoverable_reserves')]
+    map_residual_recoverable_reserves.save_img(f"{save_directory}/карта ОИЗ с ПФ.png", data_wells,
                                    list_zones, info_clusterization_zones, project_wells=True)
     logger.info("Сохранение рейтинга бурения проектных скважин в формате .xlsx")
     save_ranking_drilling_to_excel(list_zones, f"{save_directory}/рейтинг_бурения.xlsx")
-
-    logger.info("Файл .xlsx для загрузки проектных скважин в NGT")
-    data_project_wells_NGT = pd.DataFrame()
-    if not data_project_wells.empty:
-        names_coords = ['T1_x_geo', 'T1_y_geo', 'T3_x_geo', 'T3_y_geo']
-        data_project_wells_NGT = data_project_wells[['well_number', 'well_type'] + names_coords]
-        data_project_wells_NGT[names_coords] = data_project_wells_NGT[names_coords].round(0)
-        data_project_wells_NGT['well_type'] = '1'
-    data_project_wells_NGT.to_excel(f"{save_directory}/проектный_фонд_координаты.xlsx", index=False)
 
     logger.info("Сохранение pickle файлов")
     with open(f'{save_directory}/data_wells.pickle', 'wb') as file:
@@ -73,7 +64,7 @@ def upload_data(save_directory, data_wells, maps, list_zones, info_clusterizatio
     logger.info("Сохранение контуров зон в формате .txt для загрузки в NGT")
     save_directory_contours = f"{save_directory}/контуры зон"
     create_new_dir(save_directory_contours)
-    save_contours(list_zones, map_opportunity_index, save_directory_contours, type_calc='alpha', buffer_size=40)
+    save_contours(list_zones, map_residual_recoverable_reserves, save_directory_contours, type_calc='alpha', buffer_size=40)
     pass
 
 
@@ -113,8 +104,17 @@ def save_contours(list_zones, map_conv, save_directory_contours, type_calc='buff
                 # Проверяем, что результат — полигон
                 if isinstance(alpha_shape, Polygon):
                     x_boundary, y_boundary = alpha_shape.exterior.xy
+                elif isinstance(alpha_shape, MultiPolygon):
+                    # Выбираем самый большой полигон
+                    largest_polygon = max(alpha_shape.geoms, key=lambda p: p.area)
+                    x_boundary, y_boundary = largest_polygon.exterior.xy
+
+                    # Выводим площади всех полигонов, чтобы не потерять случайно большой полигон
+                    for poly in alpha_shape.geoms:
+                        logger.info(f"Площадь полигона Мультиполигона {drill_zone.rating}: {poly.area / 1000000} кв.км")
                 else:
-                    raise logger.error("Не удалось построить границу зоны. Проверьте параметр alpha или входные данные.")
+                    raise logger.error(
+                        "Не удалось построить границу зоны. Проверьте параметр alpha или входные данные.")
             elif type_calc == 'convex_hull':
                 mesh = list(map(lambda x, y: Point(x, y), x_coordinates, y_coordinates))
                 ob = Polygon(mesh)
@@ -189,23 +189,29 @@ def save_ranking_drilling_to_excel(list_zones, filename):
             # gdf_project_wells = gpd.GeoDataFrame([well.__dict__ for well in drill_zone.list_project_wells])
             gdf_project_wells_ranking_drilling = gpd.GeoDataFrame(
                 {'№ скважины': [well.well_number for well in drill_zone.list_project_wells],
+                 'Координата_T1_x': [round(well.POINT_T1_geo.x, 0) for well in drill_zone.list_project_wells],
+                 'Координата_T1_y': [round(well.POINT_T1_geo.y, 0) for well in drill_zone.list_project_wells],
+                 'Координата_T3_x': [round(well.POINT_T3_geo.x, 0)  for well in drill_zone.list_project_wells],
+                 'Координата_T3_y': [round(well.POINT_T3_geo.y, 0)  for well in drill_zone.list_project_wells],
+                 'Характер работы': ['1'] * len(drill_zone.list_project_wells),  # 1 - добывающая, 2 - нагнетательная
                  'Тип скважины': [well.well_type for well in drill_zone.list_project_wells],
-                 'Длина, м': [well.length_geo for well in drill_zone.list_project_wells],
-                 'Координата T1': [well.POINT_T1_geo for well in drill_zone.list_project_wells],
-                 'Координата T3': [well.POINT_T3_geo for well in drill_zone.list_project_wells],
-                 'Азимут, градусы': [well.azimuth for well in drill_zone.list_project_wells],
-                 'Обводненность, %': [well.water_cut for well in drill_zone.list_project_wells],
-                 'Запускной дебит жидкости, т/сут': [well.init_Ql_rate for well in drill_zone.list_project_wells],
-                 'Запускной дебит нефти, т/сут': [well.init_Qo_rate for well in drill_zone.list_project_wells],
-                 'Запускное забойное давление, атм': [well.P_well_init for well in drill_zone.list_project_wells],
-                 'Нефтенасыщенная толщина, м': [well.NNT for well in drill_zone.list_project_wells],
-                 'Начальная нефтенасыщенность, д.ед': [well.So for well in drill_zone.list_project_wells],
-                 'Пористость, д.ед': [well.m for well in drill_zone.list_project_wells],
-                 'Проницаемость, мД': [well.permeability for well in drill_zone.list_project_wells],
-                 'Эффективный радиус, м': [well.r_eff for well in drill_zone.list_project_wells],
-                 'Запасы, тыс т': [well.reserves for well in drill_zone.list_project_wells],
-                 'Накопленная добыча нефти (25 лет), т': [np.sum(well.Qo) for well in drill_zone.list_project_wells],
-                 'Накопленная добыча жидкости (25 лет), т': [np.sum(well.Ql) for well in drill_zone.list_project_wells],
+                 'Длина, м': [round(well.length_geo, 1) for well in drill_zone.list_project_wells],
+                 'Азимут, градусы': [round(well.azimuth, 1) for well in drill_zone.list_project_wells],
+                 'Обводненность, %': [round(well.water_cut, 1) for well in drill_zone.list_project_wells],
+                 'Запускной дебит жидкости, т/сут': [round(well.init_Ql_rate, 2) for well in drill_zone.list_project_wells],
+                 'Запускной дебит нефти, т/сут': [round(well.init_Qo_rate, 2) for well in drill_zone.list_project_wells],
+                 'Запускное забойное давление, атм': [round(well.P_well_init, 1) for well in drill_zone.list_project_wells],
+                 'Пластовое давление, атм': [round(well.P_reservoir, 1) for well in drill_zone.list_project_wells],
+                 'Нефтенасыщенная толщина, м': [round(well.NNT, 1) for well in drill_zone.list_project_wells],
+                 'Начальная нефтенасыщенность, д.ед': [round(well.So, 3) for well in drill_zone.list_project_wells],
+                 'Пористость, д.ед': [round(well.m, 3) for well in drill_zone.list_project_wells],
+                 'Проницаемость, мД': [round(well.permeability, 3) for well in drill_zone.list_project_wells],
+                 'Эффективный радиус, м': [round(well.r_eff, 1) for well in drill_zone.list_project_wells],
+                 'Запасы, тыс т': [round(well.reserves, 1) for well in drill_zone.list_project_wells],
+                 'Накопленная добыча нефти (25 лет), тыс.т': [round(np.sum(well.Qo) / 1000, 1) for well in
+                                                              drill_zone.list_project_wells],
+                 'Накопленная добыча жидкости (25 лет), тыс.т': [round(np.sum(well.Ql) / 1000, 1) for well in
+                                                                 drill_zone.list_project_wells],
                  'Соседние скважины': [well.gdf_nearest_wells.well_number.unique() for
                                        well in drill_zone.list_project_wells],
                  'Статус аппроксимации Арпса': [well.decline_rates[0][4] for well in drill_zone.list_project_wells]}

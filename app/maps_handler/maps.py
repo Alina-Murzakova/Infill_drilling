@@ -5,6 +5,10 @@ from osgeo import gdal
 from loguru import logger
 from scipy.interpolate import RBFInterpolator, RegularGridInterpolator
 from scipy.spatial import KDTree
+from shapely.geometry import shape
+from rasterio.features import shapes
+from shapely.ops import unary_union
+from affine import Affine
 # from scipy.ndimage import gaussian_filter
 
 from .config import list_names_map
@@ -120,6 +124,32 @@ class Map:
         values = list(interpolated_values) + values_out
         return values
 
+    def raster_to_polygon(self):
+        """
+        Преобразует растровую карту в полигон в пиксельных координатах
+        """
+        raster_data = self.data
+        mask = raster_data > 0  # Берем только ненулевые пиксели
+
+        if not np.any(mask):
+            logger.error("Нет ненулевых пикселей в растровой карте")
+            return None
+
+        # Нейтральная трансформация, которая не изменяет координаты
+        transform = Affine(1, 0, 0, 0, 1, 0)
+
+        # Проходим по каждому пикселю и генерируем полигон для каждого ненулевого пикселя
+        polygons = [shape(geom) for geom, value in shapes(raster_data, mask=mask, transform=transform)]
+
+        # Если нет полигонов, выводим ошибку
+        if not polygons:
+            logger.error("Не удалось создать полигоны из растровых данных")
+            return None
+
+        # Объединяем все полигоны в один (если их несколько)
+        return unary_union(polygons) if len(polygons) > 1 else polygons[0]
+    
+
     def save_img(self, filename, data_wells=None, list_zones=None, info_clusterization_zones=None, project_wells=None):
         import matplotlib.pyplot as plt
 
@@ -159,6 +189,7 @@ class Map:
                 x_zone = zone.x_coordinates
                 y_zone = zone.y_coordinates
                 plt.scatter(x_zone, y_zone, color=c, alpha=0.6, s=1)
+                plt.text(x_zone[int(len(x_zone)/2)], y_zone[int(len(x_zone)/2)], i, fontsize=font_size*2, color='red')
 
                 if i != -1:
                     #  Отрисовка проектного фонда
@@ -189,17 +220,31 @@ class Map:
             for column in column_lim_y:
                 data_wells = data_wells.loc[((data_wells[column] <= y[1]) & (data_wells[column] >= y[0]))]
 
-            # координаты скважин в пиксельных координатах
-            x_t1, y_t1 = (data_wells.T1_x_pix, data_wells.T1_y_pix)
-            x_t3, y_t3 = (data_wells.T3_x_pix, data_wells.T3_y_pix)
+            color = 'black'
+            data_wells_type = pd.DataFrame()
+            for work_marker in ['prod', 'inj', 'project']:
+                if work_marker == 'prod':
+                    data_wells_type = data_wells.loc[data_wells['work_marker'] == 'prod']
+                    color = 'black'
+                elif work_marker == 'inj':
+                    data_wells_type = data_wells.loc[data_wells['work_marker'] == 'inj']
+                    color = 'mediumblue'
+                elif work_marker == 'project':
+                    data_wells_type = data_wells[data_wells['work_marker'].isna()]
+                    color = 'red'
 
-            # Отображение скважин на карте
-            plt.plot([x_t1, x_t3], [y_t1, y_t3], c='black', linewidth=element_size * 0.3)
-            plt.scatter(x_t1, y_t1, s=element_size, c='black', marker="o", linewidths=0.1)
+                if not data_wells_type.empty:
+                    # координаты скважин в пиксельных координатах
+                    x_t1, y_t1 = (data_wells_type.T1_x_pix, data_wells_type.T1_y_pix)
+                    x_t3, y_t3 = (data_wells_type.T3_x_pix, data_wells_type.T3_y_pix)
 
-            # Отображение имен скважин рядом с точками T1
-            for x, y, name in zip(x_t1, y_t1, data_wells.well_number):
-                plt.text(x + 3, y - 3, name, fontsize=font_size, ha='left')
+                    # Отображение скважин на карте
+                    plt.plot([x_t1, x_t3], [y_t1, y_t3], c=color, linewidth=element_size * 0.3)
+                    plt.scatter(x_t1, y_t1, s=element_size, c=color, marker="o", linewidths=0.1)
+
+                    # Отображение имен скважин рядом с точками T1
+                    for x, y, name in zip(x_t1, y_t1, data_wells_type.well_number):
+                        plt.text(x + 2, y - 2, name, fontsize=font_size, fontweight='bold', ha='left', color=color)
 
         plt.title(f"{self.type_map}\n {title}", fontsize=font_size * 8)
         plt.tick_params(axis='both', which='major', labelsize=font_size * 8)

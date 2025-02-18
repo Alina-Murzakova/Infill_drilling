@@ -202,6 +202,8 @@ def calculate_score_maps(maps, dict_properties):
     map_opportunity_index = get_map_opportunity_index(map_reservoir_score, map_potential_score, map_risk_score)
     # где нет толщин и давления opportunity_index = 0
     map_opportunity_index.data[(map_NNT.data == 0) & (map_pressure.data == 0)] = 0
+    # где высокая обводненность opportunity_index = 0
+    map_opportunity_index.data[(map_water_cut.data > 99.5)] = 0 # !!! Может не 0, а 0.01 или что то такое, чтобы не было дыр в карте
 
     return [map_reservoir_score, map_potential_score, map_risk_score, map_opportunity_index]
 
