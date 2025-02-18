@@ -6,7 +6,7 @@ from local_parameters import main_parameters, constants
 from input_output.input import load_wells_data, load_geo_phys_properties, load_frac_info
 
 from app.decline_rate.decline_rate import get_decline_rates
-from app.maps_handler.functions import mapping
+from app.maps_handler.functions import mapping, active_well_outline
 from well_active_zones import calculate_effective_radius
 from drill_zones.drilling_zones import calculate_drilling_zones
 from project_wells import calculate_reserves_by_voronoi
@@ -81,11 +81,12 @@ if __name__ == '__main__':
                                                                      data_wells=data_wells)
 
     map_rrr = maps[type_map_list.index('residual_recoverable_reserves')]
+    polygon_map_rrr = map_rrr.raster_to_polygon()
     logger.info("Начальное размещение проектных скважин")
     well_params['buffer_project_wells'] = well_params['buffer_project_wells'] / default_size_pixel
     for drill_zone in list_zones:
         if drill_zone.rating != -1:
-            drill_zone.get_init_project_wells(map_rrr, data_wells,
+            drill_zone.get_init_project_wells(map_rrr, data_wells, polygon_map_rrr,
                                               default_size_pixel,
                                               parameters_calculation['init_profit_cum_oil'],
                                               dict_parameters_coefficients)

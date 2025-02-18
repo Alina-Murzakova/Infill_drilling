@@ -101,6 +101,14 @@ def load_wells_data(data_well_directory, min_length_hor_well=150, first_months=6
     data_first_rate['cum_rate_liq'] = data_first_rate['Ql_rate'].groupby(data_first_rate['well_number']).cumsum()
     data_first_rate = data_first_rate[data_first_rate['cum_rate_liq'] != 0]
     data_first_rate = data_first_rate.groupby('well_number').head(first_months)
+
+    # Определяем first_months для каждой скважины
+    first_months_dict = data_first_rate.groupby('well_number').apply(get_first_months).to_dict()
+
+    # Применяем своё first_months для каждой скважины
+    data_first_rate = data_first_rate.groupby('well_number', group_keys=False).apply(
+        lambda g: g.head(first_months_dict[g.name]))
+
     data_first_rate = (data_first_rate[data_first_rate['Ql_rate'] != 0].groupby('well_number')
                        .agg(init_Qo_rate=('Qo_rate', 'mean'), init_Ql_rate=('Ql_rate', 'mean'),
                             init_Qo_rate_TR=('Qo_rate_TR', lambda x: x[x != 0].mean()),
@@ -198,6 +206,7 @@ def load_frac_info(path_frac, data_wells, name_object, dict_parameters_coefficie
         logger.critical(error_message)
         raise ValueError(error_message)
 
+    data_frac['comment'] = data_frac['comment'].astype(str)
     data_frac[["current_frac", "total_Frac"]] = data_frac["comment"].str.extract(pattern)
     data_frac = (data_frac.groupby('well_number').agg(FracCount=('date', 'count'),
                                                       xfr=('xfr', lambda x: round(x[x != 0].mean(), 1)),
@@ -231,7 +240,6 @@ def load_frac_info(path_frac, data_wells, name_object, dict_parameters_coefficie
     dict_parameters_coefficients['well_params']['w_f'] = round(avg_w_f, 1)
     if avg_length_FracStage != 0 and not pd.isna(avg_length_FracStage):
         dict_parameters_coefficients['well_params']['length_FracStage'] = round(avg_length_FracStage, 0)
-
     data_wells.drop(columns=['xfr', 'w_f', 'FracCount', 'length_FracStage'], inplace=True)
     data_wells = data_wells.merge(data_frac, how='left', on='well_number')
     data_wells[['FracCount', 'xfr', 'w_f', 'length_FracStage']] = data_wells[['FracCount', 'xfr',
@@ -440,6 +448,20 @@ def create_shapely_types(data_wells, list_names):
                                            list(map(lambda x, y: LineString([x, y]),
                                                     df_result["POINT_T1"], df_result["POINT_T3"])))
     return df_result
+
+
+def get_first_months(data_first_rate):
+    # Подсчет количества месяцев с ненулевыми значениями для каждого параметра
+    nonzero_TR_counts = {
+        'Qo_rate_TR': (data_first_rate['Qo_rate_TR'].notna() & (data_first_rate['Qo_rate_TR'] != 0)).sum(),
+        'Ql_rate_TR': (data_first_rate['Ql_rate_TR'].notna() & (data_first_rate['Ql_rate_TR'] != 0)).sum(),
+        'P_well': (data_first_rate['P_well'].notna() & (data_first_rate['P_well'] != 0)).sum(),
+        'P_reservoir': (data_first_rate['P_reservoir'].notna() & (data_first_rate['P_reservoir'] != 0)).sum()
+    }
+    # Для каждого параметра, если >=3 месяцев ненулевых, берём 3, иначе 6
+    first_months = {param: 3 if count >= 3 else 6 for param, count in nonzero_TR_counts.items()}
+    # Берем максимум из всех параметров (чтобы не терять важные данные)
+    return max(first_months.values())
 
 
 def filter_pressure(p_well, p_reservoir, type_pressure):
