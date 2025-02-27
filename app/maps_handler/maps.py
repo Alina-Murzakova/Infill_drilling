@@ -390,6 +390,7 @@ def read_array(data_wells, name_column_map, type_map, geo_transform, size,
                 well_coord = np.append(well_coord, np.round([grid_points[count]], 0), axis=0)
                 values = np.append(values, values[index_point])
 
+    well_coord = np.array(well_coord, dtype=int)
     # Находим уникальные координаты и удаляем дубликаты
     _, unique_indices = np.unique(well_coord, axis=0, return_index=True)
     well_coord = well_coord[unique_indices]

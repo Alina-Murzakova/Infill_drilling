@@ -51,10 +51,11 @@ class DrillZone:
         pass
 
     @logger.catch
-    def get_init_project_wells(self, map_rrr, data_wells, polygon_map_rrr, default_size_pixel, init_profit_cum_oil,
-                               dict_parameters):
+    def get_init_project_wells(self, map_rrr, data_wells, gdf_project_wells_all, polygon_map_rrr, default_size_pixel,
+                               init_profit_cum_oil, dict_parameters):
         """Расчет количества проектных скважин в перспективной зоне"""
         # Инициализация параметров
+        gdf_project_wells = gpd.GeoDataFrame(geometry=[])
         buffer_project_wells = dict_parameters['well_params']['buffer_project_wells']
         threshold = dict_parameters['well_params']['threshold']
         k_wells = dict_parameters['well_params']['k']
@@ -83,7 +84,8 @@ class DrillZone:
 
             logger.info("Получение GeoDataFrame с проектными скважинами из кластеров")
             gdf_project_wells = get_project_wells_from_clusters(self.rating, polygon_map_rrr, gdf_clusters, data_wells,
-                                                                default_size_pixel, buffer_project_wells,
+                                                                gdf_project_wells_all, default_size_pixel,
+                                                                buffer_project_wells,
                                                                 threshold, k_wells,
                                                                 max_length, min_length)
             # Подготовка GeoDataFrame с фактическими скважинами с добычей
@@ -110,7 +112,7 @@ class DrillZone:
                 self.list_project_wells.append(project_well)
             # Количество проектных скважин в перспективной зоне
             self.num_project_wells = len(self.list_project_wells)
-        pass
+        return gdf_project_wells
 
     def picture_clustering(self, ax, buffer_project_wells):
         """ ax объект с кластерами скважин зоны"""

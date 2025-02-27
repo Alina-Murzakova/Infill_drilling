@@ -208,7 +208,7 @@ class ProjectWell:
         pass
 
 
-def calculate_reserves_by_voronoi(list_zones, df_fact_wells, map_rrr, save_directory=None):
+def calculate_reserves_by_voronoi(list_zones, df_fact_wells, map_rrr, save_directory=None, max_radius_project_well=500):
     """Расчет запасов для проектных скважин с помощью ячеек Вороных"""
     df_fact_wells = (df_fact_wells[(df_fact_wells['Qo_cumsum'] > 0) |
                                    (df_fact_wells['Winj_cumsum'] > 0)].reset_index(drop=True))[['well_number',
@@ -245,10 +245,10 @@ def calculate_reserves_by_voronoi(list_zones, df_fact_wells, map_rrr, save_direc
         if drill_zone.rating != -1:
             logger.info(f"Расчет ОИЗ проектных скважин зоны: {drill_zone.rating}")
             for project_well in drill_zone.list_project_wells:
-                # Радиус дренирования проектной скважины согласно Вороным или 500 м, если он больше
+                # Радиус дренирования проектной скважины согласно Вороным или max_radius_project_well м, если он больше
                 project_well.r_eff = min(
                     gdf_project_wells[gdf_project_wells['well_number'] ==
-                                      project_well.well_number]['r_eff_voronoy'].iloc[0], 500.0)
+                                      project_well.well_number]['r_eff_voronoy'].iloc[0], max_radius_project_well)
                 # Запасы проектной скважины согласно Вороным
                 project_well.calculate_reserves(map_rrr, gdf_mesh, mesh_pixel)
     pass

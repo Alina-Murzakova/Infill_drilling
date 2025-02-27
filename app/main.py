@@ -1,4 +1,6 @@
 import math
+import geopandas as gpd
+import pandas as pd
 from loguru import logger
 
 from app.ranking_drilling.starting_rates import get_df_permeability_fact_wells
@@ -6,7 +8,7 @@ from local_parameters import main_parameters, constants
 from input_output.input import load_wells_data, load_geo_phys_properties, load_frac_info, load_economy_data
 
 from app.decline_rate.decline_rate import get_decline_rates
-from app.maps_handler.functions import mapping
+from app.maps_handler.functions import mapping, calculate_Sw
 from well_active_zones import calculate_effective_radius
 from drill_zones.drilling_zones import calculate_drilling_zones
 from project_wells import calculate_reserves_by_voronoi
@@ -84,12 +86,16 @@ if __name__ == '__main__':
     polygon_map_rrr = map_rrr.raster_to_polygon()
     logger.info("Начальное размещение проектных скважин")
     well_params['buffer_project_wells'] = well_params['buffer_project_wells'] / default_size_pixel
+
+    # Проектные скважины с других drill_zone, чтобы исключить пересечения
+    gdf_project_wells_all = gpd.GeoDataFrame(columns=["LINESTRING_pix", "buffer"], geometry="LINESTRING_pix")
     for drill_zone in list_zones:
         if drill_zone.rating != -1:
-            drill_zone.get_init_project_wells(map_rrr, data_wells, polygon_map_rrr,
-                                              default_size_pixel,
-                                              parameters_calculation['init_profit_cum_oil'],
-                                              dict_parameters_coefficients)
+            gdf_project_wells = drill_zone.get_init_project_wells(map_rrr, data_wells, gdf_project_wells_all,
+                                                                  polygon_map_rrr, default_size_pixel,
+                                                                  parameters_calculation['init_profit_cum_oil'],
+                                                                  dict_parameters_coefficients)
+            gdf_project_wells_all = pd.concat([gdf_project_wells_all, gdf_project_wells], ignore_index=True)
 
     logger.info("Расчет запасов для проектных скважин")
     calculate_reserves_by_voronoi(list_zones, data_wells, map_rrr, save_directory)
@@ -112,3 +118,4 @@ if __name__ == '__main__':
     upload_data(save_directory, data_wells, maps, list_zones, info_clusterization_zones, FEM, method_taxes,
                 **{**load_data_param, **well_params})
 
+    data_wells['Soil'] = data_wells.apply(calculate_Sw, args=(dict_parameters_coefficients,), axis=1)

@@ -7,6 +7,7 @@ from .maps import (Map, read_array, read_raster, get_map_reservoir_score, get_ma
                    get_map_risk_score, get_map_opportunity_index)
 from ..input_output.input import create_shapely_types
 from ..well_active_zones import get_value_map
+from ..ranking_drilling.one_phase_model import get_sw
 
 
 @logger.catch
@@ -200,11 +201,10 @@ def calculate_score_maps(maps, dict_properties):
                                         init_pressure=init_pressure)
     logger.info("Расчет карты индекса возможностей")
     map_opportunity_index = get_map_opportunity_index(map_reservoir_score, map_potential_score, map_risk_score)
-    # где нет толщин и давления opportunity_index = 0
-    # !!! Может не 0, а 0.01 или что-то такое, чтобы не было дыр в карте
+    # где высокая обводненность opportunity_index = 0 или 0.01
     map_opportunity_index.data[(map_water_cut.data > 99.5)] = 0.01
+    # где нет толщин и давления opportunity_index = 0
     map_opportunity_index.data[(map_NNT.data == 0) & (map_pressure.data == 0)] = 0
-    # где высокая обводненность opportunity_index = 0
 
     return [map_reservoir_score, map_potential_score, map_risk_score, map_opportunity_index]
 
@@ -353,3 +353,35 @@ def cut_map_by_mask(base_map, mask, blank_value=np.nan):
                        base_map.type_map)
 
     return modified_map
+
+
+def calculate_Sw(row, dict_parameters_coefficients):
+    """
+
+    Parameters
+    ----------
+
+    Returns
+    -------
+
+    """
+    # Переопределим параметры из словаря
+    kv_kh, Swc, Sor, Fw, m1, Fo, m2, Bw = (
+        list(map(lambda name: dict_parameters_coefficients['default_well_params'][name],
+                 ['kv_kh', 'Swc', 'Sor', 'Fw', 'm1', 'Fo', 'm2', 'Bw'])))
+
+    reservoir_params = dict_parameters_coefficients['reservoir_params']
+    reservoir_params['f_w'] = row['water_cut']
+    fluid_params = dict_parameters_coefficients['fluid_params']
+
+    # Выделение необходимых параметров пластовой жидкости
+    mu_w, mu_o, Bo, c_o, c_w = list(map(lambda key: fluid_params[key], ['mu_w', 'mu_o', 'Bo', 'c_o', 'c_w']))
+    # Выделение необходимых параметров пласта
+    f_w, c_r = list(map(lambda key: reservoir_params[key], ['f_w', 'c_r']))
+
+    if row.Winj_rate == 0:
+        # Расчет насыщенности
+        Sw = get_sw(mu_w, mu_o, Bo, Bw, f_w, Fw, m1, Fo, m2, Swc, Sor)
+        return 1 - Sw - Sor
+    else:
+        return Sor

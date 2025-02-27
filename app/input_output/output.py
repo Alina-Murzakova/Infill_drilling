@@ -221,7 +221,7 @@ def save_ranking_drilling_to_excel(list_zones, filename):
                  'Соседние скважины': [well.gdf_nearest_wells.well_number.unique() for
                                        well in drill_zone.list_project_wells],
                  'PI (Рентабельный период)': [well.PI for well in drill_zone.list_project_wells],
-                 'NPV (Рентабельный период), тыс.т': [round(np.sum(well.NPV[well.NPV > 0])) for well in drill_zone.list_project_wells]
+                 'NPV (Рентабельный период), тыс.руб.': [round(np.sum(well.NPV[well.NPV > 0])) for well in drill_zone.list_project_wells]
                  }
             )
             gdf_result_ranking_drilling = pd.concat([gdf_result_ranking_drilling,

@@ -9,7 +9,8 @@ from shapely.ops import unary_union, nearest_points
 from sklearn.cluster import KMeans
 
 
-def get_project_wells_from_clusters(name_cluster, polygon_map_rrr, gdf_clusters, data_wells, default_size_pixel, buffer_project_wells,
+def get_project_wells_from_clusters(name_cluster, polygon_map_rrr, gdf_clusters, data_wells, gdf_project_wells_all,
+                                    default_size_pixel, buffer_project_wells,
                                     threshold, k_wells, max_length, min_length):
     """Получаем GeoDataFrame с начальными координатами проектных скважин"""
     # threshold - максимальное расстояние для исключения скважины из ближайших скважин, пиксели
@@ -48,6 +49,9 @@ def get_project_wells_from_clusters(name_cluster, polygon_map_rrr, gdf_clusters,
     gdf_project.set_geometry("LINESTRING_pix", inplace=True)
     gdf_fact_wells['buffer'] = gdf_fact_wells.geometry.buffer(gdf_fact_wells["r_eff"] / default_size_pixel)
     gdf_project['buffer'] = gdf_project.geometry.buffer(buffer_project_wells)
+    gdf_project_wells_all['buffer'] = gdf_project_wells_all.geometry.buffer(buffer_project_wells)
+    # фрейм с фактическими скважинами и уже расставленными проектными скважинами
+    gdf_fact_wells = pd.concat([gdf_fact_wells, gdf_project_wells_all])
     # Пересекающийся с проектным и/или фактическим фондом проектный фонд скважин
     intersecting_proj_wells = gdf_project[
         gdf_project.apply(lambda row: (gdf_fact_wells['buffer'].intersects(row['buffer']).any() or
@@ -386,7 +390,9 @@ def shift_project_well(proj_row, nearest_intersected_well, gdf_fact_wells, other
 
         # Проверка, что сдвинутая скважина не пересекает другие буферы
         if not (gdf_fact_wells['buffer'].intersects(new_position.buffer(buffer_project_wells)).any() or
-                other_proj_wells['buffer'].intersects(new_position.buffer(buffer_project_wells)).any()):
+                other_proj_wells['buffer'].intersects(new_position.buffer(buffer_project_wells)).any()) and \
+                (proj_row['cluster'].intersection(new_position).length >= part_line_in * proj_row['length_pix']) and \
+                polygon_map_rrr.contains(new_position.buffer(buffer_project_wells)):
             return new_position, True  # Сдвиг удался
 
     return original_position, False  # Сдвиг не удался
@@ -412,7 +418,7 @@ def rotate_project_well(original_position, gdf_fact_wells, other_proj_wells, pol
 
         # Если нет пересечений, то решение найдено
         if (not (gdf_fact_wells['buffer'].intersects(new_position.buffer(buffer_project_wells)).any() or
-                other_proj_wells['buffer'].intersects(new_position.buffer(buffer_project_wells)).any()) and
+                 other_proj_wells['buffer'].intersects(new_position.buffer(buffer_project_wells)).any()) and
                 polygon_map_rrr.contains(new_position.buffer(buffer_project_wells))):
             return new_position, True
 
