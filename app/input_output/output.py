@@ -13,7 +13,7 @@ from app.maps_handler.maps import read_array
 
 
 @logger.catch
-def upload_data(save_directory, data_wells, maps, list_zones, info_clusterization_zones, **kwargs):
+def upload_data(save_directory, data_wells, maps, list_zones, info_clusterization_zones, FEM, method_taxes, **kwargs):
     """Выгрузка данных после расчета"""
     type_map_list = list(map(lambda raster: raster.type_map, maps))
 
@@ -51,7 +51,7 @@ def upload_data(save_directory, data_wells, maps, list_zones, info_clusterizatio
                                   buffer_project_wells=kwargs['buffer_project_wells'])
     map_residual_recoverable_reserves = maps[type_map_list.index('residual_recoverable_reserves')]
     map_residual_recoverable_reserves.save_img(f"{save_directory}/карта ОИЗ с ПФ.png", data_wells,
-                                   list_zones, info_clusterization_zones, project_wells=True)
+                                               list_zones, info_clusterization_zones, project_wells=True)
     logger.info("Сохранение рейтинга бурения проектных скважин в формате .xlsx")
     save_ranking_drilling_to_excel(list_zones, f"{save_directory}/рейтинг_бурения.xlsx")
 
@@ -64,7 +64,8 @@ def upload_data(save_directory, data_wells, maps, list_zones, info_clusterizatio
     logger.info("Сохранение контуров зон в формате .txt для загрузки в NGT")
     save_directory_contours = f"{save_directory}/контуры зон"
     create_new_dir(save_directory_contours)
-    save_contours(list_zones, map_residual_recoverable_reserves, save_directory_contours, type_calc='alpha', buffer_size=40)
+    save_contours(list_zones, map_residual_recoverable_reserves, save_directory_contours, type_calc='alpha',
+                  buffer_size=40)
     pass
 
 
@@ -184,6 +185,8 @@ def save_ranking_drilling_to_excel(list_zones, filename):
     gdf_result_ranking_drilling = gpd.GeoDataFrame()
     dict_project_wells_Qo, dict_project_wells_Ql = {}, {}
     dict_project_wells_Qo_rate, dict_project_wells_Ql_rate = {}, {}
+    (dict_project_wells_cumulative_cash_flow,
+     dict_project_wells_CAPEX, dict_project_wells_OPEX, dict_project_wells_NPV) = {}, {}, {}, {}
     for drill_zone in list_zones:
         if drill_zone.rating != -1:
             # gdf_project_wells = gpd.GeoDataFrame([well.__dict__ for well in drill_zone.list_project_wells])
@@ -191,16 +194,19 @@ def save_ranking_drilling_to_excel(list_zones, filename):
                 {'№ скважины': [well.well_number for well in drill_zone.list_project_wells],
                  'Координата_T1_x': [round(well.POINT_T1_geo.x, 0) for well in drill_zone.list_project_wells],
                  'Координата_T1_y': [round(well.POINT_T1_geo.y, 0) for well in drill_zone.list_project_wells],
-                 'Координата_T3_x': [round(well.POINT_T3_geo.x, 0)  for well in drill_zone.list_project_wells],
-                 'Координата_T3_y': [round(well.POINT_T3_geo.y, 0)  for well in drill_zone.list_project_wells],
+                 'Координата_T3_x': [round(well.POINT_T3_geo.x, 0) for well in drill_zone.list_project_wells],
+                 'Координата_T3_y': [round(well.POINT_T3_geo.y, 0) for well in drill_zone.list_project_wells],
                  'Характер работы': ['1'] * len(drill_zone.list_project_wells),  # 1 - добывающая, 2 - нагнетательная
                  'Тип скважины': [well.well_type for well in drill_zone.list_project_wells],
                  'Длина, м': [round(well.length_geo, 1) for well in drill_zone.list_project_wells],
                  'Азимут, градусы': [round(well.azimuth, 1) for well in drill_zone.list_project_wells],
                  'Обводненность, %': [round(well.water_cut, 1) for well in drill_zone.list_project_wells],
-                 'Запускной дебит жидкости, т/сут': [round(well.init_Ql_rate, 2) for well in drill_zone.list_project_wells],
-                 'Запускной дебит нефти, т/сут': [round(well.init_Qo_rate, 2) for well in drill_zone.list_project_wells],
-                 'Запускное забойное давление, атм': [round(well.P_well_init, 1) for well in drill_zone.list_project_wells],
+                 'Запускной дебит жидкости, т/сут': [round(well.init_Ql_rate, 2) for well in
+                                                     drill_zone.list_project_wells],
+                 'Запускной дебит нефти, т/сут': [round(well.init_Qo_rate, 2) for well in
+                                                  drill_zone.list_project_wells],
+                 'Запускное забойное давление, атм': [round(well.P_well_init, 1) for well in
+                                                      drill_zone.list_project_wells],
                  'Пластовое давление, атм': [round(well.P_reservoir, 1) for well in drill_zone.list_project_wells],
                  'Нефтенасыщенная толщина, м': [round(well.NNT, 1) for well in drill_zone.list_project_wells],
                  'Начальная нефтенасыщенность, д.ед': [round(well.So, 3) for well in drill_zone.list_project_wells],
@@ -214,7 +220,9 @@ def save_ranking_drilling_to_excel(list_zones, filename):
                                                                  drill_zone.list_project_wells],
                  'Соседние скважины': [well.gdf_nearest_wells.well_number.unique() for
                                        well in drill_zone.list_project_wells],
-                 'Статус аппроксимации Арпса': [well.decline_rates[0][4] for well in drill_zone.list_project_wells]}
+                 'PI (Рентабельный период)': [well.PI for well in drill_zone.list_project_wells],
+                 'NPV (Рентабельный период), тыс.т': [round(np.sum(well.NPV[well.NPV > 0])) for well in drill_zone.list_project_wells]
+                 }
             )
             gdf_result_ranking_drilling = pd.concat([gdf_result_ranking_drilling,
                                                      gdf_project_wells_ranking_drilling], ignore_index=True)
@@ -226,10 +234,23 @@ def save_ranking_drilling_to_excel(list_zones, filename):
             [dict_project_wells_Ql_rate.update({well.well_number: well.Ql_rate})
              for well in drill_zone.list_project_wells]
 
+            [dict_project_wells_cumulative_cash_flow.update({well.well_number: well.cumulative_cash_flow})
+             for well in drill_zone.list_project_wells]
+            [dict_project_wells_CAPEX.update({well.well_number: well.CAPEX})
+             for well in drill_zone.list_project_wells]
+            [dict_project_wells_OPEX.update({well.well_number: well.OPEX})
+             for well in drill_zone.list_project_wells]
+            [dict_project_wells_NPV.update({well.well_number: well.NPV})
+             for well in drill_zone.list_project_wells]
+
     df_result_production_Qo = pd.DataFrame.from_dict(dict_project_wells_Qo, orient='index')
     df_result_production_Ql = pd.DataFrame.from_dict(dict_project_wells_Ql, orient='index')
     df_result_production_Qo_rate = pd.DataFrame.from_dict(dict_project_wells_Qo_rate, orient='index')
     df_result_production_Ql_rate = pd.DataFrame.from_dict(dict_project_wells_Ql_rate, orient='index')
+    df_result_cumulative_cash_flow = pd.DataFrame.from_dict(dict_project_wells_cumulative_cash_flow, orient='index')
+    df_result_CAPEX = pd.DataFrame.from_dict(dict_project_wells_CAPEX, orient='index')
+    df_result_OPEX = pd.DataFrame.from_dict(dict_project_wells_OPEX, orient='index')
+    df_result_NPV = pd.DataFrame.from_dict(dict_project_wells_NPV, orient='index')
 
     with pd.ExcelWriter(filename) as writer:
         gdf_result_ranking_drilling.to_excel(writer, sheet_name='РБ', index=False)
@@ -237,6 +258,10 @@ def save_ranking_drilling_to_excel(list_zones, filename):
         df_result_production_Ql.to_excel(writer, sheet_name='Добыча жидкости, т')
         df_result_production_Qo_rate.to_excel(writer, sheet_name='Дебит нефти, т_сут')
         df_result_production_Ql_rate.to_excel(writer, sheet_name='Дебит жидкости, т_сут')
+        df_result_cumulative_cash_flow.to_excel(writer, sheet_name='Накопленный FCF, тыс руб')
+        df_result_CAPEX.to_excel(writer, sheet_name='CAPEX, тыс руб')
+        df_result_OPEX.to_excel(writer, sheet_name='OPEX, тыс руб')
+        df_result_NPV.to_excel(writer, sheet_name='NPV, тыс руб')
     pass
 
 

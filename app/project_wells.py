@@ -42,10 +42,19 @@ class ProjectWell:
         self.r_eff = None
         self.reserves = None  # тыс. т
 
+        # Профили
         self.Qo_rate = None
         self.Ql_rate = None
         self.Qo = None
         self.Ql = None
+
+        # Экономика
+        self.cumulative_cash_flow = None  # Накопленный поток наличности
+        self.CAPEX = None  # CAPEX
+        self.OPEX = None  # OPEX
+        self.NPV = None
+        self.PVI = None
+        self.PI = None
 
     def get_nearest_wells(self, df_wells, threshold, k=5):
         """
@@ -192,8 +201,10 @@ class ProjectWell:
         self.reserves = np.sum(array_rrr * map_rrr.geo_transform[1] ** 2 / 10000) / 1000
         pass
 
-    def calculate_economy(self, FEM, start_date, period=25):
-
+    def calculate_economy(self, FEM, well_params, method, dict_NDD):
+        start_date = well_params['start_date']
+        self.CAPEX, self.OPEX, self.cumulative_cash_flow, self.NPV, self.PVI, self.PI = (
+            FEM.calculate_economy_well(self.Qo, self.Ql, start_date, self.well_type, well_params, method, dict_NDD))
         pass
 
 

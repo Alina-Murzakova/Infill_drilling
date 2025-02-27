@@ -3,10 +3,10 @@ from loguru import logger
 
 from app.ranking_drilling.starting_rates import get_df_permeability_fact_wells
 from local_parameters import main_parameters, constants
-from input_output.input import load_wells_data, load_geo_phys_properties, load_frac_info
+from input_output.input import load_wells_data, load_geo_phys_properties, load_frac_info, load_economy_data
 
 from app.decline_rate.decline_rate import get_decline_rates
-from app.maps_handler.functions import mapping, active_well_outline
+from app.maps_handler.functions import mapping
 from well_active_zones import calculate_effective_radius
 from drill_zones.drilling_zones import calculate_drilling_zones
 from project_wells import calculate_reserves_by_voronoi
@@ -94,17 +94,21 @@ if __name__ == '__main__':
     logger.info("Расчет запасов для проектных скважин")
     calculate_reserves_by_voronoi(list_zones, data_wells, map_rrr, save_directory)
 
+    logger.info(f"Загрузка исходных данных для расчета экономики")
+    FEM, method_taxes, dict_NDD = load_economy_data(paths['path_economy'], name_field)
+
     for drill_zone in list_zones:
         if drill_zone.rating != -1:
-            logger.info(f"Расчет запускных параметров и профиля добычи проектных скважин зоны: {drill_zone.rating}")
+            logger.info(f"Расчет запускных параметров, профиля добычи и экономики  проектных скважин зоны:"
+                        f" {drill_zone.rating}")
             drill_zone.calculate_starting_rates(maps, dict_parameters_coefficients)
             drill_zone.calculate_production(data_decline_rate_stat,
                                             parameters_calculation['period_calculation'] * 12,
                                             well_params['day_in_month'],
                                             well_params['well_efficiency'])
+            drill_zone.calculate_economy(FEM, well_params, method_taxes, dict_NDD)
 
     logger.info(f"Выгрузка данных расчета:")
-    upload_data(save_directory, data_wells, maps, list_zones, info_clusterization_zones,
+    upload_data(save_directory, data_wells, maps, list_zones, info_clusterization_zones, FEM, method_taxes,
                 **{**load_data_param, **well_params})
 
-    logger.info(f"Загрузка исходных данных для расчета экономики")

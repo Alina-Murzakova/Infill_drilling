@@ -148,7 +148,6 @@ class Map:
 
         # Объединяем все полигоны в один (если их несколько)
         return unary_union(polygons) if len(polygons) > 1 else polygons[0]
-    
 
     def save_img(self, filename, data_wells=None, list_zones=None, info_clusterization_zones=None, project_wells=None):
         import matplotlib.pyplot as plt
@@ -189,7 +188,8 @@ class Map:
                 x_zone = zone.x_coordinates
                 y_zone = zone.y_coordinates
                 plt.scatter(x_zone, y_zone, color=c, alpha=0.6, s=1)
-                plt.text(x_zone[int(len(x_zone)/2)], y_zone[int(len(x_zone)/2)], i, fontsize=font_size*2, color='red')
+                plt.text(x_zone[int(len(x_zone) / 2)], y_zone[int(len(x_zone) / 2)], i, fontsize=font_size * 2,
+                         color='red')
 
                 if i != -1:
                     #  Отрисовка проектного фонда

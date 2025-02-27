@@ -329,12 +329,11 @@ def load_economy_data(economy_path, name_field):
     # Инициализируем необходимые переменные
     with pd.ExcelFile(economy_path) as xls:
         # коэффициенты Кв Кз Кд	Кдв	Ккан Кк	Кман Кабдт
-        constants = pd.read_excel(xls, sheet_name="Налоги_константы")
+        constants = pd.read_excel(xls, sheet_name="Налоги")
         macroeconomics = pd.read_excel(xls, sheet_name="Макропараметры", header=3)  # Основная макра
 
-        # месторождения с НДД, проверка наличия в списке
+        # месторождения с НДД
         reservoirs_NDD = pd.read_excel(xls, sheet_name="МР с НДД", header=None).iloc[:, 0].values.tolist()
-        type_tax_calculation = name_field in reservoirs_NDD
 
         # OPEX
         df_opex = pd.read_excel(xls, sheet_name="Удельный OPEX", header=0)
@@ -385,8 +384,26 @@ def load_economy_data(economy_path, name_field):
 
     FEM = FinancialEconomicModel(macroeconomics, constants,
                                  df_opex, oil_loss, df_capex,
-                                 df_workover_wellservice,type_tax_calculation)
-    return FEM
+                                 df_workover_wellservice)
+
+    # Схема расчета налогов
+    method = "НДПИ"
+    dict_NDD = {'initial_recoverable_reserves': None,
+                'cumulative_production': None,
+                'Kg_group': None}
+
+    if name_field in reservoirs_NDD:
+        method = "НДД"
+
+        initial_recoverable_reserves = constants.iloc[6, 1]
+        cumulative_production = constants.iloc[7, 1]
+        Kg_group = constants.iloc[5, 1]
+
+        dict_NDD = {'initial_recoverable_reserves': initial_recoverable_reserves,
+                    'cumulative_production': cumulative_production,
+                    'Kg_group': Kg_group}
+
+    return FEM, method, dict_NDD
 
 
 """___________Вспомогательные функции___________"""

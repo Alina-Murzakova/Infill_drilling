@@ -29,6 +29,14 @@ class DrillZone:
         self.Qo = None
         self.Ql = None
 
+        # Экономика
+        self.cumulative_cash_flow = None  # Накопленный поток наличности
+        self.CAPEX = None  # CAPEX
+        self.OPEX = None  # OPEX
+        self.NPV = None
+        self.PVI = None
+        self.PI = None
+
     def calculate_reserves(self, map_rrr):
         """Расчет ОИЗ перспективной зоны, тыс.т"""
         array_rrr = map_rrr.data[self.y_coordinates, self.x_coordinates]
@@ -54,7 +62,7 @@ class DrillZone:
         max_length = dict_parameters['well_params']['L']
         # Площадь буфера
         min_area_proj_cluster = (2 * (buffer_project_wells * default_size_pixel) * max_length +
-                                 np.pi * (buffer_project_wells * default_size_pixel)**2) / 1000000
+                                 np.pi * (buffer_project_wells * default_size_pixel) ** 2) / 1000000
 
         # threshold = 2500 - максимальное расстояние для исключения скважины из ближайших скважин, пиксели
         self.calculate_reserves(map_rrr)
@@ -166,6 +174,44 @@ class DrillZone:
                     self.Ql += project_well.Ql
         pass
 
+    def calculate_economy(self, FEM, well_params, method, dict_NDD=None):
+        """ Расчет профиля экономики каждой скважины зоны"""
+        for project_well in self.list_project_wells:
+            project_well.calculate_economy(FEM, well_params, method, dict_NDD)
+        self.get_economic_profile()
+        pass
+
+    def get_economic_profile(self):
+        """ Расчет экономических атрибутов зоны"""
+        for project_well in self.list_project_wells:
+            if self.cumulative_cash_flow is None:
+                self.cumulative_cash_flow = project_well.cumulative_cash_flow.copy()
+            else:
+                if self.cumulative_cash_flow is not None:
+                    self.cumulative_cash_flow += project_well.cumulative_cash_flow
+            if self.CAPEX is None:
+                self.CAPEX = project_well.CAPEX.copy()
+            else:
+                if self.CAPEX is not None:
+                    self.CAPEX += project_well.CAPEX
+            if self.OPEX is None:
+                self.OPEX = project_well.OPEX.copy()
+            else:
+                if self.OPEX is not None:
+                    self.OPEX += project_well.OPEX
+            if self.NPV is None:
+                self.NPV = project_well.NPV.copy()
+            else:
+                if self.NPV is not None:
+                    self.NPV += project_well.NPV
+            if self.PVI is None:
+                self.PVI = project_well.PVI.copy()
+            else:
+                if self.PVI is not None:
+                    self.PVI += project_well.PVI
+            self.PI = self.NPV.max() / self.PVI.sum() + 1
+        pass
+
 
 @logger.catch
 def calculate_drilling_zones(maps, epsilon, min_samples, percent_low, data_wells):
@@ -254,6 +300,13 @@ if __name__ == '__main__':
     from app.local_parameters import main_parameters, constants
     from app.well_active_zones import calculate_effective_radius
     from app.maps_handler.functions import mapping
+    import math
+    import itertools
+
+    min_radius = range(100, 600, 100)
+    sensitivity_quality_drill = range(60, 100, 5)
+    # Генерация всех возможных сочетаний по два
+    combinations = list(itertools.product(min_radius, sensitivity_quality_drill))
 
     # Пути
     paths = main_parameters['paths']
@@ -266,6 +319,9 @@ if __name__ == '__main__':
     load_data_param = constants['load_data_param']
     default_coefficients = constants['default_coefficients']
     default_well_params = constants['default_well_params']
+    if constants['default_project_well_params']['buffer_project_wells'] <= 0:
+        # нижнее ограничение на расстояние до фактических скважин от проектной
+        constants['default_project_well_params']['buffer_project_wells'] = 10
     well_params.update(constants['default_project_well_params'])
 
     logger.info("Загрузка скважинных данных")
@@ -274,8 +330,6 @@ if __name__ == '__main__':
                                                 first_months=load_data_param['first_months'])
     name_field, name_object = info_object_calculation.get("field"), info_object_calculation.get("object_value")
     save_directory = get_save_path("Infill_drilling", name_field, name_object.replace('/', '-'))
-
-    percent_low = 100 - parameters_calculation["percent_top"]
 
     logger.info(f"Загрузка ГФХ по пласту {name_object.replace('/', '-')} месторождения {name_field}")
     dict_parameters_coefficients = load_geo_phys_properties(paths["path_geo_phys_properties"], name_field, name_object)
@@ -295,22 +349,32 @@ if __name__ == '__main__':
     map_opportunity_index = maps[type_map_list.index("opportunity_index")]
     logger.info("Расчет радиусов дренирования и нагнетания для скважин")
     data_wells = calculate_effective_radius(data_wells, dict_properties=dict_parameters_coefficients)
+    percent_low = 100 - parameters_calculation["percent_top"]
 
-    # Перебор параметров DBSCAN c сеткой графиков 5 х 3
-    pairs_of_hyperparams = [[4, 10], [4, 30], [4, 50],
-                            [5, 10], [5, 30], [5, 50],
-                            [5, 70], [5, 80], [5, 100],
-                            [7, 10], [7, 30], [7, 50],
-                            [7, 70], [7, 80], [7, 100], ]
+    total_plots = len(combinations)
 
+    # Вычисление количества строк и столбцов
+    rows = math.ceil(math.sqrt(total_plots))  # Округляем вверх
+    cols = math.ceil(total_plots / rows)  # Вычисляем количество столбцов
+
+    # Создание фигуры и сабплота
+    # fig = plt.figure(figsize=(cols * 4, rows * 3))  # Размер фигуры (можно настроить)
     fig = plt.figure()
     fig.set_size_inches(20, 50)
 
-    for i, s in enumerate(pairs_of_hyperparams):
-        list_zones, _ = calculate_drilling_zones(maps, epsilon=s[0], min_samples=s[1],
-                                                 percent_low=percent_low, data_wells=data_wells)
+    # Перебор параметров DBSCAN c сеткой графиков 5 х 3
+    for i, s in enumerate(combinations):
 
-        ax_ = fig.add_subplot(5, 3, i + 1)
+        epsilon = s[0] / default_size_pixel
+        min_samples = int(s[1] / 100 * epsilon ** 2 * math.pi)
+
+        list_zones, _ = calculate_drilling_zones(maps=maps,
+                                                 epsilon=epsilon,
+                                                 min_samples=min_samples,
+                                                 percent_low=percent_low,
+                                                 data_wells=data_wells)
+
+        ax_ = fig.add_subplot(rows, cols, i + 1)
 
         # Определение размера осей
         x = (map_opportunity_index.geo_transform[0], map_opportunity_index.geo_transform[0] +
@@ -377,11 +441,9 @@ if __name__ == '__main__':
             y_middle = y_zone[int(len(y_zone) / 2)]
 
             if lab != -1:
-                # Отображение среднего и максимального индексов рядом с кластерами
-                plt.text(x_middle, y_middle, f"OI_mean = {np.round(mean_index, 2)}",
-                         fontsize=font_size / 10, ha='left', color="black")
-                plt.text(x_middle, y_middle, f"OI_max = {np.round(max_index, 2)}",
-                         fontsize=font_size / 10, ha='left', color="black")
+                # Отображение номера кластера
+                plt.text(x_zone[int(len(x_zone) / 2)], y_zone[int(len(x_zone) / 2)], lab, fontsize=font_size,
+                         color='red')
 
         plt.xlim(0, map_opportunity_index.data.shape[1])
         plt.ylim(0, map_opportunity_index.data.shape[0])
@@ -391,7 +453,7 @@ if __name__ == '__main__':
 
         n_clusters = len(labels) - 1
 
-        plt.title(f"Epsilon = {s[0]}\n min_samples = {s[1]} \n with {n_clusters} clusters")
+        plt.title(f"min_radius = {s[0]}\n quality = {s[1]} \n with {n_clusters} clusters")
 
     fig.tight_layout()
     plt.savefig(f"{save_directory}/drilling_index_map", dpi=300)
