@@ -102,7 +102,8 @@ if __name__ == '__main__':
     calculate_reserves_by_voronoi(list_zones, data_wells, map_rrr, save_directory)
 
     logger.info(f"Загрузка исходных данных для расчета экономики")
-    FEM, method_taxes, dict_NDD = load_economy_data(paths['path_economy'], name_field)
+    FEM, method_taxes, dict_NDD = load_economy_data(paths['path_economy'], name_field,
+                                                    dict_parameters_coefficients['fluid_params']['gor'])
 
     for drill_zone in list_zones:
         if drill_zone.rating != -1:

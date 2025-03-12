@@ -15,12 +15,14 @@ class FinancialEconomicModel:
     ФЭМ для процесса бурения
     """
 
-    def __init__(self, macroeconomics, constants, unit_costs, oil_loss, df_capex, workover_wellservice):
+    def __init__(self, macroeconomics, constants, unit_costs, oil_loss, df_capex, ONVSS_cost_ed,
+                 workover_wellservice, df_apg, gor):
         #  Макро-параметры
         self.dollar_exchange = macroeconomics['dollar_exchange']  # курс доллара
         self.urals = macroeconomics['urals']  # Urals для расчета налогов
         self.netback = macroeconomics['netback']
         self.cost_transportation = macroeconomics['cost_transportation']  # Транспортные расходы
+        self.price_APG = macroeconomics['price_APG']
 
         #  Налоги
         self.export_duty = macroeconomics['export_duty']  # Экспортная пошлина на нефть
@@ -48,6 +50,12 @@ class FinancialEconomicModel:
         self.unit_cost_fluid = unit_costs['unit_cost_fluid']
         self.cost_prod_well = unit_costs['cost_prod_well']
 
+        # ПНГ
+        self.gor = gor / 1000  # Газосодержание тыс. м3 /т
+        self.apg_utilization = df_apg['apg_utilization']
+        self.gas_loss = df_apg['gas_loss']
+        self.payment_apg = df_apg['payment_apg']
+
         # КРС И ПРС на 1 скважину сдф, МРП - не учитывается
         self.workover_one_cost = workover_wellservice['workover_one_cost']
         self.wellservice_one_cost = workover_wellservice['wellservice_one_cost']
@@ -59,13 +67,17 @@ class FinancialEconomicModel:
         self.ONVSS_one_cost = workover_wellservice['ONVSS_one_cost']
         self.ONVSS_cost = None
         self.cost_completion = df_capex.iloc[0, 1]
-        self.cost_secondary_material_resources = df_capex.iloc[1, 1]
-        self.cost_production_drilling_horizontal = df_capex.iloc[2, 1]
-        self.cost_production_drilling_vertical = df_capex.iloc[3, 1]
-        self.cost_stage_GRP = df_capex.iloc[4, 1]
-        self.lifetime_well = df_capex.iloc[5, 1]
-        self.lifetime_ONVSS = df_capex.iloc[6, 1]
-        self.lifetime_infrastructure = df_capex.iloc[7, 1]
+        self.cost_pad_work = df_capex.iloc[1, 1]
+        self.ONVSS_cost_exploitation_drilling = ONVSS_cost_ed
+        self.cost_secondary_material_resources = df_capex.iloc[2, 1]
+        self.cost_pilot_drill = df_capex.iloc[3, 1]
+        self.cost_production_drilling_horizontal = df_capex.iloc[4, 1]
+        self.cost_production_drilling_vertical = df_capex.iloc[5, 1]
+        self.cost_stage_GRP = df_capex.iloc[6, 1]
+
+        self.lifetime_well = df_capex.iloc[7, 1]
+        self.lifetime_ONVSS = df_capex.iloc[8, 1]
+        self.lifetime_infrastructure = df_capex.iloc[9, 1]
 
         # Дополнительные данные для расчета
         self.oil_loss = oil_loss['oil_loss']
@@ -110,13 +122,39 @@ class FinancialEconomicModel:
                                                        .rename("Qo_yearly_for_sale"))
         return df_Qo_yearly_for_sale.Qo_yearly_for_sale
 
-    def calculate_income_side(self, Qo_yearly_for_sale):
+    def calculate_APG_for_sale(self, Qo_yearly):
+        """
+         Добыча ПНГ по годам с вычетом потерь, тыс. т
+        :param Qo_yearly: добыча нефти по годам, тыс. т
+        """
+        df_APG_for_sale = bring_arrays_to_one_date(Qo_yearly, self.apg_utilization, self.gas_loss)
+        df_APG_for_sale['APG_for_sale'] = ((df_APG_for_sale.Qo_yearly * self.gor *
+                                            (df_APG_for_sale.apg_utilization - df_APG_for_sale.gas_loss
+                                             ) / 100).rename("APG_for_sale"))
+        return df_APG_for_sale.APG_for_sale
+
+    def calculate_penalty_gas_flaring(self, Qo_yearly):
+        """
+        Штраф за сжигание газа, тыс. руб
+        :param Qo_yearly: добыча нефти по годам, тыс. т
+        """
+        df_penalty_gas_flaring = bring_arrays_to_one_date(Qo_yearly, self.apg_utilization)
+        df_penalty_gas_flaring['penalty_gas_flaring'] = ((df_penalty_gas_flaring.Qo_yearly * self.gor
+                                                          * (1 - df_penalty_gas_flaring.apg_utilization / 100)
+                                                          * self.payment_apg).rename("penalty_gas_flaring"))
+        return df_penalty_gas_flaring.penalty_gas_flaring
+
+    def calculate_income_side(self, Qo_yearly_for_sale, APG_for_sale):
         """
         Выручка (доходная часть)
-        :param Qo_yearly_for_sale: Добыча нефти по годам с вычетом потерь, тыс. т
+        Qo_yearly_for_sale: Добыча нефти по годам с вычетом потерь, тыс. т
+        APG_for_sale: Добыча газа с вычетом потерь, тыс. т
+
         """
-        df_income = bring_arrays_to_one_date(Qo_yearly_for_sale, self.netback)
-        df_income['income'] = df_income.Qo_yearly_for_sale * df_income.netback
+        df_income = bring_arrays_to_one_date(Qo_yearly_for_sale, APG_for_sale, self.netback, self.price_APG)
+        df_income['income_apg'] = df_income.APG_for_sale * df_income.price_APG
+        df_income['income_oil'] = df_income.Qo_yearly_for_sale * df_income.netback
+        df_income['income'] = df_income.income_oil + df_income.income_apg
         return df_income.income
         # return df_income
 
@@ -142,21 +180,22 @@ class FinancialEconomicModel:
         """
         Расходная капитализируемая часть, руб
         состав:
-        Скважины (Бурение_ГС|ННС + ГРП_за 1 стадию) cost_production_drilling
-        ОНСС (в первый месяц + 5 638 тыс.р на скв ? узнать что это) ONVSS_cost
-        Обустройство (Обустройство + ВМР) cost_infrastructure
+        Скважины (Бурение_ГС|ННС + ГРП_за 1 стадию + пилот + ВМР) cost_production_drilling
+        ОНСС (в первый месяц + ОНВСС_бурение) ONVSS_cost
+        Обустройство (Обустройство + отсыпка) cost_infrastructure
         """
         cost_production_drilling = self.cost_production_drilling_vertical
         if well_type == 'horizontal':
             cost_production_drilling = self.cost_production_drilling_horizontal
         FracCount = check_FracCount(well_params['Type_Frac'], well_params['length_FracStage'], well_params['L'])
         cost_production_drilling += FracCount * self.cost_stage_GRP
+        cost_production_drilling += self.cost_secondary_material_resources + self.cost_pilot_drill
 
-        cost_infrastructure = self.cost_secondary_material_resources + self.cost_completion
+        cost_infrastructure = self.cost_completion + self.cost_pad_work
 
         df_CAPEX = bring_arrays_to_one_date(Qo_yearly, self.ONVSS_cost)
         del df_CAPEX['Qo_yearly']
-        df_CAPEX.ONVSS_cost.iloc[0] += 5638
+        df_CAPEX.ONVSS_cost.iloc[0] += self.ONVSS_cost_exploitation_drilling
 
         df_CAPEX['cost_production_drilling'] = 0
         df_CAPEX['cost_infrastructure'] = 0
@@ -176,8 +215,8 @@ class FinancialEconomicModel:
                      'cost_infrastructure': self.lifetime_infrastructure,
                      'ONVSS_cost': self.lifetime_ONVSS}
 
-        df_base_depreciation = pd.DataFrame(index=range(start_year, end_year + max(lifetimes.values()) + 1))
-        df_depreciation = pd.DataFrame(index=range(start_year, end_year + max(lifetimes.values()) + 1))
+        df_base_depreciation = pd.DataFrame(index=range(start_year, end_year + int(max(lifetimes.values())) + 1))
+        df_depreciation = pd.DataFrame(index=range(start_year, end_year + int(max(lifetimes.values())) + 1))
 
         # База для расчета амортизации
         for column in columns_for_depreciation:
@@ -276,11 +315,12 @@ class FinancialEconomicModel:
                                   .apply(lambda x: 0.5 if x < 3 else 0.75 if x < 4 else 1))
             else:
                 logger.warning(f"Неверное значение Кг_номер группы: {Kg_group}")
-            # Ставка НДПИ в НДД с уч. Кг
-            # почему в расчете фиксированное значение - НДПИ на нефть для участков V группы НДД (при Кг=0,6)
+            # Ставка НДПИ в НДД с уч. Кг в ФЭМ фиксированное значение из макры
+            df_taxes['rate_add'] = df_taxes.apply(lambda row: 0 if row.Kg < 1 and (Kg_group == 1 or Kg_group == 2)
+                                                                else row.export_duty * row.dollar_exchange, axis=1)
             df_taxes['rate_mineral_extraction_tax_NDD_Kg'] = ((0.5 * (df_taxes.urals - 15) * 7.3)
-                                                              * df_taxes.dollar_exchange
-                                                              * df_taxes.Kg - df_taxes.export_duty).clip(lower=0)
+                                                              * df_taxes.dollar_exchange * df_taxes.Kg -
+                                                              df_taxes.rate_add).clip(lower=0)
             # НДПИ нефть
             df_taxes['mineral_extraction_tax'] = (df_taxes.Qo_yearly_for_sale
                                                   * df_taxes.rate_mineral_extraction_tax_NDD_Kg)
@@ -369,9 +409,11 @@ class FinancialEconomicModel:
         Qo_yearly = calculate_production_by_years(Qo, start_date, type='Qo')
         Ql_yearly = calculate_production_by_years(Ql, start_date, type='Ql')
         Qo_yearly_for_sale = self.calculate_Qo_yearly_for_sale(Qo_yearly)
+        APG_for_sale = self.calculate_APG_for_sale(Qo_yearly)
 
-        df_income = self.calculate_income_side(Qo_yearly_for_sale)
+        df_income = self.calculate_income_side(Qo_yearly_for_sale, APG_for_sale)
         df_OPEX = self.calculate_OPEX(Qo_yearly, Ql_yearly)
+        penalty_gas_flaring = self.calculate_penalty_gas_flaring(Qo_yearly)
         df_CAPEX = self.calculate_CAPEX(well_type, well_params, Qo_yearly)
 
         # Амортизация
@@ -382,7 +424,7 @@ class FinancialEconomicModel:
                                         method, **dict_NDD)
         # Показатели эффективности
         performance_indicators = calculate_performance_indicators(df_income, df_OPEX, df_CAPEX.CAPEX, df_taxes,
-                                                                  df_depreciation)
+                                                                  df_depreciation, penalty_gas_flaring)
         # Дисконтированные показатели
         discount_period = self.calculate_discount_period(performance_indicators.FCF)
         df_discounted_measures, PI, IRR, MIRR = self.calculate_discounted_measures(performance_indicators.FCF,
@@ -415,7 +457,7 @@ if __name__ == "__main__":
         list_zones = pickle.load(inp)
 
     # для консольного расчета экономики
-    FEM, method, dict_NDD = load_economy_data(path_economy, name_field)
+    FEM, method, dict_NDD = load_economy_data(path_economy, name_field, 66.6)
 
     # Для тестового расчета вытащим информацию по одной скважине
     project_well = list_zones[3].list_project_wells[4]
@@ -466,7 +508,7 @@ if __name__ == "__main__":
                     'cost_prod_well': 'Удельные затраты на 1 скв.СДФ (доб.)',
                     'workover_wellservice_cost': 'Удельные затраты на скважину КРС_ПРС (ТКРС)',
                     'cost_oil': 'OPEX нефть',
-                    'cost_fluid':  'OPEX жидкость',
+                    'cost_fluid': 'OPEX жидкость',
                     'ONVSS_cost': 'ОНСС',
                     'cost_production_drilling': 'Скважины (Бурение_ГС|ННС + ГРП_за 1 стадию * кол-во стадий)',
                     'cost_infrastructure': 'Обустройство (Обустройство + ВМР)',
@@ -474,14 +516,14 @@ if __name__ == "__main__":
                     'depreciation_cost_production_drilling': 'Амортизация Скважины',
                     'depreciation_cost_infrastructure': 'Амортизация Обустройство',
                     'depreciation_ONVSS_cost': 'Амортизация ОНСС',
-                    'depreciation'	: 'Амортизация сумма',
-                    'residual_cost'	: 'Остаточная стоимость',
-                    'base_property_tax'	: 'База для исчисления Налога на имущество',
+                    'depreciation': 'Амортизация сумма',
+                    'residual_cost': 'Остаточная стоимость',
+                    'base_property_tax': 'База для исчисления Налога на имущество',
                     'depreciation_income_tax_cost_production_drilling': 'Амортизация для Налога на прибыль (Скважины)',
                     'depreciation_income_tax_cost_infrastructure': 'Амортизация для Налога на прибыль (Обустройство)',
-                    'depreciation_income_tax_ONVSS_cost'	: 'Амортизация для Налога на прибыль (ОНСС)',
+                    'depreciation_income_tax_ONVSS_cost': 'Амортизация для Налога на прибыль (ОНСС)',
                     'depreciation_income_tax': 'Амортизация для Налога на прибыль (с учетом премии 30%)',
-			        'rate_mineral_extraction_tax': 'льготный НДПИ',
+                    'rate_mineral_extraction_tax': 'льготный НДПИ',
                     'rate_property_tax': 'Ставка налога на имущество',
                     'rate_profits_tax': 'Ставка налога на прибыль',
                     'rate_NDD_tax': 'Ставка НДД',
@@ -518,7 +560,6 @@ if __name__ == "__main__":
     # Сохранение материалов для экономиста
     filename = f"D:\Work\Programs_Python\Infill_drilling\other_files\ФЭМ\ФЭМ_Крайнее_2БС10_ВНС_3_5_{method}.xlsx"
     with (pd.ExcelWriter(filename) as writer):
-
         df_production.to_excel(writer, sheet_name='профиль')
         df_OPEX.to_excel(writer, sheet_name='OPEX')
         df_CAPEX.to_excel(writer, sheet_name='CAPEX')

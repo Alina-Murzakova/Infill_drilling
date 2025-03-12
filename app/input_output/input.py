@@ -6,7 +6,7 @@ from loguru import logger
 from shapely.geometry import Point, LineString
 
 from app.config import (columns_name, gpch_column_name, dict_work_marker, sample_data_wells, columns_name_frac,
-                        macroeconomics_rows_name, OPEX_rows_name, workover_wellservice_rows_name)
+                        macroeconomics_rows_name, OPEX_rows_name, workover_wellservice_rows_name, apg_rows_name)
 from app.economy.financial_model import FinancialEconomicModel
 
 
@@ -310,7 +310,7 @@ def load_geo_phys_properties(path_geo_phys_properties, name_field, name_object):
         list_properties = ['formation_compressibility', 'water_viscosity_in_situ',
                            'oil_viscosity_in_situ', 'oil_compressibility',
                            'water_compressibility', 'Bo', 'bubble_point_pressure',
-                           'oil_density_at_surf']
+                           'oil_density_at_surf', 'gas_oil_ratio']
         # для 'init_pressure' есть проверка при построении карты рисков, если оно 0,
         # то используется максимальное значение с карты
         for prop in list_properties:
@@ -325,7 +325,8 @@ def load_geo_phys_properties(path_geo_phys_properties, name_field, name_object):
 
 
 @logger.catch
-def load_economy_data(economy_path, name_field):
+def load_economy_data(economy_path, name_field, gor):
+    """ gor - газосодержание для расчета выручки с пнг, м3/т"""
     # Инициализируем необходимые переменные
     with pd.ExcelFile(economy_path) as xls:
         # коэффициенты Кв Кз Кд	Кдв	Ккан Кк	Кман Кабдт
@@ -333,7 +334,7 @@ def load_economy_data(economy_path, name_field):
         macroeconomics = pd.read_excel(xls, sheet_name="Макропараметры", header=3)  # Основная макра
 
         # месторождения с НДД
-        reservoirs_NDD = pd.read_excel(xls, sheet_name="МР с НДД", header=None).iloc[:, 0].values.tolist()
+        reservoirs_NDD = pd.read_excel(xls, sheet_name="МР с НДД")
 
         # OPEX
         df_opex = pd.read_excel(xls, sheet_name="Удельный OPEX", header=0)
@@ -346,6 +347,22 @@ def load_economy_data(economy_path, name_field):
 
         # CAPEX
         df_capex = pd.read_excel(xls, sheet_name="CAPEX", header=0)
+        # Определим цену одной стадии ГРП по массе пропанта
+        df_cost_GRP = pd.read_excel(xls, sheet_name="ГРП_цена", header=0)
+        # Интерполируем цену
+        cost_stage_GRP = np.interp(df_capex.iloc[7, 1], df_cost_GRP['Тонн'], df_cost_GRP['Цена за операцию ГРП, тыс '
+                                                                                         'руб. без НДС'])
+        df_capex.iloc[7, 1] = cost_stage_GRP
+        df_capex.iloc[7, 0] = 'Цена за 1 стадию ГРП, тыс руб'
+
+        # Уд_ОНВСС_бурение
+        df_ONVSS_cost_ed = pd.read_excel(xls, sheet_name="Уд_ОНВСС_бурение", header=0)
+        df_ONVSS_cost_ed = df_ONVSS_cost_ed[df_ONVSS_cost_ed['Месторождение'] == name_field]
+        if df_ONVSS_cost_ed.empty:
+            logger.error(f"В исходных данных ФЭМ нет Уд_ОНВСС_бурение по месторождению {name_field}")
+            return None
+        else:
+            ONVSS_cost_ed = df_ONVSS_cost_ed.iloc[0,1]
 
         # потери нефти
         df_oil_loss = pd.read_excel(xls, sheet_name="Нормативы потерь нефти", header=0)
@@ -366,9 +383,29 @@ def load_economy_data(economy_path, name_field):
         else:
             del df_workover_wellservice['Месторождение']
 
+        # Определим цену ПНГ в зависимости от КС
+        df_APG_CS = pd.read_excel(xls, sheet_name="ПНГ_КС", header=0)
+        df_APG_CS = df_APG_CS[df_APG_CS['Месторождение'] == name_field]
+        if df_APG_CS.shape[0] < 1:
+            logger.error(f"В исходных данных ФЭМ нет привязки месторождения {name_field} к КС")
+            return None
+        else:
+            price_APG = df_APG_CS['Цена ПНГ (макра)'].iloc[0]
+
+        # ПНГ
+        df_apg = pd.read_excel(xls, sheet_name="ПНГ", header=0)
+        df_apg = df_apg[df_apg['Месторождение'] == name_field]
+        if df_apg.shape[0] < 3:
+            logger.error(f"В исходных данных ФЭМ нет данных ПНГ по месторождению {name_field}")
+            return None
+        else:
+            del df_apg['Месторождение']
+
     # Подготовка файлов
     name_first_column = macroeconomics.columns[0]
     macroeconomics = macroeconomics.iloc[:, ~macroeconomics.columns.str.match('Unnamed').fillna(False)]
+    # Определим цену ПНГ в зависимости от КС
+    macroeconomics_rows_name[price_APG] = 'price_APG'
     macroeconomics = macroeconomics[macroeconomics[name_first_column].isin(macroeconomics_rows_name.keys())]
     macroeconomics.replace(macroeconomics_rows_name, inplace=True)
     macroeconomics = macroeconomics.fillna(method='ffill', axis=1).reset_index(drop=True)
@@ -382,9 +419,14 @@ def load_economy_data(economy_path, name_field):
     df_workover_wellservice.replace(workover_wellservice_rows_name, inplace=True)
     df_workover_wellservice = formatting_df_economy(df_workover_wellservice)
 
+    df_apg.replace(apg_rows_name, inplace=True)
+    df_apg = formatting_df_economy(df_apg)
+
+    if gor < 0:
+        gor = 300  # при отсутствии значения газосодержания в ГФХ
     FEM = FinancialEconomicModel(macroeconomics, constants,
-                                 df_opex, oil_loss, df_capex,
-                                 df_workover_wellservice)
+                                 df_opex, oil_loss, df_capex, ONVSS_cost_ed,
+                                 df_workover_wellservice, df_apg, gor)
 
     # Схема расчета налогов
     method = "НДПИ"
@@ -392,12 +434,11 @@ def load_economy_data(economy_path, name_field):
                 'cumulative_production': None,
                 'Kg_group': None}
 
-    if name_field in reservoirs_NDD:
+    if name_field in reservoirs_NDD['Месторождение'].values.tolist():
         method = "НДД"
-
-        initial_recoverable_reserves = constants.iloc[6, 1]
-        cumulative_production = constants.iloc[7, 1]
-        Kg_group = constants.iloc[5, 1]
+        initial_recoverable_reserves = constants.iloc[5, 1]
+        cumulative_production = constants.iloc[6, 1]
+        Kg_group = reservoirs_NDD[reservoirs_NDD['Месторождение'] == name_field]['Кг_номер группы'].iloc[0]
 
         dict_NDD = {'initial_recoverable_reserves': initial_recoverable_reserves,
                     'cumulative_production': cumulative_production,
@@ -432,6 +473,7 @@ def formatting_dict_geo_phys_properties(dict_geo_phys_properties):
     Bo - объемный коэффициент расширения нефти | м3/м3
     Pb - давление насыщения | МПа --> атм
     rho - плотность нефти | г/см3
+    gor - Газосодержание| м3/т
     """
     return {'reservoir_params': {'c_r': dict_geo_phys_properties['formation_compressibility'] / 100000,
                                  'P_init': dict_geo_phys_properties['init_pressure'] * 10,
@@ -442,7 +484,8 @@ def formatting_dict_geo_phys_properties(dict_geo_phys_properties):
                              'c_w': dict_geo_phys_properties['water_compressibility'] / 100000,
                              'Bo': dict_geo_phys_properties['Bo'],
                              'Pb': dict_geo_phys_properties['bubble_point_pressure'] * 10,
-                             'rho': dict_geo_phys_properties['oil_density_at_surf']}}
+                             'rho': dict_geo_phys_properties['oil_density_at_surf'],
+                             'gor': dict_geo_phys_properties['gas_oil_ratio']}}
 
 
 def create_shapely_types(data_wells, list_names):

@@ -108,7 +108,6 @@ def calculate_permeability_fact_wells(row, dict_parameters_coefficients):
         well_params['w_f'] = row['w_f']
         well_params['FracCount'] = row['FracCount']
     else:
-        # well_params = dict_parameters_coefficients['well_params']
         well_params['FracCount'] = check_FracCount(well_params['Type_Frac'],
                                                    well_params['length_FracStage'],
                                                    row['length_geo'])
@@ -120,10 +119,6 @@ def calculate_permeability_fact_wells(row, dict_parameters_coefficients):
     well_params['L'] = row['length_geo']
     well_params['Pwf'] = row['init_P_well_prod']
     well_params['r_e'] = row['r_eff_voronoy']
-    print(reservoir_params)
-    print(well_params)
-    print(fluid_params)
-    # well_params['r_e'] = 300
     if (row.init_Ql_rate_TR > 0 and row.init_P_well_prod > 0
             and row.init_P_reservoir_prod > 0 and row.init_P_reservoir_prod > row.init_P_well_prod):
         def error_function(k_h):

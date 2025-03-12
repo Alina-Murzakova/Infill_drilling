@@ -15,10 +15,10 @@ def calculate_depreciation_base(capex_series, lifetime):
     start_year = capex_series.index.min()
     end_year = capex_series.index.max()
 
-    depreciation_base = pd.Series(0, index=range(start_year, end_year + lifetime + 1))  # Создаем пустую серию
+    depreciation_base = pd.Series(0, index=range(start_year, end_year + int(lifetime) + 1))  # Создаем пустую серию
 
-    for year in range(start_year, end_year + lifetime + 1):
-        for age in range(lifetime + 1):  # 0 - текущий год, 1 - год назад и т.д.
+    for year in range(start_year, end_year + int(lifetime) + 1):
+        for age in range(int(lifetime) + 1):  # 0 - текущий год, 1 - год назад и т.д.
             contribution_year = year - age
             if contribution_year in capex_series.index:
                 if age == lifetime:
@@ -71,12 +71,12 @@ def calculate_production_by_years(production_by_month, start_date, type):
     return production_by_years
 
 
-def calculate_performance_indicators(income, OPEX, CAPEX, df_taxes, df_depreciation):
+def calculate_performance_indicators(income, OPEX, CAPEX, df_taxes, df_depreciation, penalty_gas_flaring):
     """ Расчет показателей эффективности: EBITDA, EBIT, NOPAT, OCF, FCF, Накопленный поток наличности"""
-    df_indicators = bring_arrays_to_one_date(income, OPEX, CAPEX, df_taxes, df_depreciation)
+    df_indicators = bring_arrays_to_one_date(income, OPEX, CAPEX, df_taxes, df_depreciation, penalty_gas_flaring)
     # EBITDA = Выручка - OPEX - НДПИ нефть - Налог на имущество - НДД
     df_indicators['EBITDA'] = (df_indicators.income - df_indicators.OPEX
-                               - df_indicators.taxes + df_indicators.profits_tax)
+                               - df_indicators.taxes + df_indicators.profits_tax - penalty_gas_flaring)
     # EBIT = EBITDA - Амортизация для Налога на прибыль (с учетом премии 30%)
     df_indicators['EBIT'] = df_indicators.EBITDA - df_indicators.depreciation_income_tax
     # NOPAT = EBIT - Налог на прибыль
