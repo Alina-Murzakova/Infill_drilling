@@ -315,7 +315,7 @@ def load_geo_phys_properties(path_geo_phys_properties, name_field, name_object):
         # то используется максимальное значение с карты
         for prop in list_properties:
             value = dict_geo_phys_properties_field[prop]
-            value_mean = df_geo_phys_properties_field_mean[prop]
+            value_mean = df_geo_phys_properties_field_mean[prop].iloc[0]
             if value <= 0:
                 if value_mean > 0:
                     dict_geo_phys_properties_field[prop] = value_mean

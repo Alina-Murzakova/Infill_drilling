@@ -9,7 +9,7 @@ from shapely.ops import unary_union, nearest_points
 from sklearn.cluster import KMeans
 
 
-def get_project_wells_from_clusters(name_cluster, polygon_map_rrr, gdf_clusters, data_wells, gdf_project_wells_all,
+def get_project_wells_from_clusters(name_cluster, polygon_OI, gdf_clusters, data_wells, gdf_project_wells_all,
                                     default_size_pixel, buffer_project_wells,
                                     threshold, k_wells, max_length, min_length):
     """Получаем GeoDataFrame с начальными координатами проектных скважин"""
@@ -60,7 +60,7 @@ def get_project_wells_from_clusters(name_cluster, polygon_map_rrr, gdf_clusters,
 
     # Смещаем, вращаем, сокращаем пересекающихся проектный фонд скважин, при наличии такового
     if not intersecting_proj_wells.empty:
-        update_and_shift_proj_wells(gdf_project, gdf_fact_wells, intersecting_proj_wells, polygon_map_rrr,
+        update_and_shift_proj_wells(gdf_project, gdf_fact_wells, intersecting_proj_wells, polygon_OI,
                                     default_size_pixel, buffer_project_wells, min_length)
         gdf_project = gdf_project[gdf_project['well_marker'] != 'удалить']
 
@@ -262,7 +262,7 @@ def compute_t1_t3_points(row):
     return Point(x1, y1), Point(x2, y2)
 
 
-def update_and_shift_proj_wells(gdf_project, gdf_fact_wells, intersecting_proj_wells, polygon_map_rrr, default_size_pixel,
+def update_and_shift_proj_wells(gdf_project, gdf_fact_wells, intersecting_proj_wells, polygon_OI, default_size_pixel,
                                 buffer_project_wells, min_length, step_length=0.1):
     """
     Функция поиска начального расположения проектных скважин без пересечений
@@ -298,11 +298,11 @@ def update_and_shift_proj_wells(gdf_project, gdf_fact_wells, intersecting_proj_w
         while not is_updated:
             # Двигаем проектную скважину
             new_position, is_updated = shift_project_well(proj_row, nearest_intersected_well, gdf_fact_wells,
-                                                          other_proj_wells, polygon_map_rrr, buffer_project_wells)
+                                                          other_proj_wells, polygon_OI, buffer_project_wells)
             # Вращаем проектную скважину, если решение не нашлось и она не ННС
             if not is_updated and proj_row['LINESTRING_pix'].length > 0:
                 new_position, is_updated = rotate_project_well(original_position, gdf_fact_wells,
-                                                               other_proj_wells, polygon_map_rrr, buffer_project_wells)
+                                                               other_proj_wells, polygon_OI, buffer_project_wells)
             # Удаление проектной скважины из-за невозможности расположить её
             if not is_updated and new_length == 0:
                 gdf_project.at[proj_idx, 'well_marker'] = 'удалить'
@@ -327,7 +327,7 @@ def update_and_shift_proj_wells(gdf_project, gdf_fact_wells, intersecting_proj_w
             gdf_project.at[proj_idx, 'length_pix'] = new_position.length
 
 
-def shift_project_well(proj_row, nearest_intersected_well, gdf_fact_wells, other_proj_wells, polygon_map_rrr,
+def shift_project_well(proj_row, nearest_intersected_well, gdf_fact_wells, other_proj_wells, polygon_OI,
                        buffer_project_wells, part_line_in=0.8, step_shift=1, max_attempts=100):
     """
     Сдвиг проектной скважины в указанном направлении
@@ -384,7 +384,7 @@ def shift_project_well(proj_row, nearest_intersected_well, gdf_fact_wells, other
                     (proj_row['convex_hull'].intersection(new_position).length < (
                             part_line_in * proj_row['length_pix'])) or
                     (not proj_row['convex_hull'].contains(new_position.centroid)) or
-                    not polygon_map_rrr.contains(new_position.buffer(buffer_project_wells))):
+                    not polygon_OI.contains(new_position.buffer(buffer_project_wells))):
                 Flag = False
                 break
 
@@ -392,13 +392,13 @@ def shift_project_well(proj_row, nearest_intersected_well, gdf_fact_wells, other
         if not (gdf_fact_wells['buffer'].intersects(new_position.buffer(buffer_project_wells)).any() or
                 other_proj_wells['buffer'].intersects(new_position.buffer(buffer_project_wells)).any()) and \
                 (proj_row['cluster'].intersection(new_position).length >= part_line_in * proj_row['length_pix']) and \
-                polygon_map_rrr.contains(new_position.buffer(buffer_project_wells)):
+                polygon_OI.contains(new_position.buffer(buffer_project_wells)):
             return new_position, True  # Сдвиг удался
 
     return original_position, False  # Сдвиг не удался
 
 
-def rotate_project_well(original_position, gdf_fact_wells, other_proj_wells, polygon_map_rrr, buffer_project_wells,
+def rotate_project_well(original_position, gdf_fact_wells, other_proj_wells, polygon_OI, buffer_project_wells,
                         max_angle=46, step_angle=5):
     """
     Поворот проектной скважины в интервале +45/-45 градусов
@@ -419,7 +419,7 @@ def rotate_project_well(original_position, gdf_fact_wells, other_proj_wells, pol
         # Если нет пересечений, то решение найдено
         if (not (gdf_fact_wells['buffer'].intersects(new_position.buffer(buffer_project_wells)).any() or
                  other_proj_wells['buffer'].intersects(new_position.buffer(buffer_project_wells)).any()) and
-                polygon_map_rrr.contains(new_position.buffer(buffer_project_wells))):
+                polygon_OI.contains(new_position.buffer(buffer_project_wells))):
             return new_position, True
 
         angle += step_angle

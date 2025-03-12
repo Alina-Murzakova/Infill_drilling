@@ -83,7 +83,8 @@ if __name__ == '__main__':
                                                                      data_wells=data_wells)
 
     map_rrr = maps[type_map_list.index('residual_recoverable_reserves')]
-    polygon_map_rrr = map_rrr.raster_to_polygon()
+    map_opportunity_index = maps[type_map_list.index('opportunity_index')]
+    polygon_OI = map_opportunity_index.raster_to_polygon()
     logger.info("Начальное размещение проектных скважин")
     well_params['buffer_project_wells'] = well_params['buffer_project_wells'] / default_size_pixel
 
@@ -92,7 +93,7 @@ if __name__ == '__main__':
     for drill_zone in list_zones:
         if drill_zone.rating != -1:
             gdf_project_wells = drill_zone.get_init_project_wells(map_rrr, data_wells, gdf_project_wells_all,
-                                                                  polygon_map_rrr, default_size_pixel,
+                                                                  polygon_OI, default_size_pixel,
                                                                   parameters_calculation['init_profit_cum_oil'],
                                                                   dict_parameters_coefficients)
             gdf_project_wells_all = pd.concat([gdf_project_wells_all, gdf_project_wells], ignore_index=True)

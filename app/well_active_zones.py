@@ -69,23 +69,23 @@ def well_effective_radius(row, default_radius, So_min, NUMBER_MONTHS=120, defaul
     if work_type_well == "prod":
         # Проверка на длительность работы
         if row['no_work_time'] > NUMBER_MONTHS:
-            return default_radius_inj
+            return default_radius
         else:
             cumulative_oil_prod = row.Qo_cumsum
             Bo = row.Bo
             ro_oil = row.rho
             R_eff = calc_r_eff(cumulative_oil_prod, Bo, ro_oil, eff_h, m, So, well_type, len_well, So_min)
-            if not R_eff or R_eff < default_radius_inj:
-                R_eff = default_radius_inj
+            if not R_eff or R_eff < default_radius:
+                R_eff = default_radius
             return R_eff
     elif work_type_well == "inj":
         if row['no_work_time'] > NUMBER_MONTHS:
-            return default_radius
+            return default_radius_inj
         else:
             cumulative_water_inj = row.Winj_cumsum
             R_eff = calc_r_eff(cumulative_water_inj, 1, 1, eff_h, m, So, well_type, len_well, So_min)
-            if not R_eff:
-                R_eff = default_radius
+            if not R_eff or R_eff < default_radius_inj:
+                R_eff = default_radius_inj
             return R_eff
 
 

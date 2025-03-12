@@ -105,6 +105,10 @@ class ProjectWell:
                                     ['permeability_fact'])
         if pd.isna(self.permeability):
             self.permeability = dict_parameters_coefficients['reservoir_params']['k_h']
+        # Пористость на случай если в зоне нет карты
+        # выбираем только те строки, где значение проницаемости больше 0 и не nan
+        self.m = np.mean(self.gdf_nearest_wells[(self.gdf_nearest_wells['m'] > 0) &
+                                                (self.gdf_nearest_wells['m'].notna())]['m'])
         # Если установлен flag water_cut_map = False (расчет обв-ти с окружения)
         if not dict_parameters_coefficients['well_params']['water_cut_map']:
             # Обводненность - Выбираем только те скважины, которые остановлены не более 10 лет назад
@@ -120,7 +124,10 @@ class ProjectWell:
                           self.POINT_T3_pix.x, self.POINT_T3_pix.y, self.length_pix)
         self.P_reservoir = get_value_map(*list_arguments, raster=maps[type_map_list.index('pressure')])
         self.NNT = get_value_map(*list_arguments, raster=maps[type_map_list.index('NNT')])
-        self.m = get_value_map(*list_arguments, raster=maps[type_map_list.index('porosity')])
+        # !!! Если в зоне нет карты пористости, то берется с окружения.
+        # Либо изначально в OI добавить фильтр в т.ч. по пористости
+        if get_value_map(*list_arguments, raster=maps[type_map_list.index('porosity')]) != 0:
+            self.m = get_value_map(*list_arguments, raster=maps[type_map_list.index('porosity')])
         self.So = get_value_map(*list_arguments, raster=maps[type_map_list.index('initial_oil_saturation')])
         if pd.isna(self.water_cut):
             self.water_cut = get_value_map(*list_arguments, raster=maps[type_map_list.index('water_cut')])

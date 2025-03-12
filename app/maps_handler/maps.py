@@ -188,23 +188,25 @@ class Map:
                 x_zone = zone.x_coordinates
                 y_zone = zone.y_coordinates
                 plt.scatter(x_zone, y_zone, color=c, alpha=0.6, s=1)
-                plt.text(x_zone[int(len(x_zone) / 2)], y_zone[int(len(x_zone) / 2)], i, fontsize=font_size * 2,
-                         color='red')
+                if len(x_zone) != 0:
+                    plt.text(x_zone[int(len(x_zone) / 2)], y_zone[int(len(x_zone) / 2)], i, fontsize=font_size * 2,
+                             color='red')
 
                 if i != -1:
                     #  Отрисовка проектного фонда
                     if project_wells:
                         for well in zone.list_project_wells:
-                            # координаты скважин в пиксельных координатах
-                            x_t1, y_t1 = (well.POINT_T1_pix.x, well.POINT_T1_pix.y)
-                            x_t3, y_t3 = (well.POINT_T3_pix.x, well.POINT_T3_pix.y)
+                            if well.init_Qo_rate > 0:
+                                # координаты скважин в пиксельных координатах
+                                x_t1, y_t1 = (well.POINT_T1_pix.x, well.POINT_T1_pix.y)
+                                x_t3, y_t3 = (well.POINT_T3_pix.x, well.POINT_T3_pix.y)
 
-                            # Отображение скважин на карте
-                            plt.plot([x_t1, x_t3], [y_t1, y_t3], c='red', linewidth=element_size * 0.3)
-                            plt.scatter(x_t1, y_t1, s=element_size, c='red', marker="o", linewidths=0.1)
+                                # Отображение скважин на карте
+                                plt.plot([x_t1, x_t3], [y_t1, y_t3], c='red', linewidth=element_size * 0.3)
+                                plt.scatter(x_t1, y_t1, s=element_size, c='red', marker="o", linewidths=0.1)
 
-                            # Отображение имен скважин рядом с точками T1
-                            plt.text(x_t1 + 3, y_t1 - 3, well.well_number, fontsize=font_size, ha='left')
+                                # Отображение имен скважин рядом с точками T1
+                                plt.text(x_t1 + 3, y_t1 - 3, well.well_number, fontsize=font_size, ha='left')
 
             if info_clusterization_zones is not None:
                 title = (f"Epsilon = {info_clusterization_zones['epsilon']}\n "

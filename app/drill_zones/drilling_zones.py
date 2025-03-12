@@ -51,7 +51,7 @@ class DrillZone:
         pass
 
     @logger.catch
-    def get_init_project_wells(self, map_rrr, data_wells, gdf_project_wells_all, polygon_map_rrr, default_size_pixel,
+    def get_init_project_wells(self, map_rrr, data_wells, gdf_project_wells_all, polygon_OI, default_size_pixel,
                                init_profit_cum_oil, dict_parameters):
         """Расчет количества проектных скважин в перспективной зоне"""
         # Инициализация параметров
@@ -83,7 +83,7 @@ class DrillZone:
             gdf_clusters = create_gdf_with_polygons((self.x_coordinates, self.y_coordinates), labels)
 
             logger.info("Получение GeoDataFrame с проектными скважинами из кластеров")
-            gdf_project_wells = get_project_wells_from_clusters(self.rating, polygon_map_rrr, gdf_clusters, data_wells,
+            gdf_project_wells = get_project_wells_from_clusters(self.rating, polygon_OI, gdf_clusters, data_wells,
                                                                 gdf_project_wells_all, default_size_pixel,
                                                                 buffer_project_wells,
                                                                 threshold, k_wells,

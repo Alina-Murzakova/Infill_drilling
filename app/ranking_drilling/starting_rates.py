@@ -102,13 +102,13 @@ def calculate_permeability_fact_wells(row, dict_parameters_coefficients):
     reservoir_params = dict_parameters_coefficients['reservoir_params']
     fluid_params = dict_parameters_coefficients['fluid_params']
     coefficients = dict_parameters_coefficients['coefficients']
+    well_params = copy.deepcopy(dict_parameters_coefficients['well_params'])
     if dict_parameters_coefficients['well_params']['switch_avg_frac_params']:
-        well_params = copy.deepcopy(dict_parameters_coefficients['well_params'])
         well_params['xfr'] = row['xfr']
         well_params['w_f'] = row['w_f']
         well_params['FracCount'] = row['FracCount']
     else:
-        well_params = dict_parameters_coefficients['well_params']
+        # well_params = dict_parameters_coefficients['well_params']
         well_params['FracCount'] = check_FracCount(well_params['Type_Frac'],
                                                    well_params['length_FracStage'],
                                                    row['length_geo'])
@@ -120,6 +120,9 @@ def calculate_permeability_fact_wells(row, dict_parameters_coefficients):
     well_params['L'] = row['length_geo']
     well_params['Pwf'] = row['init_P_well_prod']
     well_params['r_e'] = row['r_eff_voronoy']
+    print(reservoir_params)
+    print(well_params)
+    print(fluid_params)
     # well_params['r_e'] = 300
     if (row.init_Ql_rate_TR > 0 and row.init_P_well_prod > 0
             and row.init_P_reservoir_prod > 0 and row.init_P_reservoir_prod > row.init_P_well_prod):
@@ -155,9 +158,12 @@ def get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients, swi
     ----------
     switch - фильтрация выбросов по статистике в массиве фактических проницаемостей
     """
-    data_wells_for_perm = data_wells[(data_wells['init_Ql_rate_TR'] > 0) & (data_wells['init_P_well_prod'] > 0) &
-                                     (data_wells['init_P_reservoir_prod'] > 0) &
-                                     (data_wells['init_P_reservoir_prod'] > data_wells['init_P_well_prod'])].copy()
+    data_wells_for_perm = data_wells[(data_wells['m'] > 0) & (data_wells['NNT'] > 0)].copy()
+    data_wells_for_perm = data_wells_for_perm[(data_wells_for_perm['init_Ql_rate_TR'] > 0) &
+                                              (data_wells_for_perm['init_P_well_prod'] > 0) &
+                                              (data_wells_for_perm['init_P_reservoir_prod'] > 0) &
+                                              (data_wells_for_perm['init_P_reservoir_prod'] >
+                                               data_wells_for_perm['init_P_well_prod'])]  # .copy()
     data_wells_for_perm['permeability_fact'] = data_wells_for_perm.apply(calculate_permeability_fact_wells,
                                                                          args=(dict_parameters_coefficients,),
                                                                          axis=1)
@@ -170,7 +176,8 @@ def get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients, swi
         # Верхняя граница для фильтрации выбросов (метод IQR)
         permeability_upper_bound = apply_iqr_filter(data_wells, name_column='permeability_fact')
         data_wells['permeability_fact'] = np.where(data_wells['permeability_fact'] > permeability_upper_bound,
-                                                   permeability_upper_bound, data_wells['permeability_fact'])  # 0 или permeability_upper_bound
+                                                   permeability_upper_bound,
+                                                   data_wells['permeability_fact'])  # 0 или permeability_upper_bound
     avg_permeability = data_wells[data_wells['permeability_fact'] != 0]['permeability_fact'].mean()
     # Перезапись значения проницаемости по объекту из ГФХ на среднюю по фактическому фонду
     dict_parameters_coefficients['reservoir_params']['k_h'] = avg_permeability
