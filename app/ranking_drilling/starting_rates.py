@@ -102,13 +102,12 @@ def calculate_permeability_fact_wells(row, dict_parameters_coefficients):
     reservoir_params = dict_parameters_coefficients['reservoir_params']
     fluid_params = dict_parameters_coefficients['fluid_params']
     coefficients = dict_parameters_coefficients['coefficients']
+    well_params = copy.deepcopy(dict_parameters_coefficients['well_params'])
     if dict_parameters_coefficients['well_params']['switch_avg_frac_params']:
-        well_params = copy.deepcopy(dict_parameters_coefficients['well_params'])
         well_params['xfr'] = row['xfr']
         well_params['w_f'] = row['w_f']
         well_params['FracCount'] = row['FracCount']
     else:
-        well_params = dict_parameters_coefficients['well_params']
         well_params['FracCount'] = check_FracCount(well_params['Type_Frac'],
                                                    well_params['length_FracStage'],
                                                    row['length_geo'])
