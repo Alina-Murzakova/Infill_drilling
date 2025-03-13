@@ -350,10 +350,10 @@ def load_economy_data(economy_path, name_field, gor):
         # Определим цену одной стадии ГРП по массе пропанта
         df_cost_GRP = pd.read_excel(xls, sheet_name="ГРП_цена", header=0)
         # Интерполируем цену
-        cost_stage_GRP = np.interp(df_capex.iloc[7, 1], df_cost_GRP['Тонн'], df_cost_GRP['Цена за операцию ГРП, тыс '
+        cost_stage_GRP = np.interp(df_capex.iloc[6, 1], df_cost_GRP['Тонн'], df_cost_GRP['Цена за операцию ГРП, тыс '
                                                                                          'руб. без НДС'])
-        df_capex.iloc[7, 1] = cost_stage_GRP
-        df_capex.iloc[7, 0] = 'Цена за 1 стадию ГРП, тыс руб'
+        df_capex.iloc[6, 1] = cost_stage_GRP
+        df_capex.iloc[6, 0] = 'Цена за 1 стадию ГРП, тыс руб'
 
         # Уд_ОНВСС_бурение
         df_ONVSS_cost_ed = pd.read_excel(xls, sheet_name="Уд_ОНВСС_бурение", header=0)
@@ -362,7 +362,7 @@ def load_economy_data(economy_path, name_field, gor):
             logger.error(f"В исходных данных ФЭМ нет Уд_ОНВСС_бурение по месторождению {name_field}")
             return None
         else:
-            ONVSS_cost_ed = df_ONVSS_cost_ed.iloc[0,1]
+            ONVSS_cost_ed = df_ONVSS_cost_ed.iloc[0, 1]
 
         # потери нефти
         df_oil_loss = pd.read_excel(xls, sheet_name="Нормативы потерь нефти", header=0)
@@ -429,7 +429,7 @@ def load_economy_data(economy_path, name_field, gor):
                                  df_workover_wellservice, df_apg, gor)
 
     # Схема расчета налогов
-    method = "НДПИ"
+    method = "ДНС"
     dict_NDD = {'initial_recoverable_reserves': None,
                 'cumulative_production': None,
                 'Kg_group': None}

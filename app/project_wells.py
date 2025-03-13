@@ -168,8 +168,8 @@ class ProjectWell:
         self.init_Ql_rate, self.init_Qo_rate = calculate_starting_rate(reservoir_params, fluid_params,
                                                                        well_params, coefficients,
                                                                        kv_kh, Swc, Sor, Fw, m1, Fo, m2, Bw)
-        logger.info(f"Для проектной скважины {self.well_number}: Q_liq = {self.init_Ql_rate},"
-                    f" Q_oil = {self.init_Qo_rate}")
+        logger.info(f"Для проектной скважины {self.well_number}: Q_liq = {round(self.init_Ql_rate, 2)},"
+                    f" Q_oil = {round(self.init_Qo_rate, 2)}")
         pass
 
     def get_production_profile(self, data_decline_rate_stat, period=25 * 12, day_in_month=29, well_efficiency=0.95):
@@ -180,8 +180,9 @@ class ProjectWell:
             list_nearest_wells = self.gdf_nearest_wells.well_number.unique()
             list_nearest_wells = np.append(list_nearest_wells, 'default_decline_rates')
             data_decline_rate_stat = data_decline_rate_stat[data_decline_rate_stat.well_number.isin(list_nearest_wells)]
+            logger.info(f"Оценка темпа падения для проектной скважины {self.well_number}")
             self.decline_rates = get_avg_decline_rates(data_decline_rate_stat, self.init_Ql_rate, self.init_Qo_rate)
-            # Восстанавливаем профиль для проектной скважины
+            logger.info(f"Восстанавливаем профиль для проектной скважины {self.well_number}")
             model_arps_ql = self.decline_rates[0]
             model_arps_qo = self.decline_rates[1]
 
@@ -198,7 +199,7 @@ class ProjectWell:
 
     def calculate_reserves(self, map_rrr, gdf_mesh, mesh_pixel):
         """Расчет ОИЗ проектной скважины, тыс.т"""
-
+        logger.info(f"Расчет ОИЗ для проектной скважины {self.well_number}")
         # Создаем буфер вокруг скважины
         buffer = self.LINESTRING_geo.buffer(self.r_eff)
 
@@ -209,6 +210,7 @@ class ProjectWell:
         pass
 
     def calculate_economy(self, FEM, well_params, method, dict_NDD):
+        logger.info(f"Расчет экономики для проектной скважины {self.well_number}")
         start_date = well_params['start_date']
         self.CAPEX, self.OPEX, self.cumulative_cash_flow, self.NPV, self.PVI, self.PI = (
             FEM.calculate_economy_well(self.Qo, self.Ql, start_date, self.well_type, well_params, method, dict_NDD))

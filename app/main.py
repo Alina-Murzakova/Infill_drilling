@@ -117,7 +117,7 @@ if __name__ == '__main__':
             drill_zone.calculate_economy(FEM, well_params, method_taxes, dict_NDD)
 
     logger.info(f"Выгрузка данных расчета:")
-    upload_data(save_directory, data_wells, maps, list_zones, info_clusterization_zones, FEM, method_taxes,
-                **{**load_data_param, **well_params})
+    upload_data(name_field, name_object, save_directory, data_wells, maps, list_zones, info_clusterization_zones, FEM,
+                method_taxes, **{**load_data_param, **well_params})
 
     data_wells['Soil'] = data_wells.apply(calculate_Sw, args=(dict_parameters_coefficients,), axis=1)

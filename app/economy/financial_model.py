@@ -1,7 +1,6 @@
 import os
 import pandas as pd
 import numpy as np
-import xlwings as xw
 
 from loguru import logger
 
@@ -75,9 +74,9 @@ class FinancialEconomicModel:
         self.cost_production_drilling_vertical = df_capex.iloc[5, 1]
         self.cost_stage_GRP = df_capex.iloc[6, 1]
 
-        self.lifetime_well = df_capex.iloc[7, 1]
-        self.lifetime_ONVSS = df_capex.iloc[8, 1]
-        self.lifetime_infrastructure = df_capex.iloc[9, 1]
+        self.lifetime_well = int(df_capex.iloc[7, 1])
+        self.lifetime_ONVSS = int(df_capex.iloc[8, 1])
+        self.lifetime_infrastructure = int(df_capex.iloc[9, 1])
 
         # Дополнительные данные для расчета
         self.oil_loss = oil_loss['oil_loss']
@@ -124,7 +123,7 @@ class FinancialEconomicModel:
 
     def calculate_APG_for_sale(self, Qo_yearly):
         """
-         Добыча ПНГ по годам с вычетом потерь, тыс. т
+         Добыча ПНГ по годам с вычетом потерь, млн. т
         :param Qo_yearly: добыча нефти по годам, тыс. т
         """
         df_APG_for_sale = bring_arrays_to_one_date(Qo_yearly, self.apg_utilization, self.gas_loss)
@@ -218,7 +217,7 @@ class FinancialEconomicModel:
         df_base_depreciation = pd.DataFrame(index=range(start_year, end_year + int(max(lifetimes.values())) + 1))
         df_depreciation = pd.DataFrame(index=range(start_year, end_year + int(max(lifetimes.values())) + 1))
 
-        # База для расчета амортизации
+        # logger.info("База для расчета амортизации")
         for column in columns_for_depreciation:
             series_base_depreciation = calculate_depreciation_base(df_CAPEX[column], lifetimes[column])
             series_base_depreciation.name = column
@@ -232,14 +231,14 @@ class FinancialEconomicModel:
         df_depreciation['depreciation'] = df_depreciation.sum(axis=1)
         df_depreciation = df_depreciation.join(df_CAPEX).fillna(0)
 
-        # Остаточная стоимость
+        # logger.info("Остаточная стоимость")
         df_depreciation['residual_cost'] = df_depreciation.CAPEX.cumsum() - df_depreciation.depreciation.cumsum()
 
-        # База для исчисления Налога на имущество
+        # logger.info("База для исчисления Налога на имущество")
         df_depreciation['base_property_tax'] = df_depreciation['residual_cost'].rolling(window=2).mean()
         df_depreciation['base_property_tax'].iloc[0] = df_depreciation['residual_cost'].iloc[0]
 
-        # Амортизация для Налога на прибыль (с учетом премии 30%)
+        # logger.info("Амортизация для Налога на прибыль (с учетом премии 30%)")
         for column in columns_for_depreciation:
             series_depreciation = df_depreciation[column] * 0.3 + (df_base_depreciation[column] * 0.7).apply(
                 linear_depreciation, args=(0, lifetimes[column],))
@@ -266,7 +265,7 @@ class FinancialEconomicModel:
         """
         Расчет общей суммы налогов по схеме НДД или просто льготный НДПИ, тыс. руб.
         :param Qo_yearly: Добыча нефти по годам, тыс. т
-        :param method: "НДПИ" или "НДД"
+        :param method: "ДНС" или "НДД"
         :param df_depreciation: фрейм Амортизации
         """
         df_taxes = bring_arrays_to_one_date(Qo_yearly, df_depreciation, income, OPEX, CAPEX,
@@ -279,7 +278,7 @@ class FinancialEconomicModel:
         # Налог на имущество
         df_taxes['property_tax'] = df_taxes.base_property_tax * df_taxes.rate_property_tax
 
-        if method == "НДПИ":
+        if method == "ДНС":
             # НДПИ нефть
             df_taxes['mineral_extraction_tax'] = (df_taxes.Qo_yearly_for_sale * df_taxes.rate_mineral_extraction_tax)
             # База для налога на прибыль без учета переноса убытков
@@ -405,27 +404,30 @@ class FinancialEconomicModel:
         -------
         [CAPEX, OPEX, Накопленный поток наличности, NPV, PVI, PI]
         """
-        # Сведение добычи по годам
+        # logger.info("Сведение добычи по годам")
         Qo_yearly = calculate_production_by_years(Qo, start_date, type='Qo')
         Ql_yearly = calculate_production_by_years(Ql, start_date, type='Ql')
         Qo_yearly_for_sale = self.calculate_Qo_yearly_for_sale(Qo_yearly)
         APG_for_sale = self.calculate_APG_for_sale(Qo_yearly)
-
+        # logger.info("income")
         df_income = self.calculate_income_side(Qo_yearly_for_sale, APG_for_sale)
+        # logger.info("OPEX")
         df_OPEX = self.calculate_OPEX(Qo_yearly, Ql_yearly)
+        # logger.info("penalty_gas_flaring")
         penalty_gas_flaring = self.calculate_penalty_gas_flaring(Qo_yearly)
+        # logger.info("CAPEX")
         df_CAPEX = self.calculate_CAPEX(well_type, well_params, Qo_yearly)
 
-        # Амортизация
+        # logger.info("Амортизация")
         df_depreciation = self.calculate_depreciation(df_CAPEX)
 
-        # Налоги
+        # logger.info("Налоги")
         df_taxes = self.calculate_taxes(Qo_yearly, df_depreciation, df_income, df_OPEX, df_CAPEX.CAPEX,
                                         method, **dict_NDD)
-        # Показатели эффективности
+        # logger.info("Показатели эффективности")
         performance_indicators = calculate_performance_indicators(df_income, df_OPEX, df_CAPEX.CAPEX, df_taxes,
                                                                   df_depreciation, penalty_gas_flaring)
-        # Дисконтированные показатели
+        # logger.info("Дисконтированные показатели")
         discount_period = self.calculate_discount_period(performance_indicators.FCF)
         df_discounted_measures, PI, IRR, MIRR = self.calculate_discounted_measures(performance_indicators.FCF,
                                                                                    df_CAPEX.CAPEX,
@@ -458,9 +460,10 @@ if __name__ == "__main__":
 
     # для консольного расчета экономики
     FEM, method, dict_NDD = load_economy_data(path_economy, name_field, 66.6)
+    method = 'ДНС'
 
     # Для тестового расчета вытащим информацию по одной скважине
-    project_well = list_zones[3].list_project_wells[4]
+    project_well = list_zones[0].list_project_wells[0]
 
     Qo = project_well.Qo
     Ql = project_well.Ql
@@ -469,19 +472,19 @@ if __name__ == "__main__":
     Qo_yearly = calculate_production_by_years(Qo, start_date, type='Qo')
     Ql_yearly = calculate_production_by_years(Ql, start_date, type='Ql')
     Qo_yearly_for_sale = FEM.calculate_Qo_yearly_for_sale(Qo_yearly)
+    APG_for_sale = FEM.calculate_APG_for_sale(Qo_yearly)
+    penalty_gas_flaring = FEM.calculate_penalty_gas_flaring(Qo_yearly)
 
-    df_production = bring_arrays_to_one_date(Qo_yearly, Ql_yearly, Qo_yearly_for_sale)
-    df_production.column = ['добыча нефти, тыс. т', 'добыча жидкости, тыс. т', 'нефть товарная, тыс. т']
+    df_production = bring_arrays_to_one_date(Qo_yearly, Ql_yearly, Qo_yearly_for_sale, APG_for_sale, penalty_gas_flaring)
 
     df_OPEX = FEM.calculate_OPEX(Qo_yearly, Ql_yearly)
     df_CAPEX = FEM.calculate_CAPEX(project_well, well_params, Qo_yearly)
-    df_income = FEM.calculate_income_side(Qo_yearly_for_sale)
+    df_income = FEM.calculate_income_side(Qo_yearly_for_sale, APG_for_sale)
 
     # Амортизация
     df_depreciation = FEM.calculate_depreciation(df_CAPEX)
 
     # Налоги
-    # method = "НДПИ"
     df_taxes = FEM.calculate_taxes(Qo_yearly,
                                    df_depreciation[['depreciation', 'base_property_tax', 'depreciation_income_tax']],
                                    df_income.income, df_OPEX.OPEX, df_CAPEX.CAPEX, method, **dict_NDD)
@@ -490,7 +493,7 @@ if __name__ == "__main__":
     performance_indicators = calculate_performance_indicators(df_income.income, df_OPEX.OPEX, df_CAPEX.CAPEX,
                                                               df_taxes[['taxes', 'profits_tax']],
                                                               df_depreciation[['depreciation', 'base_property_tax',
-                                                                               'depreciation_income_tax']])
+                                                                               'depreciation_income_tax']], penalty_gas_flaring)
 
     # Дисконтированные показатели
     discount_period = FEM.calculate_discount_period(performance_indicators.FCF)
@@ -503,6 +506,8 @@ if __name__ == "__main__":
     dict_columns = {'Qo_yearly': 'добыча нефти, тыс. т',
                     'Ql_yearly': 'добыча жидкости, тыс. т',
                     'Qo_yearly_for_sale': 'нефть товарная, тыс. т',
+                    'APG_for_sale': 'Добыча ПНГ по годам с вычетом потерь, млн. т',
+                    'penalty_gas_flaring': 'штрафы за сжигание',
                     'unit_costs_oil': 'Удельные затраты на 1 тонну нефти',
                     'unit_cost_fluid': 'Удельные затраты на 1 тонну жидкости',
                     'cost_prod_well': 'Удельные затраты на 1 скв.СДФ (доб.)',

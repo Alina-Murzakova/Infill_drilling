@@ -13,7 +13,8 @@ from app.maps_handler.maps import read_array
 
 
 @logger.catch
-def upload_data(save_directory, data_wells, maps, list_zones, info_clusterization_zones, FEM, method_taxes, **kwargs):
+def upload_data(name_field, name_object, save_directory, data_wells, maps, list_zones, info_clusterization_zones,
+                FEM, method_taxes, **kwargs):
     """Выгрузка данных после расчета"""
     type_map_list = list(map(lambda raster: raster.type_map, maps))
 
@@ -53,7 +54,7 @@ def upload_data(save_directory, data_wells, maps, list_zones, info_clusterizatio
     map_residual_recoverable_reserves.save_img(f"{save_directory}/карта ОИЗ с ПФ.png", data_wells,
                                                list_zones, info_clusterization_zones, project_wells=True)
     logger.info("Сохранение рейтинга бурения проектных скважин в формате .xlsx")
-    save_ranking_drilling_to_excel(list_zones, f"{save_directory}/рейтинг_бурения.xlsx")
+    save_ranking_drilling_to_excel(name_field, name_object, list_zones, f"{save_directory}/рейтинг_бурения_{name_field}_{name_object}.xlsx")
 
     logger.info("Сохранение pickle файлов")
     with open(f'{save_directory}/data_wells.pickle', 'wb') as file:
@@ -181,7 +182,7 @@ def create_new_dir(path: str) -> None:
     return
 
 
-def save_ranking_drilling_to_excel(list_zones, filename):
+def save_ranking_drilling_to_excel(name_field, name_object, list_zones, filename):
     gdf_result_ranking_drilling = gpd.GeoDataFrame()
     dict_project_wells_Qo, dict_project_wells_Ql = {}, {}
     dict_project_wells_Qo_rate, dict_project_wells_Ql_rate = {}, {}
@@ -191,7 +192,9 @@ def save_ranking_drilling_to_excel(list_zones, filename):
         if drill_zone.rating != -1:
             # gdf_project_wells = gpd.GeoDataFrame([well.__dict__ for well in drill_zone.list_project_wells])
             gdf_project_wells_ranking_drilling = gpd.GeoDataFrame(
-                {'№ скважины': [well.well_number for well in drill_zone.list_project_wells],
+                {'Месторождение': [name_field] * len(drill_zone.list_project_wells),
+                 'Объект': [name_object] * len(drill_zone.list_project_wells),
+                 '№ скважины': [well.well_number for well in drill_zone.list_project_wells],
                  'Координата_T1_x': [round(well.POINT_T1_geo.x, 0) for well in drill_zone.list_project_wells],
                  'Координата_T1_y': [round(well.POINT_T1_geo.y, 0) for well in drill_zone.list_project_wells],
                  'Координата_T3_x': [round(well.POINT_T3_geo.x, 0) for well in drill_zone.list_project_wells],

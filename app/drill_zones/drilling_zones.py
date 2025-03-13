@@ -8,6 +8,7 @@ from shapely import Point, LineString
 
 from app.drill_zones.init_project_wells import get_project_wells_from_clusters
 from app.maps_handler.functions import apply_wells_mask
+from app.maps_handler.maps import Map
 from app.project_wells import ProjectWell
 from app.drill_zones.init_project_wells import create_gdf_with_polygons, clusterize_drill_zone
 
@@ -153,6 +154,7 @@ class DrillZone:
 
     def get_production_profile(self):
         """ Расчет атрибутов профилей зоны"""
+        logger.info(f"Расчет атрибутов профилей зоны {self.rating}")
         for project_well in self.list_project_wells:
             if self.Qo_rate is None:
                 self.Qo_rate = project_well.Qo_rate.copy()
@@ -185,6 +187,7 @@ class DrillZone:
 
     def get_economic_profile(self):
         """ Расчет экономических атрибутов зоны"""
+        logger.info(f"Расчет экономических атрибутов зоны {self.rating}")
         for project_well in self.list_project_wells:
             if self.cumulative_cash_flow is None:
                 self.cumulative_cash_flow = project_well.cumulative_cash_flow.copy()
@@ -273,8 +276,11 @@ def clusterization_zones(map_opportunity_index, epsilon, min_samples, percent_lo
     labels = sorted(list(set(dbscan.labels_)))
 
     # Создание параметра по которому будет произведена сортировка кластеров // среднее значение индекса в кластере
-    mean_indexes = list(map(lambda label: np.mean(Z[np.where(dbscan.labels_ == label)]), labels[1:]))
-    mean_indexes = pd.DataFrame({"labels": labels[1:], "mean_indexes": mean_indexes})
+    position = 0
+    if -1 in labels:
+        position = 1
+    mean_indexes = list(map(lambda label: np.mean(Z[np.where(dbscan.labels_ == label)]), labels[position:]))
+    mean_indexes = pd.DataFrame({"labels": labels[position:], "mean_indexes": mean_indexes})
     mean_indexes = mean_indexes.sort_values(by=['mean_indexes'], ascending=False).reset_index(drop=True)
     # Добавление не кластеризованных точек
     mean_indexes.loc[len(mean_indexes)] = [-1, 0]
