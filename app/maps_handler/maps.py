@@ -322,7 +322,7 @@ def read_array(data_wells, name_column_map, type_map, geo_transform, size,
                                                              data_wells_with_work["length_geo"],
                                                              data_wells_with_work[name_column_map])
             data_wells_with_work[name_column_map] = data_wells_with_work.groupby('well_type')[
-                name_column_map].transform(lambda x: (x - x.min()) / (x.max() - x.min()))
+                name_column_map].transform(lambda x: (x - x.min()) / (x.max() - x.min()) if len(x) > 1 else 1)
 
         """Обработка колонок last_rate_oil и init_rate_oil через коэффициент
         NNS_mean_init_Ql = data_wells[(data_wells['init_Ql_rate'] != 0) &

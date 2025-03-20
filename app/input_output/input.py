@@ -6,8 +6,10 @@ from loguru import logger
 from shapely.geometry import Point, LineString
 
 from app.config import (columns_name, gpch_column_name, dict_work_marker, sample_data_wells, columns_name_frac,
-                        macroeconomics_rows_name, OPEX_rows_name, workover_wellservice_rows_name, apg_rows_name)
+                        macroeconomics_rows_name, OPEX_rows_name, workover_wellservice_rows_name, apg_rows_name,
+                        df_NDPI_NDD)
 from app.economy.financial_model import FinancialEconomicModel
+from app.economy.functions import calculation_Kg
 
 
 @logger.catch
@@ -401,11 +403,33 @@ def load_economy_data(economy_path, name_field, gor):
         else:
             del df_apg['Месторождение']
 
+        # Схема расчета налогов
+    method = "ДНС"
+    dict_NDD = {'initial_recoverable_reserves': None,
+                'cumulative_production': None,
+                'Kg_group': None}
+
+    name_row_NDPI_NDD = None
+    if name_field in reservoirs_NDD['Месторождение'].values.tolist():
+        method = "НДД"
+        initial_recoverable_reserves = constants.iloc[5, 1]
+        cumulative_production = constants.iloc[6, 1]
+        Kg_group = reservoirs_NDD[reservoirs_NDD['Месторождение'] == name_field]['Кг_номер группы'].iloc[0]
+
+        dict_NDD = {'initial_recoverable_reserves': initial_recoverable_reserves,
+                    'cumulative_production': cumulative_production,
+                    'Kg_group': Kg_group}
+
+        Kg = calculation_Kg(Kg_group, pd.Series(cumulative_production/initial_recoverable_reserves)).values[0]
+        row_NDPI_NDD = df_NDPI_NDD[2]
+        name_row_NDPI_NDD = row_NDPI_NDD[row_NDPI_NDD.index <= Kg].iloc[-1]
+
     # Подготовка файлов
     name_first_column = macroeconomics.columns[0]
     macroeconomics = macroeconomics.iloc[:, ~macroeconomics.columns.str.match('Unnamed').fillna(False)]
     # Определим цену ПНГ в зависимости от КС
     macroeconomics_rows_name[price_APG] = 'price_APG'
+    macroeconomics_rows_name[name_row_NDPI_NDD] = 'NDPI_NDD'
     macroeconomics = macroeconomics[macroeconomics[name_first_column].isin(macroeconomics_rows_name.keys())]
     macroeconomics.replace(macroeconomics_rows_name, inplace=True)
     macroeconomics = macroeconomics.fillna(method='ffill', axis=1).reset_index(drop=True)
@@ -427,23 +451,6 @@ def load_economy_data(economy_path, name_field, gor):
     FEM = FinancialEconomicModel(macroeconomics, constants,
                                  df_opex, oil_loss, df_capex, ONVSS_cost_ed,
                                  df_workover_wellservice, df_apg, gor)
-
-    # Схема расчета налогов
-    method = "ДНС"
-    dict_NDD = {'initial_recoverable_reserves': None,
-                'cumulative_production': None,
-                'Kg_group': None}
-
-    if name_field in reservoirs_NDD['Месторождение'].values.tolist():
-        method = "НДД"
-        initial_recoverable_reserves = constants.iloc[5, 1]
-        cumulative_production = constants.iloc[6, 1]
-        Kg_group = reservoirs_NDD[reservoirs_NDD['Месторождение'] == name_field]['Кг_номер группы'].iloc[0]
-
-        dict_NDD = {'initial_recoverable_reserves': initial_recoverable_reserves,
-                    'cumulative_production': cumulative_production,
-                    'Kg_group': Kg_group}
-
     return FEM, method, dict_NDD
 
 

@@ -16,6 +16,8 @@ from app.maps_handler.maps import read_array
 def upload_data(name_field, name_object, save_directory, data_wells, maps, list_zones, info_clusterization_zones,
                 FEM, method_taxes, **kwargs):
     """Выгрузка данных после расчета"""
+    name_field = name_field.replace('/', "_")
+    name_object = name_object.replace('/', "_")
     type_map_list = list(map(lambda raster: raster.type_map, maps))
 
     dict_calculated_maps = {'residual_recoverable_reserves': "ОИЗ",
@@ -224,8 +226,8 @@ def save_ranking_drilling_to_excel(name_field, name_object, list_zones, filename
                  'Соседние скважины': [well.gdf_nearest_wells.well_number.unique() for
                                        well in drill_zone.list_project_wells],
                  'PI (Рентабельный период)': [well.PI for well in drill_zone.list_project_wells],
-                 'NPV (Рентабельный период), тыс.руб.': [round(np.sum(well.NPV[well.NPV > 0])) for well in drill_zone.list_project_wells]
-                 }
+                 'NPV (Рентабельный период), тыс.руб.': [round(np.sum(well.NPV[well.NPV > 0])) for well in drill_zone.list_project_wells],
+                 'ГЭП': [well.year_economic_limit for well in drill_zone.list_project_wells]}
             )
             gdf_result_ranking_drilling = pd.concat([gdf_result_ranking_drilling,
                                                      gdf_project_wells_ranking_drilling], ignore_index=True)

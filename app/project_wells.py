@@ -55,6 +55,7 @@ class ProjectWell:
         self.NPV = None
         self.PVI = None
         self.PI = None
+        self.year_economic_limit = None
 
     def get_nearest_wells(self, df_wells, threshold, k=5):
         """
@@ -212,7 +213,7 @@ class ProjectWell:
     def calculate_economy(self, FEM, well_params, method, dict_NDD):
         logger.info(f"Расчет экономики для проектной скважины {self.well_number}")
         start_date = well_params['start_date']
-        self.CAPEX, self.OPEX, self.cumulative_cash_flow, self.NPV, self.PVI, self.PI = (
+        self.CAPEX, self.OPEX, self.cumulative_cash_flow, self.NPV, self.PVI, self.PI, self.year_economic_limit = (
             FEM.calculate_economy_well(self.Qo, self.Ql, start_date, self.well_type, well_params, method, dict_NDD))
         pass
 

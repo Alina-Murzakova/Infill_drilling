@@ -2,10 +2,9 @@ import os
 import pandas as pd
 import numpy as np
 
-from loguru import logger
-
 from app.economy.functions import bring_arrays_to_one_date, calculate_depreciation_base, linear_depreciation, \
-    calculate_irr_root_scalar, calculate_mirr, calculate_production_by_years, calculate_performance_indicators
+    calculate_irr_root_scalar, calculate_mirr, calculate_production_by_years, calculate_performance_indicators, \
+    calculation_Kg
 from app.ranking_drilling.starting_rates import check_FracCount
 
 
@@ -43,6 +42,8 @@ class FinancialEconomicModel:
 
         # Налоги (НДД)
         self.rate_NDD_tax = macroeconomics['rate_NDD_tax']  # Ставка налога на дополнительный доход, %
+        self.NDPI_NDD = macroeconomics['NDPI_NDD']  # НДПИ при НДД
+        self.NDPI_NDD_from_marcro = True  # Базовая ставка НДПИ при НДД берется из макры
 
         # OPEX
         self.unit_cost_oil = unit_costs['unit_costs_oil']
@@ -236,7 +237,7 @@ class FinancialEconomicModel:
 
         # logger.info("База для исчисления Налога на имущество")
         df_depreciation['base_property_tax'] = df_depreciation['residual_cost'].rolling(window=2).mean()
-        df_depreciation['base_property_tax'].iloc[0] = df_depreciation['residual_cost'].iloc[0]
+        df_depreciation['base_property_tax'].iloc[0] = df_depreciation['residual_cost'].iloc[0]/2
 
         # logger.info("Амортизация для Налога на прибыль (с учетом премии 30%)")
         for column in columns_for_depreciation:
@@ -250,15 +251,18 @@ class FinancialEconomicModel:
         return df_depreciation[['depreciation', 'base_property_tax', 'depreciation_income_tax']]
         # return df_depreciation
 
-    def calculate_income_NDD(self, Qo_yearly_for_sale):
+    def calculate_income_NDD(self, Qo_yearly):
         """
         Расчетная выручка для расчета налога по схеме НДД, тыс. руб за вычетом транспортных расходов
         :param Qo_yearly_for_sale: добыча нефти по годам с вычетом потерь, тыс. т
         """
-        df_income_NDD = bring_arrays_to_one_date(Qo_yearly_for_sale,
-                                                 self.urals, self.dollar_exchange, self.cost_transportation)
-        df_income_NDD['income_NDD'] = (df_income_NDD.urals * df_income_NDD.dollar_exchange * 7.3
+        Qo_yearly_for_sale = self.calculate_Qo_yearly_for_sale(Qo_yearly)
+        df_income_NDD = bring_arrays_to_one_date(Qo_yearly, Qo_yearly_for_sale,
+                                                 self.urals, self.dollar_exchange, self.cost_transportation,
+                                                 self.price_APG)
+        df_income_NDD['income_NDD'] = ((df_income_NDD.urals * df_income_NDD.dollar_exchange * 7.3
                                        - df_income_NDD.cost_transportation) * df_income_NDD.Qo_yearly_for_sale
+                                       + 0.95 * df_income_NDD.Qo_yearly * self.gor * df_income_NDD.price_APG)
         return df_income_NDD.income_NDD
 
     def calculate_taxes(self, Qo_yearly, df_depreciation, income, OPEX, CAPEX, method="НДД", **kwargs):
@@ -302,38 +306,21 @@ class FinancialEconomicModel:
             # Выработка ЛУ
             df_taxes['production_reserves'] = ((cumulative_production + df_taxes.Qo_yearly.cumsum())
                                                / initial_recoverable_reserves)
-            df_taxes['year_commercial_development'] = (df_taxes.production_reserves > 0.01).cumsum()
 
-            if Kg_group == 1 or Kg_group == 2:
-                df_taxes['Kg'] = (df_taxes['year_commercial_development']
-                                  .apply(lambda x: 0.4 if x < 7 else 0.6 if x == 7 else 0.8 if x == 8 else 1))
-            elif Kg_group == 3:
-                df_taxes['Kg'] = 1
-            elif Kg_group == 4:
-                df_taxes['Kg'] = (df_taxes['year_commercial_development']
-                                  .apply(lambda x: 0.5 if x < 3 else 0.75 if x < 4 else 1))
-            else:
-                logger.warning(f"Неверное значение Кг_номер группы: {Kg_group}")
+            df_taxes['Kg'] = calculation_Kg(Kg_group, df_taxes['production_reserves'])
+
             # Ставка НДПИ в НДД с уч. Кг в ФЭМ фиксированное значение из макры
-            df_taxes['rate_add'] = df_taxes.apply(lambda row: 0 if row.Kg < 1 and (Kg_group == 1 or Kg_group == 2)
-                                                                else row.export_duty * row.dollar_exchange, axis=1)
-            df_taxes['rate_mineral_extraction_tax_NDD_Kg'] = ((0.5 * (df_taxes.urals - 15) * 7.3)
-                                                              * df_taxes.dollar_exchange * df_taxes.Kg -
-                                                              df_taxes.rate_add).clip(lower=0)
+            if self.NDPI_NDD_from_marcro:
+                df_taxes['NDPI_NDD'] = bring_arrays_to_one_date(df_taxes.income, self.NDPI_NDD)['NDPI_NDD']
+            else:
+                df_taxes['rate_add'] = df_taxes.apply(lambda row: 0 if row.Kg < 1 and (Kg_group == 1 or Kg_group == 2)
+                                                                    else row.export_duty * row.dollar_exchange, axis=1)
+                df_taxes['NDPI_NDD'] = ((0.5 * (df_taxes.urals - 15) * 7.3) * df_taxes.dollar_exchange * df_taxes.Kg -
+                                        df_taxes.rate_add).clip(lower=0)
             # НДПИ нефть
-            df_taxes['mineral_extraction_tax'] = (df_taxes.Qo_yearly_for_sale
-                                                  * df_taxes.rate_mineral_extraction_tax_NDD_Kg)
-
-            # База для налога на прибыль без учета переноса убытков
-            # = Выручка - Опекс - НДПИ нефть - Налог на имущество - Амортизация для Налога на прибыль
-            df_taxes['base_profits_tax'] = (df_taxes.income - df_taxes.OPEX -
-                                            df_taxes.mineral_extraction_tax - df_taxes.property_tax -
-                                            df_taxes.depreciation_income_tax)
-            # Налог на прибыль
-            df_taxes['profits_tax'] = df_taxes.base_profits_tax * df_taxes.rate_profits_tax
-
+            df_taxes['mineral_extraction_tax'] = df_taxes.Qo_yearly_for_sale * df_taxes.NDPI_NDD
             # Расчетная выручка-Тр = (Urals*Курс доллара*7,3-'ТРАНСПОРТНЫЕ РАСХОДЫ ДЛЯ НДД)*Нефть товарная
-            df_taxes['income_NDD'] = self.calculate_income_NDD(df_taxes.Qo_yearly_for_sale)
+            df_taxes['income_NDD'] = self.calculate_income_NDD(df_taxes.Qo_yearly)
             # Фактические расходы = CAPEX, OPEX, Налог на имущество
             df_taxes['actual_expenditures'] = df_taxes.CAPEX + df_taxes.OPEX + df_taxes.property_tax
             # Расчетные расходы = ЕСЛИ(И(Кг<100%;группа<3);0;Нефть товарная*Экспортная пошлина на нефть*Курс доллара)
@@ -348,6 +335,14 @@ class FinancialEconomicModel:
             df_taxes['base_NDD'] = df_taxes.income_NDD - df_taxes.actual_expenditures - df_taxes.calculated_expenditures
             # налог по схеме НДД
             df_taxes['NDD_tax'] = df_taxes.base_NDD * df_taxes.rate_NDD_tax
+
+            # База для налога на прибыль без учета переноса убытков
+            # = Выручка - Опекс - НДПИ нефть - Налог на имущество - Амортизация для Налога на прибыль - НДД
+            df_taxes['base_profits_tax'] = (df_taxes.income - df_taxes.OPEX -
+                                            df_taxes.mineral_extraction_tax - df_taxes.property_tax -
+                                            df_taxes.depreciation_income_tax - df_taxes.NDD_tax)
+            # Налог на прибыль
+            df_taxes['profits_tax'] = df_taxes.base_profits_tax * df_taxes.rate_profits_tax
             # Налоги сумма
             columns_taxes = ['mineral_extraction_tax', 'NDD_tax', 'property_tax', 'profits_tax']
             df_taxes['taxes'] = df_taxes[columns_taxes].sum(axis=1)
@@ -385,8 +380,10 @@ class FinancialEconomicModel:
             IRR = calculate_irr_root_scalar(df_discounted_measures.FCF.values)
         # Расчет MIRR
         MIRR = calculate_mirr(df_discounted_measures.FCF.values)
-        return df_discounted_measures[['DCF', 'NPV', 'PVI']], PI, IRR, MIRR
-        # return df_discounted_measures, PI, IRR, MIRR
+        year_economic_limit = (df_discounted_measures.NPV.loc[df_discounted_measures.NPV > 0].index.min()
+                               - df_discounted_measures.NPV.index[0])
+        return df_discounted_measures[['DCF', 'NPV', 'PVI']], PI, IRR, MIRR, year_economic_limit
+        # return df_discounted_measures, PI, IRR, MIRR, year_economic_limit
 
     def calculate_economy_well(self, Qo, Ql, start_date, well_type, well_params, method, dict_NDD):
         """
@@ -429,11 +426,11 @@ class FinancialEconomicModel:
                                                                   df_depreciation, penalty_gas_flaring)
         # logger.info("Дисконтированные показатели")
         discount_period = self.calculate_discount_period(performance_indicators.FCF)
-        df_discounted_measures, PI, IRR, MIRR = self.calculate_discounted_measures(performance_indicators.FCF,
-                                                                                   df_CAPEX.CAPEX,
-                                                                                   discount_period)
+        df_discounted_measures, PI, IRR, MIRR, year_economic_limit = (
+            self.calculate_discounted_measures(performance_indicators.FCF, df_CAPEX.CAPEX, discount_period))
+
         return (df_CAPEX.CAPEX, df_OPEX, performance_indicators.cumulative_cash_flow,
-                df_discounted_measures.NPV, df_discounted_measures.PVI, PI)
+                df_discounted_measures.NPV, df_discounted_measures.PVI, PI, year_economic_limit)
 
 
 if __name__ == "__main__":
@@ -460,7 +457,7 @@ if __name__ == "__main__":
 
     # для консольного расчета экономики
     FEM, method, dict_NDD = load_economy_data(path_economy, name_field, 66.6)
-    method = 'ДНС'
+    # method = 'ДНС'
 
     # Для тестового расчета вытащим информацию по одной скважине
     project_well = list_zones[0].list_project_wells[0]
@@ -478,7 +475,7 @@ if __name__ == "__main__":
     df_production = bring_arrays_to_one_date(Qo_yearly, Ql_yearly, Qo_yearly_for_sale, APG_for_sale, penalty_gas_flaring)
 
     df_OPEX = FEM.calculate_OPEX(Qo_yearly, Ql_yearly)
-    df_CAPEX = FEM.calculate_CAPEX(project_well, well_params, Qo_yearly)
+    df_CAPEX = FEM.calculate_CAPEX(project_well.well_type, well_params, Qo_yearly)
     df_income = FEM.calculate_income_side(Qo_yearly_for_sale, APG_for_sale)
 
     # Амортизация
@@ -497,10 +494,10 @@ if __name__ == "__main__":
 
     # Дисконтированные показатели
     discount_period = FEM.calculate_discount_period(performance_indicators.FCF)
-    df_discounted_measures, PI, IRR, MIRR = FEM.calculate_discounted_measures(performance_indicators.FCF,
+    df_discounted_measures, PI, IRR, MIRR, year_economic_limit = FEM.calculate_discounted_measures(performance_indicators.FCF,
                                                                               df_CAPEX.CAPEX,
                                                                               discount_period)
-    df_measures = pd.DataFrame(data=[PI, IRR, MIRR], index=['PI', 'IRR', 'MIRR'])
+    df_measures = pd.DataFrame(data=[PI, IRR, MIRR, year_economic_limit], index=['PI', 'IRR', 'MIRR', 'ГЭП'])
 
     # Переименование колонок
     dict_columns = {'Qo_yearly': 'добыча нефти, тыс. т',
@@ -515,8 +512,8 @@ if __name__ == "__main__":
                     'cost_oil': 'OPEX нефть',
                     'cost_fluid': 'OPEX жидкость',
                     'ONVSS_cost': 'ОНСС',
-                    'cost_production_drilling': 'Скважины (Бурение_ГС|ННС + ГРП_за 1 стадию * кол-во стадий)',
-                    'cost_infrastructure': 'Обустройство (Обустройство + ВМР)',
+                    'cost_production_drilling': 'Скважины (Бурение_ГС|ННС + ГРП_за 1 стадию + пилот + ВМР)',
+                    'cost_infrastructure': 'Обустройство (Обустройство + отсыпка)',
                     'income': 'Выручка',
                     'depreciation_cost_production_drilling': 'Амортизация Скважины',
                     'depreciation_cost_infrastructure': 'Амортизация Обустройство',
@@ -545,7 +542,7 @@ if __name__ == "__main__":
                     'production_reserves': 'Выработка ЛУ',
                     'year_commercial_development': 'Год промышленной разработки',
                     'Kg': 'Кг',
-                    'rate_mineral_extraction_tax_NDD_Kg': 'Ставка НДПИ в НДД с уч. Кг',
+                    'NDPI_NDD': 'Ставка НДПИ в НДД с уч. Кг',
                     'income_NDD': 'Расчетная выручка для НДД',
                     'actual_expenditures': 'Фактические расходы',
                     'calculated_expenditures': 'Расчетные расходы',

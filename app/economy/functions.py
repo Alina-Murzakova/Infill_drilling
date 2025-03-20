@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from scipy.optimize import root_scalar
+from loguru import logger
 
 
 def calculate_depreciation_base(capex_series, lifetime):
@@ -97,9 +98,11 @@ def calculate_irr_root_scalar(cashflows):
     """Расчет IRR с помощью scipy.optimize.root_scalar"""
     def npv(rate):
         return np.sum([cf / (1 + rate) ** i for i, cf in enumerate(cashflows)])
-
-    result = root_scalar(npv, bracket=[-1, 1], method='brentq')  # Метод Брента
-    return result.root if result.converged else None
+    try:
+        result = root_scalar(npv, bracket=[-1.5, 10], method='brentq')  # Метод Брента
+        return result.root if result.converged else None
+    except ValueError:
+        return None
 
 
 def calculate_mirr(cashflows, finance_rate=0, reinvest_rate=0):
@@ -118,3 +121,16 @@ def calculate_mirr(cashflows, finance_rate=0, reinvest_rate=0):
     fv_positives = sum(positives)
 
     return (fv_positives / pv_negatives) ** (1 / years) - 1 if pv_negatives > 0 else None
+
+
+def calculation_Kg(Kg_group, production_reserves):
+    """Расчет коэффициента Kг в схеме НДД"""
+    year_commercial_development = (production_reserves > 0.01).cumsum()
+    if Kg_group == 1 or Kg_group == 2:
+        return year_commercial_development.apply(lambda x: 0.4 if x < 7 else 0.6 if x == 7 else 0.8 if x == 8 else 1)
+    elif Kg_group == 3:
+        return year_commercial_development.apply(lambda x: 1)
+    elif Kg_group == 4:
+        return year_commercial_development.apply(lambda x: 0.5 if x < 3 else 0.75 if x < 4 else 1)
+    else:
+        logger.warning(f"Неверное значение Кг_номер группы: {Kg_group}")
