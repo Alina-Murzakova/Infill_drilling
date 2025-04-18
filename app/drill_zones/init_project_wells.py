@@ -216,7 +216,7 @@ def convert_multipolygon(row, gdf_clusters, coef_area=0.4):
 
 def get_well_path_nearest_wells(center, gdf_fact_wells, threshold, k=5):
     """
-    Получаем параметры k - ближайших фактических горизонтальных скважин
+    Получаем параметры расположения k - ближайших фактических горизонтальных скважин
     Parameters
     ----------
     center - центр кластера скважины (POINT_T2_pix)

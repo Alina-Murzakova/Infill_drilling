@@ -287,7 +287,8 @@ def read_raster(file_path, no_value=0):
 
 def read_array(data_wells, name_column_map, type_map, geo_transform, size,
                accounting_GS=True,
-               radius=1000):
+               radius=1000,
+               period_no_work_inj=10):
     """
     Создание объекта класса MAP из DataFrame
     Parameters
@@ -312,7 +313,6 @@ def read_array(data_wells, name_column_map, type_map, geo_transform, size,
         with warnings.catch_warnings(action='ignore', category=pd.errors.SettingWithCopyWarning):
             data_wells_with_work.water_cut = np.where(data_wells_with_work.Winj_rate > 0,
                                                       100, data_wells_with_work.water_cut)
-        # !!! приоритизация точек по последней дате в работе
     elif type_map == "last_rate_oil" or type_map == "init_rate_oil":
         data_wells_with_work = data_wells[(data_wells.Ql_rate > 0)]
 

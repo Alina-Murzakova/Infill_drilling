@@ -67,12 +67,12 @@ class ProjectWell:
         threshold = 2500 / default_size_pixel - максимальное расстояние для исключения скважины
                                                 из ближайших скважин, пиксели
         """
-        gdf_wells = gpd.GeoDataFrame(df_wells, geometry="LINESTRING_pix")
-        # GeoDataFrame со скважинами того же типа
-        gdf_fact_wells = gdf_wells[gdf_wells["well_type"] == self.well_type].reset_index(drop=True)
-        if gdf_fact_wells.empty:
-            logger.warning(f"На объекте нет фактических скважин типа {self.well_type}! \n "
-                           "Необходимо задать азимут, длину, Рзаб проектных скважин вручную.")
+        gdf_fact_wells = gpd.GeoDataFrame(df_wells, geometry="LINESTRING_pix")
+        # Если требуется GeoDataFrame со скважинами ближайшего окружения того же типа
+        # gdf_fact_wells = gdf_fact_wells[gdf_fact_wells["well_type"] == self.well_type].reset_index(drop=True)
+        # if gdf_fact_wells.empty:
+        #     logger.warning(f"На объекте нет фактических скважин типа {self.well_type}! \n "
+        #                    "Необходимо задать азимут, длину, Рзаб проектных скважин вручную.")
 
         # Вычисляем расстояния до всех скважин
         distances = self.LINESTRING_pix.distance(gdf_fact_wells["LINESTRING_pix"])
@@ -95,6 +95,7 @@ class ProjectWell:
             logger.warning(f"Проверьте наличие окружения для проектной скважины {self.well_number}!")
         # Расчет средних параметров по выбранному окружению.
         # Рзаб - Выбираем только те строки, где значение Рзаб больше 0
+        # !!! Здесь нужно добавить не просто среднее, а учитывать расстояние
         self.P_well_init = np.mean(self.gdf_nearest_wells[(self.gdf_nearest_wells['init_P_well_prod'] > 0) &
                                                           (self.gdf_nearest_wells['init_P_well_prod'].notna())]
                                    ['init_P_well_prod'])
