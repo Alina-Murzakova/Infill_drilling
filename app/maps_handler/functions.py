@@ -103,6 +103,12 @@ def maps_load_directory(maps_directory):
     except FileNotFoundError:
         logger.error(f"в папке отсутствует файл с картой пористости: porosity.grd")
 
+    logger.info(f"Загрузка карты эффективной мощности коллектора")
+    try:
+        maps.append(read_raster(f'{maps_directory}/net_thickness.grd'))
+    except FileNotFoundError:
+        logger.warning(f"в папке отсутствует файл с картой эффективной мощности коллектора: net_thickness.grd")
+
     return maps
 
 

@@ -63,6 +63,8 @@ def upload_data(name_field, name_object, save_directory, data_wells, maps, list_
         pickle.dump(data_wells, file, protocol=pickle.HIGHEST_PROTOCOL)
     with open(f'{save_directory}/list_zones.pickle', 'wb') as file:
         pickle.dump(list_zones, file, protocol=pickle.HIGHEST_PROTOCOL)
+    with open(f'{save_directory}/maps.pickle', 'wb') as file:
+        pickle.dump(maps, file, protocol=pickle.HIGHEST_PROTOCOL)
 
     # logger.info("Сохранение контуров зон в формате .txt для загрузки в NGT")
     # save_directory_contours = f"{save_directory}/контуры зон"

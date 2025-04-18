@@ -75,7 +75,7 @@ def get_decline_rates(data_history, data_wells, maps=None, type_reserves=None):
 
     avg_coefficients_Ql_rate = np.mean(np.array(avg_coefficients_Ql_rate), axis=0)
     avg_coefficients_Qo_rate = np.mean(np.array(avg_coefficients_Qo_rate), axis=0)
-    avg_init_Ql_rate = np.mean(np.array(avg_init_Qo_rate), axis=0)
+    avg_init_Ql_rate = np.mean(np.array(avg_init_Ql_rate), axis=0)
     avg_init_Qo_rate = np.mean(np.array(avg_init_Qo_rate), axis=0)
 
     avg_coefficients_Ql_rate = [True, avg_coefficients_Ql_rate, avg_init_Ql_rate,
