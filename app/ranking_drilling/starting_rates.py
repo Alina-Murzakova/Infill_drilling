@@ -116,7 +116,10 @@ def calculate_permeability_fact_wells(row, dict_parameters_coefficients):
     reservoir_params['Phi'] = row['m']
     reservoir_params['h'] = row['NNT']
     reservoir_params['Pr'] = row['init_P_reservoir_prod']
-    well_params['L'] = row['length_geo']
+    if row['well_type'] == "vertical":
+        well_params['L'] = 0
+    else:
+        well_params['L'] = row['length_geo']
     well_params['Pwf'] = row['init_P_well_prod']
     well_params['r_e'] = row['r_eff_voronoy']
     if (row.init_Ql_rate_TR > 0 and row.init_P_well_prod > 0

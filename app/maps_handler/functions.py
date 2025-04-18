@@ -49,7 +49,7 @@ def mapping(maps_directory, data_wells, dict_properties, **kwargs):
                                        + np.power(data_wells.T3_y_pix - data_wells.T1_y_pix, 2))
     # расчет Shapely объектов
     df_shapely = create_shapely_types(data_wells, list_names=['T1_x_pix', 'T1_y_pix', 'T3_x_pix', 'T3_y_pix'])
-    data_wells[['POINT_T1_pix', 'POINT_T3_pix', 'LINESTRING_pix']] = df_shapely
+    data_wells[['POINT_T1_pix', 'POINT_T3_pix', 'LINESTRING_pix', 'MULTILINESTRING_pix']] = df_shapely
 
     logger.info(f"Запись значений с карт для текущего фонда")
     # с карт снимаем значения eff_h (NNT), m, So
@@ -361,21 +361,20 @@ def cut_map_by_mask(base_map, mask, blank_value=np.nan):
     return modified_map
 
 
-def calculate_Sw(row, dict_parameters_coefficients):
+def get_current_So(row, dict_parameters_coefficients):
     """
-
+    Определение текущей водонасыщенности и нефтенасыщенности
     Parameters
     ----------
-
     Returns
     -------
-
+    Текущая нефтенасыщенность на скважине
     """
     # Переопределим параметры из словаря
     kv_kh, Swc, Sor, Fw, m1, Fo, m2, Bw = (
         list(map(lambda name: dict_parameters_coefficients['default_well_params'][name],
                  ['kv_kh', 'Swc', 'Sor', 'Fw', 'm1', 'Fo', 'm2', 'Bw'])))
-
+    Swc = 1 - row['So']
     reservoir_params = dict_parameters_coefficients['reservoir_params']
     reservoir_params['f_w'] = row['water_cut']
     fluid_params = dict_parameters_coefficients['fluid_params']
@@ -386,8 +385,8 @@ def calculate_Sw(row, dict_parameters_coefficients):
     f_w, c_r = list(map(lambda key: reservoir_params[key], ['f_w', 'c_r']))
 
     if row.Winj_rate == 0:
-        # Расчет насыщенности
+        # Текущая водонасыщенность
         Sw = get_sw(mu_w, mu_o, Bo, Bw, f_w, Fw, m1, Fo, m2, Swc, Sor)
-        return 1 - Sw - Sor
+        return 1 - Sw
     else:
         return Sor

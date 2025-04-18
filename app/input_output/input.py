@@ -1,9 +1,11 @@
 import os
 import pandas as pd
 import numpy as np
+import re
 
 from loguru import logger
-from shapely.geometry import Point, LineString
+from shapely.geometry import Point, LineString, MultiLineString
+from sklearn.cluster import DBSCAN
 
 from app.config import (columns_name, gpch_column_name, dict_work_marker, sample_data_wells, columns_name_frac,
                         macroeconomics_rows_name, OPEX_rows_name, workover_wellservice_rows_name, apg_rows_name,
@@ -13,7 +15,7 @@ from app.economy.functions import calculation_Kg
 
 
 @logger.catch
-def load_wells_data(data_well_directory, min_length_hor_well=150, first_months=6):
+def load_wells_data(data_well_directory, min_length_hor_well=150, first_months=6, last_months=3, priority_radius=200):
     """
     Функция, которая обрабатывает выгрузку МЭР (выгрузка по датам по всем скважинам//параметры задаются пользователем)
     Parameters
@@ -21,6 +23,8 @@ def load_wells_data(data_well_directory, min_length_hor_well=150, first_months=6
     data_well_directory - путь к выгрузке
     min_length_hor_well - максимальная длина ствола ННС
     first_months - количество первых месяцев работы для определения стартового дебита нефти
+    last_months - количество последних месяцев работы для определения последнего дебита
+    priority_radius - радиус для приоритизации скважин (для выделения скважин в одной маленькой зоне)
 
     Returns
     -------
@@ -28,7 +32,7 @@ def load_wells_data(data_well_directory, min_length_hor_well=150, first_months=6
     Фрейм с параметрами добычи на последнюю дату работы для всех скважин
     Словарь с данными о расчете {field, object}
     """
-    # Загрузка файла
+    # 1. Загрузка файла
     # data_history = pd.read_excel(os.path.join(os.path.dirname(__file__), data_well_directory))
     data_history = pd.DataFrame()
     xls = pd.ExcelFile(os.path.join(os.path.dirname(__file__), data_well_directory))
@@ -37,107 +41,20 @@ def load_wells_data(data_well_directory, min_length_hor_well=150, first_months=6
             df = xls.parse(sheet_name)
             data_history = pd.concat([data_history, df], ignore_index=True)
 
+    # 2. Подготовка файла
     # Переименование колонок
     data_history = data_history[list(columns_name.keys())]
     data_history.columns = columns_name.values()
     data_history['well_number'] = data_history['well_number'].map(
         lambda x: str(int(float(x))) if isinstance(x, (int, float)) else str(x))
 
-    # Подготовка файла
-    data_history = data_history.fillna(0)
     # Удаление строк, где скважина еще не пробурена
-    data_history = data_history[data_history.work_marker != "не пробурена"]
+    data_history = data_history[data_history.work_marker != "не пробурена"].fillna(0)
     data_history = data_history.sort_values(by=['well_number', 'date'], ascending=[True, False]).reset_index(drop=True)
-
-    # Обработка координат // разделение на горизонтальные и вертикальные скважины
-    data_history.loc[data_history["T3_x_geo"] == 0, 'T3_x_geo'] = data_history.T1_x_geo
-    data_history.loc[data_history["T3_y_geo"] == 0, 'T3_y_geo'] = data_history.T1_y_geo
-    data_history["length_geo"] = np.sqrt(np.power(data_history.T3_x_geo - data_history.T1_x_geo, 2)
-                                         + np.power(data_history.T3_y_geo - data_history.T1_y_geo, 2))
-    data_history["well_type"] = ""
-    data_history.loc[data_history["length_geo"] < min_length_hor_well, "well_type"] = "vertical"
-    data_history.loc[data_history["length_geo"] >= min_length_hor_well, "well_type"] = "horizontal"
-    data_history.loc[data_history["well_type"] == "vertical", 'T3_x_geo'] = data_history.T1_x_geo
-    data_history.loc[data_history["well_type"] == "vertical", 'T3_y_geo'] = data_history.T1_y_geo
-
-    data_wells = data_history.copy()
-    data_wells = data_wells[(data_wells.Ql_rate > 0) | (data_wells.Winj_rate > 0)]
-    # Скважины с добычей/закачкой и параметры работы в последний рабочий месяц
-    data_wells_last_param = data_wells.groupby('well_number').nth(0).reset_index(drop=True)
-
-    # Скважины с добычей и дата первой добычи
-    data_wells_prod = data_wells[(data_wells.Ql_rate > 0)]
-    data_wells_first_production = data_wells_prod.groupby('well_number')['date'].min().reset_index()
-    data_wells_first_production.rename(columns={'date': 'first_production_date'}, inplace=True)
-
-    # Все скважины на последнюю дату
-    data_wells_last_date = data_history.groupby('well_number').nth(0).reset_index(drop=True)
-
-    # Добавление колонки с указанием как долго не работает скважина
-    last_date = sorted(data_history.date.unique())[-1]
-    first_date = sorted(data_history.date.unique())[0]
-    data_wells_last_param['no_work_time'] = round((last_date - data_wells_last_param.date).dt.days / 29.3)
-
-    # Скважины без добычи/закачки на последнюю дату
-    df_diff = data_wells_last_date[~data_wells_last_date.well_number.isin(data_wells_last_param.well_number)]
-    import warnings
-    with warnings.catch_warnings(action='ignore', category=pd.errors.SettingWithCopyWarning):
-        df_diff['no_work_time'] = round((last_date - first_date).days / 29.3)
-
-    data_wells = pd.concat([data_wells_last_param, df_diff], ignore_index=True)
-    data_wells = data_wells.merge(data_wells_first_production, on='well_number', how='left')
-
-    # Нахождение накопленной добычи нефти и закачки
-    df_sort_date = (data_history.copy().sort_values(by=['well_number', 'date'], ascending=[True, True])
-                    .reset_index(drop=True))
-    for column in ['Qo', 'Winj']:
-        data_cumsum = df_sort_date[['well_number', column]].copy()
-        data_cumsum[f'{column}_cumsum'] = data_cumsum[column].groupby(data_cumsum['well_number']).cumsum()
-        data_cumsum = data_cumsum.groupby('well_number').tail(1)
-        data_wells = data_wells.merge(data_cumsum[['well_number', f'{column}_cumsum']], how='left', on='well_number')
-    for old, new in dict_work_marker.items():
-        data_wells.work_marker = data_wells.work_marker.str.replace(old, new, regex=False)
-
-    # Нахождение среднего стартового дебита за первые "first_months" месяцев
-    data_first_rate = df_sort_date.copy()
-    data_first_rate['cum_rate_liq'] = data_first_rate['Ql_rate'].groupby(data_first_rate['well_number']).cumsum()
-    data_first_rate = data_first_rate[data_first_rate['cum_rate_liq'] != 0]
-    data_first_rate = data_first_rate.groupby('well_number').head(first_months)
-
-    # Определяем first_months для каждой скважины
-    first_months_dict = data_first_rate.groupby('well_number').apply(get_first_months).to_dict()
-
-    # Применяем своё first_months для каждой скважины
-    data_first_rate = data_first_rate.groupby('well_number', group_keys=False).apply(
-        lambda g: g.head(first_months_dict[g.name]))
-
-    data_first_rate = (data_first_rate[data_first_rate['Ql_rate'] != 0].groupby('well_number')
-                       .agg(init_Qo_rate=('Qo_rate', 'mean'), init_Ql_rate=('Ql_rate', 'mean'),
-                            init_Qo_rate_TR=('Qo_rate_TR', lambda x: x[x != 0].mean()),
-                            init_Ql_rate_TR=('Ql_rate_TR', lambda x: x[x != 0].mean()),
-                            init_P_well_prod=('P_well', lambda p_well: filter_pressure(p_well, data_first_rate.loc[
-                                p_well.index, 'P_reservoir'], type_pressure='P_well')),
-                            init_P_reservoir_prod=('P_reservoir', lambda p_res: filter_pressure(
-                                data_first_rate.loc[p_res.index, 'P_well'], p_res, type_pressure='P_reservoir')))
-                       .reset_index())
-
-    data_wells = data_wells.merge(data_first_rate, how='left', on='well_number')
-    data_wells = data_wells.fillna(0)
-
-    data_wells['init_water_cut'] = np.where(data_wells['init_Ql_rate'] > 0,
-                                            (data_wells['init_Ql_rate'] - data_wells['init_Qo_rate']) /
-                                            data_wells['init_Ql_rate'], 0)
-
-    data_wells['init_water_cut_TR'] = np.where(data_wells['init_Ql_rate_TR'] > 0,
-                                               (data_wells['init_Ql_rate_TR'] - data_wells['init_Qo_rate_TR']) /
-                                               data_wells['init_Ql_rate_TR'], 0)
-
-    # Расчет азимута для горизонтальных скважин
-    data_wells['azimuth'] = data_wells.apply(calculate_azimuth, axis=1)
-
+    logger.info(f"В исходных данных {len(data_history.well_number.unique())} скважин")
     # Словарь с данными о расчете // месторождение и объект
-    field = list(set(data_wells.field.values))
-    object_value = list(set(data_wells.object.values))
+    field = list(set(data_history.field.values))
+    object_value = list(set(data_history.object.values))
     if len(field) != 1:
         logger.error(f"Выгрузка содержит не одно месторождение: {field}")
     elif len(object_value) != 1:
@@ -146,17 +63,103 @@ def load_wells_data(data_well_directory, min_length_hor_well=150, first_months=6
         field = field[0]
         object_value = object_value[0]
     info = {'field': field, "object_value": object_value}
-    data_wells.drop(columns=['field', "object", "objects"], inplace=True)
 
-    # расчет Shapely объектов
+    # Чистим ряд скважин (без характера работы, объекта или статуса)
+    data_history = data_history[(data_history.work_marker != 0) & ((data_history.objects != 0) |
+                                                                   (data_history.well_status != 0))]
+    logger.info(f"После фильтрации осталось {data_history.well_number.nunique()} скважин")
+
+    # 3. Обработка координат // разделение на горизонтальные и вертикальные скважины
+    data_history = get_well_type(data_history, min_length_hor_well)
+
+    #  4. Определение ЗБС и МЗС, порядкового номера ствола и разделение добычи для МЗС
+    data_history = identification_ZBS_MZS(data_history)
+    logger.info(f"Количество МЗС - {data_history[data_history.type_wellbore == 'МЗС'].well_number_digit.nunique()}")
+    logger.info(f"Количество ЗБС - {data_history[data_history.type_wellbore == 'ЗБС'].well_number.nunique()}")
+
+    data_history_work = data_history.copy()
+    data_history_work = data_history_work[(data_history_work.Ql_rate > 0) | (data_history_work.Winj_rate > 0)]
+
+    # 5. Получение последних параметры работы скважин как среднее за last_months месяцев (добыча/закачка)
+    data_wells_last_param = get_avg_last_param(data_history_work, data_history, last_months)
+
+    # 6. Добавление колонки с указанием как долго не работает скважина для скважин с добычей/закачкой
+    data_wells_last_param['no_work_time'] = round((data_history['date'].max() - data_wells_last_param.date).dt.days
+                                                  / 29.3)
+    # Все скважины на последнюю дату (даже если никогда не работали)
+    data_wells_last_date = data_history.groupby('well_number').nth(0).reset_index(drop=True)
+    # Скважины без добычи/закачки на последнюю дату
+    df_diff = data_wells_last_date[~data_wells_last_date.well_number.isin(data_wells_last_param.well_number)]
+    import warnings
+    with warnings.catch_warnings(action='ignore', category=pd.errors.SettingWithCopyWarning):
+        df_diff['no_work_time'] = round((data_history['date'].max() - data_history['date'].min()).days / 29.3)
+    # Датафрейм с параметрами по всем скважинам
+    data_wells = pd.concat([data_wells_last_param, df_diff], ignore_index=True)
+
+    # 7. Определяем дату первой добычи
+    data_wells_prod = data_history_work[(data_history_work.Ql_rate > 0)]
+    data_wells_first_production = data_wells_prod.groupby('well_number')['date'].min().reset_index()
+    data_wells_first_production.rename(columns={'date': 'first_production_date'}, inplace=True)
+    data_wells = data_wells.merge(data_wells_first_production, on='well_number', how='left')
+
+    # 8. Определяем длительность последнего периода работы !!! Пока не используется
+    # Разница в месяцах между текущей и предыдущей датой
+    data_history_work['month_diff'] = -data_history_work.groupby('well_number')['date'].diff().dt.days.fillna(0) / 31
+    # Определяем периоды работы (без перерывов)
+    data_history_work['work_period'] = (data_history_work.groupby('well_number')['month_diff']
+                                        .transform(lambda x: (x > 1).cumsum()))
+    # Продолжительность каждого непрерывного периода работы !!!
+    data_history_work['continuous_work_months'] = (data_history_work.groupby(['well_number', 'work_period'])['date']
+                                                   .transform('count'))
+    data_continuous_work = (data_history_work[data_history_work['work_period'] == 0][['well_number',
+                                                                                      'continuous_work_months']]
+                            .drop_duplicates())
+    data_wells = data_wells.merge(data_continuous_work, on='well_number', how='left')
+
+    # 9. Нахождение накопленной добычи нефти и закачки
+    df_sort_date = (data_history.copy().sort_values(by=['well_number', 'date'], ascending=[True, True])
+                    .reset_index(drop=True))
+    data_wells = calculate_cumsum(data_wells, df_sort_date)
+
+    # 10. Получение среднего стартового дебита за первые "first_months" месяцев
+    data_wells = get_avg_first_param(data_wells, df_sort_date, first_months)
+
+    # 11. Расчет азимута для горизонтальных скважин
+    data_wells['azimuth'] = data_wells.apply(calculate_azimuth, axis=1)
+
+    # 12. Расчет Shapely объектов
     df_shapely = create_shapely_types(data_wells, list_names=['T1_x_geo', 'T1_y_geo', 'T3_x_geo', 'T3_y_geo'])
-    data_wells[['POINT_T1_geo', 'POINT_T3_geo', 'LINESTRING_geo']] = df_shapely
+    data_wells[['POINT_T1_geo', 'POINT_T3_geo', 'LINESTRING_geo', 'MULTILINESTRING_geo']] = df_shapely
 
+    # 13. Дополнительные преобразования
+    data_wells.drop(columns=['field', "object", "objects"], inplace=True)
     # дополнение data_wells всеми необходимыми колонками
     data_wells = pd.concat([sample_data_wells, data_wells])
-
-    # оставляем для расчета только скважины с не нулевой накопленной добычей и закачкой по объекту
+    # оставляем для расчета только скважины с ненулевой накопленной добычей и закачкой по объекту
     data_wells = (data_wells[(data_wells['Qo_cumsum'] > 0) | (data_wells['Winj_cumsum'] > 0)].reset_index(drop=True))
+
+    # проверка и замена характера работы (нам нужны только НЕФ и НАГ)
+    data_wells["work_marker"] = np.where(data_wells.Ql_rate > 0, "НЕФ", np.where(data_wells.Winj_rate > 0, "НАГ",
+                                                                                 data_wells["work_marker"]))
+    data_wells.work_marker = data_wells.work_marker.replace(dict_work_marker)
+    # Определяем неизвестные значения work_marker
+    unknown_work_markers = (data_wells[~data_wells["work_marker"].isin(dict_work_marker.values())]["work_marker"]
+                            .unique())
+    if len(unknown_work_markers) > 0:
+        for work_marker in unknown_work_markers:
+            well_numbers = data_wells.loc[data_wells["work_marker"] == work_marker, "well_number"].unique()
+            logger.error(f"В data_wells появился нераспознанный характер работы - {work_marker}. "
+                         f"Скважины {list(well_numbers)} удалены.")
+
+        # Удаляем строки с нераспознанными значениями
+        data_wells = data_wells[~data_wells["work_marker"].isin(unknown_work_markers)]
+
+    data_wells['continuous_work_months'] = data_wells['continuous_work_months'].astype(int)
+
+    # 14. Приоритизация скважин в пределах радиуса
+    data_wells = range_priority_wells(data_wells, priority_radius)
+    logger.info(f"Сумма дебит нефти {data_history.Qo_rate.sum()}")
+    logger.info(f"Сумма НДН {data_wells.Qo_cumsum.sum()}")
     return data_history, data_wells, info
 
 
@@ -420,7 +423,7 @@ def load_economy_data(economy_path, name_field, gor):
                     'cumulative_production': cumulative_production,
                     'Kg_group': Kg_group}
 
-        Kg = calculation_Kg(Kg_group, pd.Series(cumulative_production/initial_recoverable_reserves)).values[0]
+        Kg = calculation_Kg(Kg_group, pd.Series(cumulative_production / initial_recoverable_reserves)).values[0]
         row_NDPI_NDD = df_NDPI_NDD[2]
         name_row_NDPI_NDD = row_NDPI_NDD[row_NDPI_NDD.index <= Kg].iloc[-1]
 
@@ -455,6 +458,195 @@ def load_economy_data(economy_path, name_field, gor):
 
 
 """___________Вспомогательные функции___________"""
+
+
+def get_well_type(data_history, min_length_hor_well):
+    """Обработка координат // разделение на горизонтальные и вертикальные скважины"""
+    data_history.loc[data_history["T3_x_geo"] == 0, 'T3_x_geo'] = data_history.T1_x_geo
+    data_history.loc[data_history["T3_y_geo"] == 0, 'T3_y_geo'] = data_history.T1_y_geo
+    data_history["length_geo"] = np.sqrt(np.power(data_history.T3_x_geo - data_history.T1_x_geo, 2)
+                                         + np.power(data_history.T3_y_geo - data_history.T1_y_geo, 2))
+    data_history["well_type"] = ""
+    data_history.loc[data_history["length_geo"] < min_length_hor_well, "well_type"] = "vertical"
+    data_history.loc[data_history["length_geo"] >= min_length_hor_well, "well_type"] = "horizontal"
+    data_history.loc[data_history["well_type"] == "vertical", 'T3_x_geo'] = data_history.T1_x_geo
+    data_history.loc[data_history["well_type"] == "vertical", 'T3_y_geo'] = data_history.T1_y_geo
+    return data_history
+
+
+def identification_ZBS_MZS(data_history):
+    """
+    Идентификация ЗБС и МЗС, разделение добычи для МЗС и определение порядкового номера ствола
+    """
+    # Выделение числовой части из номера скважины
+    data_history['well_number_digit'] = data_history["well_number"].apply(extract_well_number).astype(int)
+    # Количество работающих стволов в каждый месяц на одном объекте
+    amount_work_well_every_month = (data_history.groupby(['well_number_digit', 'date', 'objects',
+                                                          'work_marker', 'well_status'])['well_number']
+                                    .transform('count'))  # nunique
+    # Если в один месяц работает больше 1 скважины на одном объекте - это МЗС
+    data_history['is_mzs'] = amount_work_well_every_month > 1
+    # Если в каждый месяц работает только 1 скважина, но их несколько - это ЗБС
+    data_history['is_zbs'] = (amount_work_well_every_month == 1) & (data_history.groupby('well_number_digit')
+                                                                    ['well_number'].transform('nunique') > 1)
+    # Если хотя бы в одной строчке МЗС, то везде МЗС
+    data_history['is_mzs'] = data_history.groupby('well_number')['is_mzs'].transform('any')
+    data_history['is_zbs'] = np.where(data_history['is_mzs'], False, data_history['is_zbs'])
+
+    data_history['type_wellbore'] = 'Материнский ствол'
+    data_history.loc[data_history['is_mzs'], 'type_wellbore'] = 'МЗС'
+    data_history.loc[data_history['is_zbs'], 'type_wellbore'] = 'ЗБС'
+    data_history = data_history.drop(['is_mzs', 'is_zbs'], axis=1)
+
+    # Копирование и разделение параметров в МЗС
+    # Работа только с МЗС
+    mask_mzs = data_history['type_wellbore'] == 'МЗС'
+    # Копирование ряда параметров в МЗС
+    columns_to_copy = ['water_cut', 'water_cut_TR', 'time_work', 'time_work_prod', 'time_work_inj', 'P_well',
+                       'P_reservoir']
+    # Временно заменяем нули на NaN для корректного заполнения в столбцах columns_to_copy
+    data_history.loc[mask_mzs, columns_to_copy] = data_history.loc[mask_mzs, columns_to_copy].replace(0, np.nan)
+    grouped_mzs = data_history.loc[mask_mzs].groupby(['well_number_digit', 'date', 'objects'])
+    data_history.loc[mask_mzs, columns_to_copy] = (grouped_mzs[columns_to_copy].transform(lambda x: x.ffill().bfill())
+                                                   .fillna(0))
+
+    # Разделение добычи/закачки МЗС на количество стволов (пока поровну)
+    columns_to_split = ['Qo_rate', 'Qo_rate_TR', 'Ql_rate', 'Ql_rate_TR', 'Qo', 'Ql',
+                        'Winj_rate', 'Winj_rate_TR', 'Winj']
+    summed_values = grouped_mzs[columns_to_split].transform('sum')
+    count_wellbore_mzs = grouped_mzs['well_number'].transform('count')
+
+    for col in columns_to_split:
+        data_history.loc[mask_mzs, f'split_{col}'] = summed_values[col] / count_wellbore_mzs
+        data_history[col] = np.where(mask_mzs, data_history[f'split_{col}'], data_history[col])
+        del data_history[f'split_{col}']
+
+    # Определяем дату появления скважины (первая строка с ненулевым состоянием)
+    data_history['first_well_date'] = (data_history.where(data_history['object'] != 0).groupby('well_number')['date']
+                                       .transform('min'))
+    # На случай, если у МЗС разные даты запуска
+    data_history.loc[mask_mzs, 'first_well_date'] = (
+        data_history.loc[mask_mzs]
+        .groupby(['well_number_digit', 'date', 'type_wellbore'])['first_well_date']
+        .transform("min"))
+
+    # Нумеруем стволы в порядке хронологии
+    data_history['number_wellbore'] = data_history.groupby('well_number_digit')['first_well_date'].transform(
+        lambda x: x.rank(method='dense') - 1).astype(int)
+
+    data_history['type_wellbore'] = np.where((data_history['number_wellbore'] == 0) &
+                                             (data_history['type_wellbore'] != "МЗС"), 'Материнский ствол',
+                                             data_history['type_wellbore'])
+    return data_history
+
+
+def get_avg_last_param(data_history_work, data_history, last_months):
+    """
+    Функция для получения фрейма со средними последними параметрами работы скважин (добыча/закачка и обв)
+    Parameters
+    ----------
+    data_history_work - история работы без учета остановок
+    data_history - вся история работы
+    last_months - количество последних месяцев для осреднения
+
+    Returns
+    -------
+    Фрейм со средними последними параметрами работы скважин
+    """
+    # Скважины с добычей/закачкой и параметры работы в последний рабочий месяц
+    data_wells_last_param = data_history_work.groupby('well_number').nth(0).reset_index(drop=True)
+
+    # Нахождение среднего последнего дебита за последние "last_months" месяцев
+    data_last_rate = data_history.copy()  # сортировка от новых к старым
+    data_last_rate['reverse_cum_rate_liq'] = data_last_rate['Ql_rate'].groupby(data_last_rate['well_number']).cumsum()
+    data_last_rate['reverse_cum_rate_inj'] = data_last_rate['Winj_rate'].groupby(data_last_rate['well_number']).cumsum()
+    # Удаление периода остановки, если скважина не работает
+    data_last_rate = data_last_rate[(data_last_rate['reverse_cum_rate_liq'] != 0) |
+                                    (data_last_rate['reverse_cum_rate_inj'] != 0)]
+    data_last_rate = data_last_rate.groupby('well_number').head(last_months)
+
+    data_last_rate = (data_last_rate.groupby('well_number').agg(Qo_rate=('Qo_rate', lambda x: x[x != 0].mean()),
+                                                                Ql_rate=('Ql_rate', lambda x: x[x != 0].mean()),
+                                                                Qo_rate_TR=('Qo_rate_TR', lambda x: x[x != 0].mean()),
+                                                                Ql_rate_TR=('Ql_rate_TR', lambda x: x[x != 0].mean()),
+                                                                Winj_rate=('Winj_rate', lambda x: x[x != 0].mean()),
+                                                                Winj_rate_TR=(
+                                                                    'Winj_rate_TR', lambda x: x[x != 0].mean()))
+                      .fillna(0).reset_index())
+    data_last_rate['water_cut'] = (np.where(data_last_rate['Ql_rate'] > 0,
+                                            (data_last_rate['Ql_rate'] - data_last_rate['Qo_rate']) * 100 /
+                                            data_last_rate['Ql_rate'], 0))
+
+    data_last_rate['water_cut_TR'] = (np.where(data_last_rate['Ql_rate_TR'] > 0,
+                                               (data_last_rate['Ql_rate_TR'] - data_last_rate['Qo_rate_TR']) * 100 /
+                                               data_last_rate['Ql_rate_TR'], 0))
+    # Заменяем последние параметры на последние средние параметры
+    data_wells_last_param = data_wells_last_param.merge(data_last_rate, on='well_number', suffixes=('', '_avg'))
+    cols_to_replace = ['Qo_rate', 'Ql_rate', 'Qo_rate_TR', 'Ql_rate_TR', 'water_cut', 'water_cut_TR', 'Winj_rate',
+                       'Winj_rate_TR']
+    for col in cols_to_replace:
+        data_wells_last_param[col] = data_wells_last_param[f"{col}_avg"].fillna(0)
+    data_wells_last_param.drop(columns=[f"{col}_avg" for col in cols_to_replace], inplace=True)
+    return data_wells_last_param
+
+
+def calculate_cumsum(data_wells, df_sort_date):
+    """Расчет накопленной добычи нефти и закачки"""
+    for column in ['Qo', 'Winj']:
+        data_cumsum = df_sort_date[['well_number', column]].copy()
+        data_cumsum[f'{column}_cumsum'] = data_cumsum[column].groupby(data_cumsum['well_number']).cumsum()
+        data_cumsum = data_cumsum.groupby('well_number').tail(1)
+        data_wells = data_wells.merge(data_cumsum[['well_number', f'{column}_cumsum']], how='left', on='well_number')
+    return data_wells
+
+
+def get_avg_first_param(data_wells, df_sort_date, first_months):
+    """
+    Функция для получения фрейма со средними стартовыми параметрами работы скважин
+    Parameters
+    ----------
+    data_wells - фрейм со всеми скважинами
+    df_sort_date - отсортированная история работы
+    first_months - количество первых месяцев для осреднения
+
+    Returns
+    -------
+    Фрейм со средними стартовыми параметрами работы скважин
+    """
+    data_first_rate = df_sort_date.copy()
+    data_first_rate['cum_rate_liq'] = data_first_rate['Ql_rate'].groupby(data_first_rate['well_number']).cumsum()
+    data_first_rate = data_first_rate[data_first_rate['cum_rate_liq'] != 0]
+    data_first_rate = data_first_rate.groupby('well_number').head(first_months)
+
+    # Определяем first_months для каждой скважины
+    first_months_dict = data_first_rate.groupby('well_number').apply(get_first_months).to_dict()
+
+    # Применяем своё first_months для каждой скважины
+    data_first_rate = data_first_rate.groupby('well_number', group_keys=False).apply(
+        lambda g: g.head(first_months_dict[g.name]))
+
+    data_first_rate = (data_first_rate[data_first_rate['Ql_rate'] != 0].groupby('well_number')
+                       .agg(init_Qo_rate=('Qo_rate', 'mean'), init_Ql_rate=('Ql_rate', 'mean'),
+                            init_Qo_rate_TR=('Qo_rate_TR', lambda x: x[x != 0].mean()),
+                            init_Ql_rate_TR=('Ql_rate_TR', lambda x: x[x != 0].mean()),
+                            init_P_well_prod=('P_well', lambda p_well: filter_pressure(p_well, data_first_rate.loc[
+                                p_well.index, 'P_reservoir'], type_pressure='P_well')),
+                            init_P_reservoir_prod=('P_reservoir', lambda p_res: filter_pressure(
+                                data_first_rate.loc[p_res.index, 'P_well'], p_res, type_pressure='P_reservoir')))
+                       .reset_index())
+
+    data_wells = data_wells.merge(data_first_rate, how='left', on='well_number')
+    data_wells = data_wells.fillna(0)
+
+    # Расчет обводненности
+    data_wells['init_water_cut'] = np.where(data_wells['init_Ql_rate'] > 0,
+                                            (data_wells['init_Ql_rate'] - data_wells['init_Qo_rate']) /
+                                            data_wells['init_Ql_rate'], 0)
+
+    data_wells['init_water_cut_TR'] = np.where(data_wells['init_Ql_rate_TR'] > 0,
+                                               (data_wells['init_Ql_rate_TR'] - data_wells['init_Qo_rate_TR']) /
+                                               data_wells['init_Ql_rate_TR'], 0)
+    return data_wells
 
 
 def formatting_df_economy(df):
@@ -517,11 +709,30 @@ def create_shapely_types(data_wells, list_names):
         df_result["LINESTRING"] = np.where(df_result["POINT_T1"] == df_result["POINT_T3"], df_result["POINT_T1"],
                                            list(map(lambda x, y: LineString([x, y]),
                                                     df_result["POINT_T1"], df_result["POINT_T3"])))
+        # Добавление MULTILINESTRING для МЗС
+        df_result[['well_number_digit', 'type_wellbore']] = data_wells[['well_number_digit', 'type_wellbore']]
+        mask_mzs = df_result["type_wellbore"] == "МЗС"
+        df_result.loc[mask_mzs, "MULTILINESTRING"] = (df_result.loc[mask_mzs]
+                                                      .groupby("well_number_digit")["LINESTRING"]
+                                                      .transform(lambda x: MultiLineString(x.tolist())))
+        df_result["MULTILINESTRING"] = np.where(df_result["type_wellbore"] == "МЗС", df_result["MULTILINESTRING"],
+                                                df_result["LINESTRING"])
+    df_result = df_result.drop(['well_number_digit', 'type_wellbore'], axis=1)
     return df_result
 
 
+def extract_well_number(well_name):
+    """Функция для извлечения первой числовой части - номера скважины без доп части"""
+    match = re.match(r"(\d+)", str(well_name))  # Приводим к строке на случай NaN
+    if match:
+        return int(match.group(1))
+    else:
+        logger.error(f"Не удалось извлечь численную часть номера скважины - {well_name}")
+        return None
+
+
 def get_first_months(data_first_rate):
-    # Подсчет количества месяцев с ненулевыми значениями для каждого параметра
+    """Подсчет количества месяцев с ненулевыми значениями для каждого параметра"""
     nonzero_TR_counts = {
         'Qo_rate_TR': (data_first_rate['Qo_rate_TR'].notna() & (data_first_rate['Qo_rate_TR'] != 0)).sum(),
         'Ql_rate_TR': (data_first_rate['Ql_rate_TR'].notna() & (data_first_rate['Ql_rate_TR'] != 0)).sum(),
@@ -572,3 +783,59 @@ def calculate_azimuth(row):
     # Приведение к диапазону [0, 360)
     azimuth = (360 - azimuth) % 360
     return azimuth
+
+
+def range_priority_wells(data_wells, epsilon, step_priority_radius=20, ratio_clusters_wells=0.9):
+    """
+    Функция выделения скважин в пределах epsilon и их приоритизация
+    Parameters
+    ----------
+    data_wells
+    epsilon - радиус для поиска скважин в одной зоне, м (priority_radius)
+    step_priority_radius
+    ratio_clusters_wells
+
+    Returns
+    -------
+    data_wells
+    """
+    df = data_wells[['well_number', 'POINT_T1_geo', 'no_work_time']].copy()
+    # Преобразуем координаты в массив
+    coords = np.array([[point.x, point.y] for point in df["POINT_T1_geo"]])
+
+    while True:
+        # Кластеризация DBSCAN, min_samples=1 - одна скважина может быть кластером
+        clustering = DBSCAN(eps=epsilon, min_samples=1).fit(coords)
+        df["cluster_id"] = clustering.labels_
+        df['amount_wells_in_zone'] = df.groupby("cluster_id")['well_number'].transform('count')
+        amount_wells = df['well_number'].nunique()
+        amount_cluster = df['cluster_id'].nunique()
+        if (amount_cluster/amount_wells < ratio_clusters_wells) and (epsilon > step_priority_radius):
+            epsilon -= step_priority_radius
+        elif ((amount_cluster/amount_wells < ratio_clusters_wells) and
+              (epsilon < step_priority_radius) and (epsilon > 0)):
+            epsilon = 1
+        else:
+            break
+
+    def select_priority_wells(gdf):
+        priority_wells = []
+        for cluster_id, group in gdf.groupby("cluster_id"):
+            # Действующие скважины и остановленные <= 3 месяцев назад всегда учитываются
+            active_wells = group[group["no_work_time"] <= 3]['well_number'].tolist()
+            if len(active_wells) == 0:
+                # Иначе берем с минимальным no_work_time
+                min_no_work_time = group["no_work_time"].min()
+                active_wells = group[group["no_work_time"] == min_no_work_time]['well_number'].tolist()
+            priority_wells += active_wells
+        return priority_wells
+
+    # Выбираем приоритетные скважины
+    first_priority_wells = df[df['amount_wells_in_zone'] == 1]['well_number'].tolist()
+    priority_wells = select_priority_wells(df[(df['amount_wells_in_zone'] > 1)])
+    first_priority_wells.extend(priority_wells)
+
+    data_wells["priority"] = data_wells["well_number"].isin(first_priority_wells).astype(int)
+    # 1 - первый приоритет
+    # 0 - второй приоритет
+    return data_wells
