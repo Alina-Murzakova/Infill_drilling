@@ -57,7 +57,7 @@ class ProjectWell:
         self.PI = None
         self.year_economic_limit = None
 
-    def get_nearest_wells(self, df_wells, threshold, k=5):
+    def get_nearest_wells(self, df_wells, k=5):
         """
         Получаем ближайшее окружение скважины
         Parameters
@@ -76,16 +76,10 @@ class ProjectWell:
 
         # Вычисляем расстояния до всех скважин
         distances = self.LINESTRING_pix.distance(gdf_fact_wells["LINESTRING_pix"])
+        gdf_fact_wells['distances'] = distances
         sorted_distances = distances.nsmallest(k)
-        nearest_hor_wells_index = [sorted_distances.index[0]]  # Ближайшая скважина всегда включается
-
-        for i in range(1, len(sorted_distances)):
-            # Проверяем разницу с первой добавленной ближайшей скважиной
-            if sorted_distances.iloc[i] - sorted_distances.iloc[0] < threshold:
-                nearest_hor_wells_index.append(sorted_distances.index[i])
-
         # Извлечение строк GeoDataFrame по индексам
-        self.gdf_nearest_wells = gdf_fact_wells.loc[nearest_hor_wells_index]
+        self.gdf_nearest_wells = gdf_fact_wells.loc[sorted_distances.index]
         pass
 
     def get_params_nearest_wells(self, dict_parameters_coefficients):
@@ -93,30 +87,39 @@ class ProjectWell:
         # Проверка на наличие ближайшего окружения
         if self.gdf_nearest_wells.empty:
             logger.warning(f"Проверьте наличие окружения для проектной скважины {self.well_number}!")
+
         # Расчет средних параметров по выбранному окружению.
+        mask_distance = (self.gdf_nearest_wells['distances'] != 0) & self.gdf_nearest_wells['distances'].notna()
         # Рзаб - Выбираем только те строки, где значение Рзаб больше 0
-        # !!! Здесь нужно добавить не просто среднее, а учитывать расстояние
-        self.P_well_init = np.mean(self.gdf_nearest_wells[(self.gdf_nearest_wells['init_P_well_prod'] > 0) &
-                                                          (self.gdf_nearest_wells['init_P_well_prod'].notna())]
-                                   ['init_P_well_prod'])
-        if pd.isna(self.P_well_init):
+        mask = ((self.gdf_nearest_wells['init_P_well_prod'] > 0) &
+                self.gdf_nearest_wells['init_P_well_prod'].notna() & mask_distance)
+        if sum(mask) == 0:
             self.P_well_init = dict_parameters_coefficients['well_params']['init_P_well']
+        else:
+            self.P_well_init = np.average(self.gdf_nearest_wells.loc[mask, 'init_P_well_prod'],
+                                          weights=1 / np.square(self.gdf_nearest_wells.loc[mask, 'distances']))
         # Проницаемость - Выбираем только те строки, где значение проницаемости больше 0 и не nan
-        self.permeability = np.mean(self.gdf_nearest_wells[(self.gdf_nearest_wells['permeability_fact'] > 0) &
-                                                           (self.gdf_nearest_wells['permeability_fact'].notna())]
-                                    ['permeability_fact'])
-        if pd.isna(self.permeability):
+        mask = ((self.gdf_nearest_wells['permeability_fact'] > 0) &
+                self.gdf_nearest_wells['permeability_fact'].notna() & mask_distance)
+        if sum(mask) == 0:
             self.permeability = dict_parameters_coefficients['reservoir_params']['k_h']
+        else:
+            self.permeability = np.average(self.gdf_nearest_wells.loc[mask, 'permeability_fact'],
+                                           weights=1 / np.square(self.gdf_nearest_wells.loc[mask, 'distances']))
         # Пористость на случай если в зоне нет карты
         # выбираем только те строки, где значение проницаемости больше 0 и не nan
-        self.m = np.mean(self.gdf_nearest_wells[(self.gdf_nearest_wells['m'] > 0) &
-                                                (self.gdf_nearest_wells['m'].notna())]['m'])
+        mask = ((self.gdf_nearest_wells['m'] > 0) & self.gdf_nearest_wells['m'].notna() & mask_distance)
+        if not sum(mask) == 0:
+            self.m = np.average(self.gdf_nearest_wells.loc[mask, 'm'],
+                                weights=1 / np.square(self.gdf_nearest_wells.loc[mask, 'distances']))
+
         # Если установлен flag water_cut_map = False (расчет обв-ти с окружения)
         if not dict_parameters_coefficients['well_params']['water_cut_map']:
             # Обводненность - Выбираем только те скважины, которые остановлены не более 10 лет назад
-            self.water_cut = np.mean(self.gdf_nearest_wells[(self.gdf_nearest_wells['no_work_time'] <= 12 * 10) &
-                                                            (self.gdf_nearest_wells['Ql_rate'] > 0)]
-                                     ['water_cut'])
+            mask = (self.gdf_nearest_wells['no_work_time'] <= 12 * 10 & self.gdf_nearest_wells['Ql_rate'] > 0)
+            if not sum(mask) == 0:
+                self.water_cut = np.average(self.gdf_nearest_wells.loc[mask, 'water_cut'],
+                                            weights=1 / np.square(self.gdf_nearest_wells.loc[mask, 'distances']))
         pass
 
     def get_params_maps(self, maps):
@@ -227,7 +230,9 @@ def calculate_reserves_by_voronoi(list_zones, df_fact_wells, map_rrr, save_direc
                                                                                                 'work_marker',
                                                                                                 'LINESTRING_geo',
                                                                                                 'length_geo',
-                                                                                                'POINT_T1_geo']]
+                                                                                                'POINT_T1_geo',
+                                                                                                'well_number_digit',
+                                                                                                'type_wellbore']]
     gdf_project_wells = gpd.GeoDataFrame()
     for drill_zone in list_zones:
         if drill_zone.rating != -1:
@@ -236,13 +241,16 @@ def calculate_reserves_by_voronoi(list_zones, df_fact_wells, map_rrr, save_direc
                  'well_type': [well.well_type for well in drill_zone.list_project_wells],
                  'LINESTRING_geo': [well.LINESTRING_geo for well in drill_zone.list_project_wells],
                  'length_geo': [well.length_geo for well in drill_zone.list_project_wells],
-                 'POINT_T1_geo': [well.POINT_T1_geo for well in drill_zone.list_project_wells]}
+                 'POINT_T1_geo': [well.POINT_T1_geo for well in drill_zone.list_project_wells],
+                 'well_number_digit': [well.well_number for well in drill_zone.list_project_wells],
+                 'type_wellbore': ['Материнский ствол'] * len(drill_zone.list_project_wells)}
             )
             gdf_project_wells = pd.concat([gdf_project_wells, gdf_project_wells_zone], ignore_index=True)
     # gdf со всеми скважинами: проектными и фактическими
     gdf_all_wells = gpd.GeoDataFrame(pd.concat([df_fact_wells, gdf_project_wells], ignore_index=True))
     # расчет Вороных
-    gdf_all_wells[['area_voronoi', 'r_eff_voronoy']] = get_parameters_voronoi_cells(gdf_all_wells)
+    df_parameters_voronoi = get_parameters_voronoi_cells(gdf_all_wells)
+    gdf_all_wells = pd.merge(gdf_all_wells, df_parameters_voronoi, on='well_number', how='left')
     # сохранение картинки Вороных
     if save_directory:
         save_picture_voronoi(gdf_all_wells, f"{save_directory}/voronoy.png",

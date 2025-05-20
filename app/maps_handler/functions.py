@@ -5,9 +5,8 @@ from osgeo import gdal, ogr
 
 from .maps import (Map, read_array, read_raster, get_map_reservoir_score, get_map_potential_score,
                    get_map_risk_score, get_map_opportunity_index)
-from ..input_output.input import create_shapely_types
+from ..input_output.functions_wells_data import create_shapely_types
 from ..well_active_zones import get_value_map
-from ..ranking_drilling.one_phase_model import get_sw
 
 
 @logger.catch
@@ -49,7 +48,7 @@ def mapping(maps_directory, data_wells, dict_properties, **kwargs):
                                        + np.power(data_wells.T3_y_pix - data_wells.T1_y_pix, 2))
     # расчет Shapely объектов
     df_shapely = create_shapely_types(data_wells, list_names=['T1_x_pix', 'T1_y_pix', 'T3_x_pix', 'T3_y_pix'])
-    data_wells[['POINT_T1_pix', 'POINT_T3_pix', 'LINESTRING_pix', 'MULTILINESTRING_pix']] = df_shapely
+    data_wells[['POINT_T1_pix', 'POINT_T3_pix', 'LINESTRING_pix']] = df_shapely
 
     logger.info(f"Запись значений с карт для текущего фонда")
     # с карт снимаем значения eff_h (NNT), m, So
@@ -102,13 +101,6 @@ def maps_load_directory(maps_directory):
         maps.append(read_raster(f'{maps_directory}/porosity.grd'))
     except FileNotFoundError:
         logger.error(f"в папке отсутствует файл с картой пористости: porosity.grd")
-
-    logger.info(f"Загрузка карты эффективной мощности коллектора")
-    try:
-        maps.append(read_raster(f'{maps_directory}/net_thickness.grd'))
-    except FileNotFoundError:
-        logger.warning(f"в папке отсутствует файл с картой эффективной мощности коллектора: net_thickness.grd")
-
     return maps
 
 
@@ -359,34 +351,3 @@ def cut_map_by_mask(base_map, mask, blank_value=np.nan):
                        base_map.type_map)
 
     return modified_map
-
-
-def get_current_So(row, dict_parameters_coefficients):
-    """
-    Определение текущей водонасыщенности и нефтенасыщенности
-    Parameters
-    ----------
-    Returns
-    -------
-    Текущая нефтенасыщенность на скважине
-    """
-    # Переопределим параметры из словаря
-    kv_kh, Swc, Sor, Fw, m1, Fo, m2, Bw = (
-        list(map(lambda name: dict_parameters_coefficients['default_well_params'][name],
-                 ['kv_kh', 'Swc', 'Sor', 'Fw', 'm1', 'Fo', 'm2', 'Bw'])))
-    Swc = 1 - row['So']
-    reservoir_params = dict_parameters_coefficients['reservoir_params']
-    reservoir_params['f_w'] = row['water_cut']
-    fluid_params = dict_parameters_coefficients['fluid_params']
-
-    # Выделение необходимых параметров пластовой жидкости
-    mu_w, mu_o, Bo, c_o, c_w = list(map(lambda key: fluid_params[key], ['mu_w', 'mu_o', 'Bo', 'c_o', 'c_w']))
-    # Выделение необходимых параметров пласта
-    f_w, c_r = list(map(lambda key: reservoir_params[key], ['f_w', 'c_r']))
-
-    if row.Winj_rate == 0:
-        # Текущая водонасыщенность
-        Sw = get_sw(mu_w, mu_o, Bo, Bw, f_w, Fw, m1, Fo, m2, Swc, Sor)
-        return 1 - Sw
-    else:
-        return Sor

@@ -89,3 +89,34 @@ def get_b(Bo, Bw, f_w):
     # B = 1 / ((100 - f_w_r) / Bo + f_w_r / Bw) * 100
     B = Bo * (1 - f_w_r / 100) + Bw * f_w_r / 100
     return B
+
+
+def get_current_So(row, dict_parameters_coefficients):
+    """
+    Определение текущей водонасыщенности и нефтенасыщенности
+    Parameters
+    ----------
+    Returns
+    -------
+    Текущая нефтенасыщенность на скважине
+    """
+    # Переопределим параметры из словаря
+    kv_kh, Swc, Sor, Fw, m1, Fo, m2, Bw = (
+        list(map(lambda name: dict_parameters_coefficients['default_well_params'][name],
+                 ['kv_kh', 'Swc', 'Sor', 'Fw', 'm1', 'Fo', 'm2', 'Bw'])))
+    Swc = 1 - row['So']
+    reservoir_params = dict_parameters_coefficients['reservoir_params']
+    reservoir_params['f_w'] = row['water_cut']
+    fluid_params = dict_parameters_coefficients['fluid_params']
+
+    # Выделение необходимых параметров пластовой жидкости
+    mu_w, mu_o, Bo, c_o, c_w = list(map(lambda key: fluid_params[key], ['mu_w', 'mu_o', 'Bo', 'c_o', 'c_w']))
+    # Выделение необходимых параметров пласта
+    f_w, c_r = list(map(lambda key: reservoir_params[key], ['f_w', 'c_r']))
+
+    if row.Winj_rate == 0:
+        # Текущая водонасыщенность
+        Sw = get_sw(mu_w, mu_o, Bo, Bw, f_w, Fw, m1, Fo, m2, Swc, Sor)
+        return 1 - Sw
+    else:
+        return Sor

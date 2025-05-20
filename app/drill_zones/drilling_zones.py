@@ -108,7 +108,7 @@ class DrillZone:
                     project_well.LINESTRING_geo = LineString([project_well.POINT_T1_geo, project_well.POINT_T3_geo])
                 project_well.length_geo = project_well.LINESTRING_geo.length
                 # Определение ближайшего окружения и параметров с него
-                project_well.get_nearest_wells(df_fact_wells, threshold / default_size_pixel, k=k_wells)
+                project_well.get_nearest_wells(df_fact_wells, k=k_wells)
                 project_well.get_params_nearest_wells(dict_parameters)
                 self.list_project_wells.append(project_well)
             # Количество проектных скважин в перспективной зоне
@@ -303,7 +303,8 @@ def clusterization_zones(map_opportunity_index, epsilon, min_samples, percent_lo
 if __name__ == '__main__':
     # Скрипт для перебора гиперпараметров DBSCAN по карте cut_map_opportunity_index.grd
     import matplotlib.pyplot as plt
-    from app.input_output.input import load_wells_data, load_geo_phys_properties
+    from app.input_output.input_wells_data import load_wells_data
+    from app.input_output.input_geo_phys_properties import load_geo_phys_properties
     from app.input_output.output import get_save_path
     from app.local_parameters import main_parameters, constants
     from app.well_active_zones import calculate_effective_radius

@@ -3,12 +3,16 @@ import geopandas as gpd
 import pandas as pd
 from loguru import logger
 
+from app.input_output.input_economy import load_economy_data
+from app.input_output.input_frac_info import load_frac_info
+from app.input_output.input_geo_phys_properties import load_geo_phys_properties
+from app.input_output.input_wells_data import load_wells_data
 from app.ranking_drilling.starting_rates import get_df_permeability_fact_wells
 from local_parameters import main_parameters, constants
-from input_output.input import load_wells_data, load_geo_phys_properties, load_frac_info, load_economy_data
 
 from app.decline_rate.decline_rate import get_decline_rates
-from app.maps_handler.functions import mapping, get_current_So
+from app.maps_handler.functions import mapping
+from app.ranking_drilling.one_phase_model import get_current_So
 from well_active_zones import calculate_effective_radius
 from drill_zones.drilling_zones import calculate_drilling_zones
 from project_wells import calculate_reserves_by_voronoi
@@ -121,4 +125,4 @@ if __name__ == '__main__':
 
     logger.info(f"Выгрузка данных расчета:")
     upload_data(name_field, name_object, save_directory, data_wells, maps, list_zones, info_clusterization_zones, FEM,
-                method_taxes, **{**load_data_param, **well_params})
+                method_taxes, polygon_OI, **{**load_data_param, **well_params})

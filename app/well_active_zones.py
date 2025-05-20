@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import geopandas as gpd
 
-from shapely.geometry import Polygon, MultiPolygon
+from shapely.geometry import LineString, Polygon, MultiPolygon
 from longsgis import voronoiDiagram4plg
 
 from loguru import logger
@@ -66,14 +66,14 @@ def well_effective_radius(row, default_radius, So_min, NUMBER_MONTHS=120, defaul
     eff_h = row["NNT"]
     m = row["m"]
     So = row["So"]
+    Bo = row.Bo
+    ro_oil = row.rho
     if work_type_well == "prod":
         # Проверка на длительность работы
         if row['no_work_time'] > NUMBER_MONTHS:
             return default_radius
         else:
             cumulative_oil_prod = row.Qo_cumsum
-            Bo = row.Bo
-            ro_oil = row.rho
             R_eff = calc_r_eff(cumulative_oil_prod, Bo, ro_oil, eff_h, m, So, well_type, len_well, So_min)
             if not R_eff or R_eff < default_radius:
                 R_eff = default_radius
@@ -82,8 +82,8 @@ def well_effective_radius(row, default_radius, So_min, NUMBER_MONTHS=120, defaul
         if row['no_work_time'] > NUMBER_MONTHS:
             return default_radius_inj
         else:
-            cumulative_water_inj = row.Winj_cumsum
-            R_eff = calc_r_eff(cumulative_water_inj, 1, 1, eff_h, m, So, well_type, len_well, So_min)
+            cumulative_water_inj = row.V_useful_injection
+            R_eff = calc_r_eff(cumulative_water_inj, Bo, ro_oil, eff_h, m, So, well_type, len_well, So_min)
             if not R_eff or R_eff < default_radius_inj:
                 R_eff = default_radius_inj
             return R_eff
@@ -120,6 +120,17 @@ def get_parameters_voronoi_cells(df_Coordinates, type_coord="geo", default_size_
         LINESTRING = None
         length_well = None
         logger.error("Неверный тип координат.")
+
+    df_MZS = df_Coordinates[df_Coordinates.type_wellbore == "МЗС"].copy()
+    df_Coordinates_other = df_Coordinates[df_Coordinates.type_wellbore != "МЗС"].copy()
+    # Проверка на наличие МЗС
+    if not df_MZS.empty:
+        df_Coordinates_MZS = df_MZS.copy()
+        df_Coordinates_MZS[LINESTRING] = df_Coordinates_MZS.groupby("well_number_digit")[LINESTRING].transform(combine_to_linestring)
+        # Если есть МЗС, то формирование для них одной строки
+        df_Coordinates_MZS.drop_duplicates(subset=['well_number_digit'], keep='first', inplace=True)
+        df_Coordinates = pd.concat([df_Coordinates_other, df_Coordinates_MZS], ignore_index=True)
+
     gdf_Coordinates = gpd.GeoDataFrame(df_Coordinates, geometry=LINESTRING)
     # буферизация скважин || тк вороные строятся для полигонов буферизируем точки и линии скважин
     gdf_Coordinates["Polygon"] = gdf_Coordinates.set_geometry(LINESTRING).buffer(1, resolution=3)
@@ -182,22 +193,36 @@ def get_parameters_voronoi_cells(df_Coordinates, type_coord="geo", default_size_
     # расчет площади
     gdf_Coordinates['area_voronoi'] = gdf_Coordinates.set_geometry('polygon_voronoi').area
 
+    # Если есть МЗС восстанавливаем исходный массив скважин
+    if not df_MZS.empty:
+        df_Coordinates_other = pd.merge(df_Coordinates_other, gdf_Coordinates[['well_number', 'area_voronoi']],
+                                        on='well_number', how='left')
+        df_Coordinates_MZS = pd.merge(df_MZS, gdf_Coordinates[gdf_Coordinates.type_wellbore
+                                                              == "МЗС"][['well_number_digit', 'area_voronoi']],
+                                      on='well_number_digit', how='left')
+        df_Coordinates_MZS['area_voronoi'] = (df_Coordinates_MZS['area_voronoi'] /
+                                              np.array(df_MZS.groupby('well_number_digit')['well_number'].transform('count')))
+        df_Coordinates = pd.concat([df_Coordinates_other, df_Coordinates_MZS], ignore_index=True)
+    else:
+        df_Coordinates = gdf_Coordinates
+
     # считаем для ГС и ННС радиус через площадь ячейки вороного
-    gdf_Coordinates.loc[gdf_Coordinates["well_type"] == "vertical", "r_eff_voronoy"] = np.sqrt(
-        gdf_Coordinates['area_voronoi'] / np.pi)
-    gdf_Coordinates.loc[gdf_Coordinates["well_type"] == "horizontal", "r_eff_voronoy"] = (
-            (-gdf_Coordinates[length_well] + np.sqrt(np.power(gdf_Coordinates[length_well], 2)
-                                                     + gdf_Coordinates['area_voronoi'] * np.pi)) // np.pi)
-    return gdf_Coordinates[['area_voronoi', 'r_eff_voronoy']]
+    df_Coordinates.loc[df_Coordinates["well_type"] == "vertical", "r_eff_voronoy"] = np.sqrt(
+        df_Coordinates['area_voronoi'] / np.pi)
+    df_Coordinates.loc[df_Coordinates["well_type"] == "horizontal", "r_eff_voronoy"] = (
+            (-df_Coordinates[length_well] + np.sqrt(np.power(df_Coordinates[length_well], 2)
+                                                    + df_Coordinates['area_voronoi'] * np.pi)) // np.pi)
+    return df_Coordinates[['well_number', 'area_voronoi', 'r_eff_voronoy']]
 
 
-def voronoi_normalize_r_eff(data_wells, buff=1.1):
+def voronoi_normalize_r_eff(data_wells, df_parameters_voronoi, buff=1.1):
     """ Нормирование больших эффективных радиусов на площадь ячейки Вороного
         buff - допустимая доля превышения площади ячейки"""
 
     data_wells_work = data_wells[(data_wells['Qo_cumsum'] > 0) | (data_wells['Winj_cumsum'] > 0)].reset_index(drop=True)
     # расчет вороных для скважин
-    data_wells_work[['area_voronoi', 'r_eff_voronoy']] = get_parameters_voronoi_cells(data_wells_work)
+    del data_wells_work["r_eff_voronoy"]
+    data_wells_work = pd.merge(data_wells_work, df_parameters_voronoi, on='well_number', how='left')
 
     # расчет площадей для нормализации радиуса
     gdf_data_wells_work = gpd.GeoDataFrame(data_wells_work, geometry="LINESTRING_geo")
@@ -219,6 +244,17 @@ def voronoi_normalize_r_eff(data_wells, buff=1.1):
     return data_wells
 
 
+def combine_to_linestring(group):
+    """Объединение координат МЗС в одну линию"""
+    coords = []
+    for geom in group:
+        if geom.geom_type == 'Point':
+            coords.append((geom.x, geom.y))  # добавляем координаты точки
+        elif geom.geom_type == 'LineString':
+            coords.extend(list(geom.coords))  # добавляем все координаты линии
+    return LineString(coords) if coords else None
+
+
 def calculate_effective_radius(data_wells, dict_properties):
     """
     Дополнение фрейма data_wells колонкой 'r_eff'
@@ -236,15 +272,23 @@ def calculate_effective_radius(data_wells, dict_properties):
     data_wells['Bo'] = dict_properties['fluid_params']['Bo']  # объемный коэффициент нефти, д.ед
     data_wells['rho'] = dict_properties['fluid_params']['rho']  # плотность нефти в поверхностных условиях, г/см3
 
+    # Расчет параметров ячеек вороного
+    data_wells_work = data_wells[(data_wells['Qo_cumsum'] > 0) | (data_wells['Winj_cumsum'] > 0)].reset_index(drop=True)
+    df_parameters_voronoi = get_parameters_voronoi_cells(data_wells_work)
+
+    # Оценка объемов полезной закачки для нагнетательных скважин
+    data_wells = calculate_useful_injection(data_wells)
+
     # расчет радиусов по физическим параметрам
     default_radius = dict_properties['default_well_params']['default_radius']
     So_min = dict_properties['default_well_params']['Sor']
     data_wells['r_eff_not_norm'] = data_wells.apply(well_effective_radius, args=(default_radius, So_min, ), axis=1)
 
     # нормировка эффективного радиуса фонда через площади ячеек Вороного
-    data_wells = voronoi_normalize_r_eff(data_wells)
+    data_wells = voronoi_normalize_r_eff(data_wells, df_parameters_voronoi)
     del data_wells['Bo']
     del data_wells['rho']
+    del data_wells['V_useful_injection']
     return data_wells
 
 
@@ -253,14 +297,23 @@ def save_picture_voronoi(df_Coordinates, filename, type_coord="geo", default_siz
     import matplotlib.pyplot as plt
     if type_coord == 'geo':
         LINESTRING = 'LINESTRING_geo'
-        length_well = 'length_geo'
     elif type_coord == 'pix':
         LINESTRING = 'LINESTRING_pix'
-        length_well = 'length_pix'
     else:
         LINESTRING = None
-        length_well = None
         logger.error("Неверный тип координат.")
+
+    df_MZS = df_Coordinates[df_Coordinates.type_wellbore == "МЗС"].copy()
+    df_Coordinates_other = df_Coordinates[df_Coordinates.type_wellbore != "МЗС"].copy()
+    # Проверка на наличие МЗС
+    if not df_MZS.empty:
+        df_Coordinates_MZS = df_MZS.copy()
+        df_Coordinates_MZS[LINESTRING] = df_Coordinates_MZS.groupby("well_number_digit")[LINESTRING].transform(
+            combine_to_linestring)
+        # Если есть МЗС, то формирование для них одной строки
+        df_Coordinates_MZS.drop_duplicates(subset=['well_number_digit'], keep='first', inplace=True)
+        df_Coordinates = pd.concat([df_Coordinates_other, df_Coordinates_MZS], ignore_index=True)
+
     gdf_Coordinates = gpd.GeoDataFrame(df_Coordinates, geometry=LINESTRING)
     # буферизация скважин || тк вороные строятся для полигонов буферизируем точки и линии скважин
     gdf_Coordinates["Polygon"] = gdf_Coordinates.set_geometry(LINESTRING).buffer(1, resolution=3)
@@ -311,3 +364,42 @@ def save_picture_voronoi(df_Coordinates, filename, type_coord="geo", default_siz
     plt.savefig(filename)
     pass
 
+
+def calculate_useful_injection(data_wells, max_distance_inj_prod=1000):
+    """Расчет объема полезной закачки для нагнетательных скважин через коэффициенты влияния
+    max_distance_inj_prod - расстояние для поиска соседних скважин
+    """
+    # Список добывающих скважин, для которых будет произведен расчет матриц взаимодействия
+    list_prod_wells = data_wells[data_wells.work_marker == 'prod'].well_number.to_list()
+    # Фрейм нагнетательных скважин
+    df_inj_wells = data_wells[data_wells.work_marker == 'inj'].copy()
+
+    # Расчет долей компенсации жидкости
+    df_interference_matrix = pd.DataFrame(columns=df_inj_wells.well_number, index=list_prod_wells, data=0.0)
+    gdf_inj_wells = gpd.GeoDataFrame(df_inj_wells, geometry="LINESTRING_pix")
+
+    def calc_interference_matrix(wells_inj, prod_well):
+        """Расчет коэффициентов участия для добывающих скважин"""
+        lambda_ij = wells_inj.NNT * wells_inj.Winj_cumsum / wells_inj['distance']
+        lambda_ij = lambda_ij / lambda_ij.sum()
+        lambda_ij = lambda_ij.to_numpy().reshape(1, wells_inj.shape[0])
+        return pd.DataFrame(columns=wells_inj.well_number.to_list(), index=[prod_well], data=lambda_ij)
+
+    for prod_well in list_prod_wells:
+        geometry_prod_well = gpd.GeoDataFrame(data_wells[data_wells.well_number == prod_well],
+                                              geometry="LINESTRING_pix")['LINESTRING_pix'].iloc[0]
+        gdf_inj_wells['distance'] = geometry_prod_well.distance(gdf_inj_wells['LINESTRING_pix'])
+        # выделим ближайшее скважины
+        df_inj_wells_nearest = gdf_inj_wells[gdf_inj_wells['distance'] <= max_distance_inj_prod]
+        if not df_inj_wells_nearest.empty:
+            df_interference_matrix.update(calc_interference_matrix(df_inj_wells_nearest, prod_well))
+
+    # Объем полезной закачки
+    data_wells['V_useful_injection'] = 0
+    for inj_well in df_interference_matrix.columns:
+        V_interference_wells = df_interference_matrix[df_interference_matrix[inj_well] > 0].index.map(
+            lambda x: data_wells.loc[data_wells.well_number == x]['Qo_cumsum'].iloc[0])
+        V_useful_injection = np.sum(
+            V_interference_wells * df_interference_matrix[df_interference_matrix[inj_well] > 0][inj_well].to_numpy())
+        data_wells.loc[data_wells['well_number'] == inj_well, 'V_useful_injection'] = V_useful_injection
+    return data_wells

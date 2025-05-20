@@ -124,7 +124,7 @@ class Map:
         values = list(interpolated_values) + values_out
         return values
 
-    def raster_to_polygon(self):
+    def raster_to_polygon(self, buffer=2):
         """
         Преобразует растровую карту в полигон в пиксельных координатах
         """
@@ -147,9 +147,16 @@ class Map:
             return None
 
         # Объединяем все полигоны в один (если их несколько)
-        return unary_union(polygons) if len(polygons) > 1 else polygons[0]
+        union_polygon = unary_union(polygons) if len(polygons) > 1 else polygons[0]
+        # Создаем уменьшенный полигон с отступом
+        shrunk_polygon = union_polygon.buffer(-buffer)
+        # Проверяем, что результат - валидный полигон
+        if shrunk_polygon.is_empty:
+            logger.error("Ошибка: отступ слишком большой, полигон исчез")
+        return shrunk_polygon
 
-    def save_img(self, filename, data_wells=None, list_zones=None, info_clusterization_zones=None, project_wells=None):
+    def save_img(self, filename, data_wells=None, list_zones=None, info_clusterization_zones=None, project_wells=None,
+                 polygon_OI=None):
         import matplotlib.pyplot as plt
 
         # Определение размера осей
@@ -247,7 +254,9 @@ class Map:
                     # Отображение имен скважин рядом с точками T1
                     for x, y, name in zip(x_t1, y_t1, data_wells_type.well_number):
                         plt.text(x + 2, y - 2, name, fontsize=font_size, fontweight='bold', ha='left', color=color)
-
+        if polygon_OI:
+            for geom in polygon_OI.geoms:
+                plt.plot(*geom.exterior.xy, c='r')
         plt.title(f"{self.type_map}\n {title}", fontsize=font_size * 8)
         plt.tick_params(axis='both', which='major', labelsize=font_size * 8)
         plt.contour(self.data, levels=8, colors='black', origin='lower', linewidths=font_size / 100)

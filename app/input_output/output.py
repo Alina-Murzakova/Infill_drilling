@@ -14,7 +14,7 @@ from app.maps_handler.maps import read_array
 
 @logger.catch
 def upload_data(name_field, name_object, save_directory, data_wells, maps, list_zones, info_clusterization_zones,
-                FEM, method_taxes, **kwargs):
+                FEM, method_taxes, polygon_OI, **kwargs):
     """Выгрузка данных после расчета"""
     name_field = name_field.replace('/', "_")
     name_object = name_object.replace('/', "_")
