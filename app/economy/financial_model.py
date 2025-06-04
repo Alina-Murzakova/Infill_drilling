@@ -435,7 +435,7 @@ class FinancialEconomicModel:
 
 if __name__ == "__main__":
     from app.local_parameters import main_parameters, constants
-    from app.input_output.input import load_economy_data
+    from app.input_output.input_economy import load_economy_data
     import pickle
     import sys
 

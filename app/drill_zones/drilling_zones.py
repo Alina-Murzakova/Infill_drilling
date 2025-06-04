@@ -66,7 +66,8 @@ class DrillZone:
         min_area_proj_cluster = (2 * (buffer_project_wells * default_size_pixel) * max_length +
                                  np.pi * (buffer_project_wells * default_size_pixel) ** 2) / 1000000
 
-        # threshold = 2500 - максимальное расстояние для исключения скважины из ближайших скважин, пиксели
+        # threshold = 2500 - максимальное расстояние для исключения скважины из ближайших скважин
+        # при расчете азимутов, пиксели
         self.calculate_reserves(map_rrr)
         self.calculate_area(map_rrr)
         # Начальное количество скважин на основе запасов/площади

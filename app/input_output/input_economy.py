@@ -92,7 +92,7 @@ def load_economy_data(economy_path, name_field, gor):
                 'cumulative_production': None,
                 'Kg_group': None}
 
-    name_row_NDPI_NDD = None
+    name_row_NDPI_NDD = df_NDPI_NDD[2].iloc[0]
     if name_field in reservoirs_NDD['Месторождение'].values.tolist():
         method = "НДД"
         initial_recoverable_reserves = constants.iloc[5, 1]

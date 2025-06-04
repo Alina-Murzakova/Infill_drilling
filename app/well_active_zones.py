@@ -8,6 +8,8 @@ from shapely.geometry import LineString, Polygon, MultiPolygon
 from longsgis import voronoiDiagram4plg
 
 from loguru import logger
+from tqdm import tqdm
+
 from app.maps_handler.maps import trajectory_break_points
 
 
@@ -126,7 +128,8 @@ def get_parameters_voronoi_cells(df_Coordinates, type_coord="geo", default_size_
     # Проверка на наличие МЗС
     if not df_MZS.empty:
         df_Coordinates_MZS = df_MZS.copy()
-        df_Coordinates_MZS[LINESTRING] = df_Coordinates_MZS.groupby("well_number_digit")[LINESTRING].transform(combine_to_linestring)
+        df_Coordinates_MZS[LINESTRING] = df_Coordinates_MZS.groupby("well_number_digit")[LINESTRING].transform(
+            combine_to_linestring)
         # Если есть МЗС, то формирование для них одной строки
         df_Coordinates_MZS.drop_duplicates(subset=['well_number_digit'], keep='first', inplace=True)
         df_Coordinates = pd.concat([df_Coordinates_other, df_Coordinates_MZS], ignore_index=True)
@@ -201,7 +204,8 @@ def get_parameters_voronoi_cells(df_Coordinates, type_coord="geo", default_size_
                                                               == "МЗС"][['well_number_digit', 'area_voronoi']],
                                       on='well_number_digit', how='left')
         df_Coordinates_MZS['area_voronoi'] = (df_Coordinates_MZS['area_voronoi'] /
-                                              np.array(df_MZS.groupby('well_number_digit')['well_number'].transform('count')))
+                                              np.array(df_MZS.groupby('well_number_digit')['well_number'].transform(
+                                                  'count')))
         df_Coordinates = pd.concat([df_Coordinates_other, df_Coordinates_MZS], ignore_index=True)
     else:
         df_Coordinates = gdf_Coordinates
@@ -282,7 +286,7 @@ def calculate_effective_radius(data_wells, dict_properties):
     # расчет радиусов по физическим параметрам
     default_radius = dict_properties['default_well_params']['default_radius']
     So_min = dict_properties['default_well_params']['Sor']
-    data_wells['r_eff_not_norm'] = data_wells.apply(well_effective_radius, args=(default_radius, So_min, ), axis=1)
+    data_wells['r_eff_not_norm'] = data_wells.apply(well_effective_radius, args=(default_radius, So_min,), axis=1)
 
     # нормировка эффективного радиуса фонда через площади ячеек Вороного
     data_wells = voronoi_normalize_r_eff(data_wells, df_parameters_voronoi)
@@ -369,37 +373,54 @@ def calculate_useful_injection(data_wells, max_distance_inj_prod=1000):
     """Расчет объема полезной закачки для нагнетательных скважин через коэффициенты влияния
     max_distance_inj_prod - расстояние для поиска соседних скважин
     """
-    # Список добывающих скважин, для которых будет произведен расчет матриц взаимодействия
-    list_prod_wells = data_wells[data_wells.work_marker == 'prod'].well_number.to_list()
-    # Фрейм нагнетательных скважин
-    df_inj_wells = data_wells[data_wells.work_marker == 'inj'].copy()
+    # Разделяем скважины на нагнетательные и добывающие
+    inj_wells = data_wells[data_wells.work_marker == 'inj'].copy()
+    prod_wells = data_wells[data_wells.work_marker == 'prod'].copy()
 
-    # Расчет долей компенсации жидкости
-    df_interference_matrix = pd.DataFrame(columns=df_inj_wells.well_number, index=list_prod_wells, data=0.0)
-    gdf_inj_wells = gpd.GeoDataFrame(df_inj_wells, geometry="LINESTRING_pix")
+    # Создаем GeoDataFrame для быстрого расчета расстояний
+    gdf_inj = gpd.GeoDataFrame(inj_wells, geometry='LINESTRING_pix')
+    gdf_prod = gpd.GeoDataFrame(prod_wells, geometry='LINESTRING_pix')
 
-    def calc_interference_matrix(wells_inj, prod_well):
-        """Расчет коэффициентов участия для добывающих скважин"""
-        lambda_ij = wells_inj.NNT * wells_inj.Winj_cumsum / wells_inj['distance']
-        lambda_ij = lambda_ij / lambda_ij.sum()
-        lambda_ij = lambda_ij.to_numpy().reshape(1, wells_inj.shape[0])
-        return pd.DataFrame(columns=wells_inj.well_number.to_list(), index=[prod_well], data=lambda_ij)
+    # Подготовка данных для матричного расчета
+    all_inj_wells = inj_wells.well_number.values
+    all_prod_wells = prod_wells.well_number.values
 
-    for prod_well in list_prod_wells:
-        geometry_prod_well = gpd.GeoDataFrame(data_wells[data_wells.well_number == prod_well],
-                                              geometry="LINESTRING_pix")['LINESTRING_pix'].iloc[0]
-        gdf_inj_wells['distance'] = geometry_prod_well.distance(gdf_inj_wells['LINESTRING_pix'])
-        # выделим ближайшее скважины
-        df_inj_wells_nearest = gdf_inj_wells[gdf_inj_wells['distance'] <= max_distance_inj_prod]
-        if not df_inj_wells_nearest.empty:
-            df_interference_matrix.update(calc_interference_matrix(df_inj_wells_nearest, prod_well))
+    # Векторизованный расчет расстояний между всеми парами скважин
+    distance_matrix = np.zeros((len(all_prod_wells), len(all_inj_wells)))
 
-    # Объем полезной закачки
-    data_wells['V_useful_injection'] = 0
-    for inj_well in df_interference_matrix.columns:
-        V_interference_wells = df_interference_matrix[df_interference_matrix[inj_well] > 0].index.map(
-            lambda x: data_wells.loc[data_wells.well_number == x]['Qo_cumsum'].iloc[0])
-        V_useful_injection = np.sum(
-            V_interference_wells * df_interference_matrix[df_interference_matrix[inj_well] > 0][inj_well].to_numpy())
-        data_wells.loc[data_wells['well_number'] == inj_well, 'V_useful_injection'] = V_useful_injection
+    for i, prod_well in tqdm(enumerate(all_prod_wells), desc='Расчет матрицы расстояний'):
+        prod_point = gdf_prod[gdf_prod.well_number == prod_well].geometry.iloc[0]
+        distances = gdf_inj.geometry.distance(prod_point)
+        distance_matrix[i, :] = distances
+
+    # Применяем маску для расстояний
+    valid_distances = distance_matrix <= max_distance_inj_prod
+    distance_matrix[~valid_distances] = np.inf  # чтобы избежать деления на 0
+
+    # Векторизованный расчет коэффициентов влияния
+    NNT_values = inj_wells.NNT.values
+    Winj_cumsum_values = inj_wells.Winj_cumsum.values
+
+    # Расчет lambda_ij для всех пар
+    with np.errstate(divide='ignore', invalid='ignore'):
+        lambda_ij = (NNT_values * Winj_cumsum_values) / distance_matrix
+        # Нормализация по строкам (для каждой добывающей скважины)
+        row_sums = lambda_ij.sum(axis=1, keepdims=True)
+        lambda_ij = np.divide(lambda_ij, row_sums, where=row_sums != 0)
+
+    # Расчет полезной закачки (векторизованный)
+    Qo_cumsum_values = prod_wells.set_index('well_number')['Qo_cumsum']
+    useful_injection = np.zeros(len(all_inj_wells))
+
+    for j in tqdm(range(len(all_inj_wells)), desc='Расчет полезной закачки'):
+        mask = lambda_ij[:, j] > 0
+        useful_injection[j] = np.sum(lambda_ij[mask, j] * Qo_cumsum_values.iloc[mask].values)
+
+    # Создаем серию с результатами
+    result_series = pd.Series(useful_injection, index=all_inj_wells, name='V_useful_injection')
+
+    # Объединяем с исходными данными
+    data_wells = data_wells.merge(result_series, how='left', left_on='well_number', right_index=True)
+
+    data_wells['V_useful_injection'] = data_wells['V_useful_injection'].fillna(0)
     return data_wells
