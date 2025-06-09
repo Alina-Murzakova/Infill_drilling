@@ -62,7 +62,7 @@ def calculate_starting_rate(reservoir_params, fluid_params, well_params, coeffic
 
     Рассчитываются по функциям:
     delta_P - депрессия | атм
-    well_productivity - коффициент продуктивности | м3/сут/атм
+    well_productivity - коэффициент продуктивности | м3/сут/атм
     --------------------------------------------------------------------------------------------------------------------
     """
     rho = fluid_params['rho']

@@ -50,15 +50,16 @@ if __name__ == '__main__':
                                                                   dict_parameters_coefficients)
 
     logger.info("Загрузка и обработка карт")
-    _, data_wells = mapping(maps_directory=paths["maps_directory"],
-                            data_wells=data_wells,
-                            dict_properties=dict_parameters_coefficients['reservoir_params'],
-                            **load_data_param)
+    _, data_wells, maps_to_calculate = mapping(maps_directory=paths["maps_directory"],
+                                               data_wells=data_wells,
+                                               dict_properties=dict_parameters_coefficients['reservoir_params'],
+                                               **load_data_param)
     # default_size_pixel = maps[0].geo_transform[1]  # размер ячейки после загрузки всех карт
     # type_map_list = list(map(lambda raster: raster.type_map, maps))
 
     logger.info("Оценка темпов падения для текущего фонда")
     data_decline_rate_stat, df_initial, _ = get_decline_rates(data_history, data_wells)
+
 
     def unpack_list(value):
         # Функция для распаковки списка
@@ -90,9 +91,10 @@ if __name__ == '__main__':
     Qo_value_mean = df_final.loc[df_final.well_number == 'default_decline_rates']["Qo_value"].values[0]
 
     df_final['> среднего темпа Ql'] = ((df_final.Ql_k1 * df_final.Ql_k2 < k1k2_mean_Ql)
-                                                        & (df_final.Ql_k2 > k2_mean_Ql))
+                                       & (df_final.Ql_k2 > k2_mean_Ql))
     df_final['> среднего темпа Qo'] = ((df_final.Qo_k1 * df_final.Qo_k2 < k1k2_mean_Qo)
-                                                         & (df_final.Qo_k2 > k2_mean_Qo))
+                                       & (df_final.Qo_k2 > k2_mean_Qo))
+
 
     def f(x, k1, k2, Qst):
         return Qst * (1 + k1 * k2 * x) ** (-1 / k2)
@@ -107,9 +109,11 @@ if __name__ == '__main__':
 
     df_final[f'> среднего темпа Ql за период {n} месяцев'] = df_final.apply(lambda x: np.all(f(x_values, x.Ql_k1,
                                                                                                x.Ql_k2, Ql_value_mean)
-                                                                                             >= f_mean_values_Ql), axis=1)
+                                                                                             >= f_mean_values_Ql),
+                                                                            axis=1)
     df_final[f'> среднего темпа Qo за период {n} месяцев'] = df_final.apply(lambda x: np.all(f(x_values, x.Qo_k1,
-                                                                                               x.Qo_k2, Qo_value_mean) >=
+                                                                                               x.Qo_k2,
+                                                                                               Qo_value_mean) >=
                                                                                              f_mean_values_Qo), axis=1)
 
     threshold_value_Qo = np.nanpercentile(df_final.loc[df_final.well_number != 'default_decline_rates']["Qo_value"],

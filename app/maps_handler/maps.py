@@ -280,6 +280,8 @@ def read_raster(file_path, no_value=0):
     Map(type_map)
     """
     dataset = gdal.Open(file_path)
+    if dataset is None:
+        raise FileNotFoundError(f"Файл не найден или не читается: {file_path}")
     ndv = dataset.GetRasterBand(1).GetNoDataValue()
     band = dataset.GetRasterBand(1)
     data = band.ReadAsArray()
@@ -296,8 +298,7 @@ def read_raster(file_path, no_value=0):
 
 def read_array(data_wells, name_column_map, type_map, geo_transform, size,
                accounting_GS=True,
-               radius=1000,
-               period_no_work_inj=10):
+               radius=1000):
     """
     Создание объекта класса MAP из DataFrame
     Parameters
@@ -317,12 +318,7 @@ def read_array(data_wells, name_column_map, type_map, geo_transform, size,
     """
     # Очистка фрейма от скважин не в работе
     import warnings
-    if type_map == "water_cut":
-        data_wells_with_work = data_wells[(data_wells.Ql_rate > 0) | (data_wells.Winj_rate > 0)]
-        with warnings.catch_warnings(action='ignore', category=pd.errors.SettingWithCopyWarning):
-            data_wells_with_work.water_cut = np.where(data_wells_with_work.Winj_rate > 0,
-                                                      100, data_wells_with_work.water_cut)
-    elif type_map == "last_rate_oil" or type_map == "init_rate_oil":
+    if type_map == "last_rate_oil" or type_map == "init_rate_oil":
         data_wells_with_work = data_wells[(data_wells.Ql_rate > 0)]
 
         with warnings.catch_warnings(action='ignore', category=pd.errors.SettingWithCopyWarning):

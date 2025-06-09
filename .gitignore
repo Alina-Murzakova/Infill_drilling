@@ -7,22 +7,14 @@
 .idea/
 /app/local_parameters.py
 /app/active_well_outline.py
-/app/test.py
 .ipynb_checkpoints/
-init_well_position.ipynb
-/картинки_ПФ/
+/images/
+/decline_rate/
+/jupyter
+/data_for_maps
 /*.png
 /*.txt
-pickle.txt
 /.*ipynb
-Untitled.ipynb
-Untitled1.ipynb
-buffer_contours.txt
-TR_Frac_processing.ipynb
-ZBS_MZS.ipynb
-OIZ.ipynb
-OIZ — копия.ipynb
-Clusterization_wells.ipynb
-OIZ — копия+.ipynb
-So_current_OIZ.ipynb
-/decline_rate/
+__pycache__/
+*.py[cod]
+So_current + interference_all_points+fractures.ipynb
