@@ -11,7 +11,7 @@ from app.ranking_drilling.starting_rates import get_df_permeability_fact_wells
 from local_parameters import main_parameters, constants
 
 from app.decline_rate.decline_rate import get_decline_rates
-from app.maps_handler.functions import mapping
+from app.maps_handler.functions import mapping, calculate_reservoir_state_maps, calculate_score_maps
 from app.ranking_drilling.one_phase_model import get_current_So
 from well_active_zones import calculate_effective_radius
 from drill_zones.drilling_zones import calculate_drilling_zones
@@ -57,15 +57,26 @@ if __name__ == '__main__':
                                                                   dict_parameters_coefficients)
 
     logger.info("Загрузка и обработка карт")
-    maps, data_wells = mapping(maps_directory=paths["maps_directory"],
-                               data_wells=data_wells,
-                               dict_properties=dict_parameters_coefficients['reservoir_params'],
-                               **load_data_param)
+    maps, data_wells, maps_to_calculate = mapping(maps_directory=paths["maps_directory"],
+                                                  data_wells=data_wells,
+                                                  **load_data_param)
     default_size_pixel = maps[0].geo_transform[1]  # размер ячейки после загрузки всех карт
-    type_map_list = list(map(lambda raster: raster.type_map, maps))
 
     logger.info("Расчет радиусов дренирования и нагнетания для скважин")
     data_wells = calculate_effective_radius(data_wells, dict_properties=dict_parameters_coefficients)
+
+    if any(maps_to_calculate.values()):
+        logger.info("Расчет карт текущего состояния: обводненности и ОИЗ")
+        maps = calculate_reservoir_state_maps(data_wells,
+                                              maps,
+                                              dict_parameters_coefficients,
+                                              default_size_pixel,
+                                              maps_to_calculate,
+                                              maps_directory=paths["maps_directory"])
+
+    logger.info(f"Расчет оценочных карт")
+    maps = maps + calculate_score_maps(maps=maps,
+                                       dict_properties=dict_parameters_coefficients['reservoir_params'])
 
     logger.info("Расчет текущей нефтенасыщенности на скважинах")
     data_wells['Soil'] = data_wells.apply(get_current_So, args=(dict_parameters_coefficients,), axis=1)
@@ -89,6 +100,7 @@ if __name__ == '__main__':
                                                                      percent_low=percent_low,
                                                                      data_wells=data_wells)
 
+    type_map_list = list(map(lambda raster: raster.type_map, maps))
     map_rrr = maps[type_map_list.index('residual_recoverable_reserves')]
     map_opportunity_index = maps[type_map_list.index('opportunity_index')]
     polygon_OI = map_opportunity_index.raster_to_polygon()

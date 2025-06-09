@@ -7,10 +7,11 @@ from .maps import (Map, read_array, read_raster, get_map_reservoir_score, get_ma
                    get_map_risk_score, get_map_opportunity_index)
 from ..input_output.functions_wells_data import create_shapely_types
 from ..well_active_zones import get_value_map
+from reservoir_maps import get_maps
 
 
 @logger.catch
-def mapping(maps_directory, data_wells, dict_properties, **kwargs):
+def mapping(maps_directory, data_wells, **kwargs):
     """Загрузка, подготовка и расчет всех необходимых карт"""
     # Инициализация параметров загрузки
     default_size_pixel = kwargs['default_size_pixel']
@@ -25,7 +26,7 @@ def mapping(maps_directory, data_wells, dict_properties, **kwargs):
         raise logger.critical("no maps!")
 
     logger.info(f"Загрузка карт из папки: {maps_directory}")
-    maps = maps_load_directory(maps_directory)
+    maps, maps_to_calculate = maps_load_directory(maps_directory)
 
     # Поиск наименьшего размера карты и размера пикселя, если он None при загрузке
     dst_geo_transform, dst_projection, shape = get_final_resolution(maps, default_size_pixel)
@@ -35,9 +36,6 @@ def mapping(maps_directory, data_wells, dict_properties, **kwargs):
 
     logger.info(f"Преобразование карт к единому размеру и сетке")
     maps = list(map(lambda raster: raster.resize(dst_geo_transform, dst_projection, shape), maps))
-
-    logger.info(f"Расчет оценочных карт")
-    maps = maps + calculate_score_maps(maps, dict_properties)
 
     logger.info(f"Перевод координат скважин в пиксельные")
     data_wells['T1_x_pix'], data_wells['T1_y_pix'] = maps[-1].convert_coord_to_pix(
@@ -60,57 +58,117 @@ def mapping(maps_directory, data_wells, dict_properties, **kwargs):
             lambda row: get_value_map(row['well_type'], row['T1_x_pix'], row['T1_y_pix'], row['T3_x_pix'],
                                       row['T3_y_pix'], row['length_pix'],
                                       raster=maps[type_map_list.index(dict_column_map[column_key])]), axis=1)
-    return maps, data_wells
+    return maps, data_wells, maps_to_calculate
 
 
 def maps_load_directory(maps_directory):
     maps = []
+    maps_to_calculate = {"residual_recoverable_reserves": False,
+                         "water_cut": False,
+                         }
 
     logger.info(f"Загрузка карты ННТ")
     try:
         maps.append(read_raster(f'{maps_directory}/NNT.grd'))
     except FileNotFoundError:
-        logger.error(f"в папке отсутствует файл с картой ННТ: NNT.grd")
+        logger.error(f"В папке отсутствует файл с картой ННТ: NNT.grd")
 
     logger.info(f"Загрузка карты проницаемости")
     try:
         maps.append(read_raster(f'{maps_directory}/permeability.grd'))
     except FileNotFoundError:
-        logger.error(f"в папке отсутствует файл с картой проницаемости: permeability.grd")
+        logger.error(f"В папке отсутствует файл с картой проницаемости: permeability.grd")
 
     logger.info(f"Загрузка карты ОИЗ")
     try:
         maps.append(read_raster(f'{maps_directory}/residual_recoverable_reserves.grd'))
     except FileNotFoundError:
-        logger.error(f"в папке отсутствует файл с картой ОИЗ: residual_recoverable_reserves.grd")
+        logger.warning(f"В папке отсутствует файл с картой ОИЗ: residual_recoverable_reserves.grd\n"
+                       f"Карта ОИЗ будет построена")
+        maps_to_calculate['residual_recoverable_reserves'] = True
+
+    logger.info(f"Загрузка карты обводненности")
+    try:
+        maps.append(read_raster(f'{maps_directory}/water_cut.grd'))
+    except FileNotFoundError:
+        logger.warning(f"В папке отсутствует файл с картой обводненности: water_cut.grd\n"
+                       f"Карта обводненности будет построена")
+        maps_to_calculate['water_cut'] = True
 
     logger.info(f"Загрузка карты изобар")
     try:
         maps.append(read_raster(f'{maps_directory}/pressure.grd'))
     except FileNotFoundError:
-        logger.error(f"в папке отсутствует файл с картой изобар: pressure.grd")
+        logger.error(f"В папке отсутствует файл с картой изобар: pressure.grd")
 
     logger.info(f"Загрузка карты начальной нефтенасыщенности")
     try:
         maps.append(read_raster(f'{maps_directory}/initial_oil_saturation.grd'))
     except FileNotFoundError:
-        logger.error(f"в папке отсутствует файл с картой изобар: initial_oil_saturation.grd")
+        logger.error(f"В папке отсутствует файл с картой изобар: initial_oil_saturation.grd")
 
     logger.info(f"Загрузка карты пористости")
     try:
         maps.append(read_raster(f'{maps_directory}/porosity.grd'))
     except FileNotFoundError:
-        logger.error(f"в папке отсутствует файл с картой пористости: porosity.grd")
+        logger.error(f"В папке отсутствует файл с картой пористости: porosity.grd")
+    return maps, maps_to_calculate
+
+
+def calculate_reservoir_state_maps(data_wells, maps, dict_properties,
+                                   default_size_pixel, maps_to_calculate, maps_directory):
+    data_wells = data_wells[["well_number", "work_marker", "no_work_time", "Qo_cumsum", "Winj_cumsum", "water_cut",
+                             "r_eff_not_norm", "NNT", "permeability", "T1_x_pix", "T1_y_pix", "T3_x_pix", "T3_y_pix"]]
+    data_wells = data_wells.rename(columns={'r_eff_not_norm': 'r_eff'})
+    keys_data_wells = list(data_wells.columns)
+    # Подготовка словаря из data_wells
+    dict_data_wells = {key: np.asarray(data_wells[key]) for key in keys_data_wells}
+    # Подготовка словаря с необходимыми картами
+    dict_maps = {}
+    type_maps_list = list(map(lambda raster: raster.type_map, maps))
+    dict_maps['NNT'] = maps[type_maps_list.index("NNT")].data
+    dict_maps['porosity'] = maps[type_maps_list.index("porosity")].data
+    dict_maps['initial_oil_saturation'] = maps[type_maps_list.index("initial_oil_saturation")].data
+    # Дополнительные свойства и параметры
+    map_params = {'size_pixel': default_size_pixel,
+                  'switch_fracture': dict_properties['well_params']['switch_fracture']}
+    reservoir_params = {'KIN': dict_properties['coefficients']['KIN'],
+                        'azimuth_sigma_h_min': dict_properties['well_params']['azimuth_sigma_h_min'],
+                        'l_half_fracture': dict_properties['well_params']['l_half_fracture']}
+    fluid_params = {"pho_surf": dict_properties['fluid_params']['rho'],
+                    "mu_o": dict_properties['fluid_params']['mu_o'],
+                    "mu_w": dict_properties['fluid_params']['mu_w'],
+                    "Bo": dict_properties['fluid_params']['Bo'],
+                    "Bw": dict_properties['default_well_params']['Bw']}
+    relative_permeability = {"Sor": dict_properties['default_well_params']['Sor'],
+                             "Swc": dict_properties['default_well_params']['Swc'],
+                             "Fw": dict_properties['default_well_params']['Fw'],
+                             "m1": dict_properties['default_well_params']['m1'],
+                             "Fo": dict_properties['default_well_params']['Fo'],
+                             "m2": dict_properties['default_well_params']['m2']}
+
+    result = get_maps(dict_maps, dict_data_wells, map_params, reservoir_params, fluid_params, relative_permeability)
+
+    dst_geo_transform = maps[type_maps_list.index("initial_oil_saturation")].geo_transform
+    dst_projection = maps[type_maps_list.index("initial_oil_saturation")].projection
+
+    if maps_to_calculate['residual_recoverable_reserves']:
+        map_rrr = result.data_RRR
+        map_rrr_instance = Map(map_rrr, dst_geo_transform, dst_projection, type_map="residual_recoverable_reserves")
+        map_rrr_instance.save_grd_file(f"{maps_directory}/{map_rrr_instance.type_map}.grd")
+        maps = maps + [map_rrr_instance]
+    if maps_to_calculate['water_cut']:
+        map_water_cut = result.data_water_cut
+        map_water_cut = np.where(1.70141000918780E+0038, 0.0, map_water_cut)
+        map_water_cut_instance = Map(map_water_cut, dst_geo_transform, dst_projection, type_map="water_cut")
+        map_water_cut_instance.save_grd_file(f"{maps_directory}/{map_water_cut_instance.type_map}.grd")
+        maps = maps + [map_water_cut_instance]
     return maps
 
 
 def maps_load_df(data_wells, dst_geo_transform, shape, accounting_GS, radius_interpolate):
     maps = []
     #  Загрузка карт из "МЭР"
-    logger.info(f"Загрузка карты обводненности на основе выгрузки МЭР")
-    maps.append(read_array(data_wells, name_column_map="water_cut", type_map="water_cut",
-                           geo_transform=dst_geo_transform, size=shape,
-                           accounting_GS=accounting_GS, radius=radius_interpolate))
 
     logger.info(f"Загрузка карты последних дебитов нефти на основе выгрузки МЭР")
     maps.append(read_array(data_wells, name_column_map="Qo_rate", type_map="last_rate_oil",

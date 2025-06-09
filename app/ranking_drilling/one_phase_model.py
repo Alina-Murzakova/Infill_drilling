@@ -104,7 +104,6 @@ def get_current_So(row, dict_parameters_coefficients):
     kv_kh, Swc, Sor, Fw, m1, Fo, m2, Bw = (
         list(map(lambda name: dict_parameters_coefficients['default_well_params'][name],
                  ['kv_kh', 'Swc', 'Sor', 'Fw', 'm1', 'Fo', 'm2', 'Bw'])))
-    Swc = 1 - row['So']
     reservoir_params = dict_parameters_coefficients['reservoir_params']
     reservoir_params['f_w'] = row['water_cut']
     fluid_params = dict_parameters_coefficients['fluid_params']

@@ -348,10 +348,10 @@ if __name__ == '__main__':
                                          'coefficients': default_coefficients})
 
     logger.info("Загрузка и обработка карт")
-    maps, data_wells = mapping(maps_directory=paths["maps_directory"],
-                               data_wells=data_wells,
-                               dict_properties=dict_parameters_coefficients['reservoir_params'],
-                               **load_data_param)
+    maps, data_wells, maps_to_calculate = mapping(maps_directory=paths["maps_directory"],
+                                                  data_wells=data_wells,
+                                                  dict_properties=dict_parameters_coefficients['reservoir_params'],
+                                                  **load_data_param)
     default_size_pixel = maps[0].geo_transform[1]  # размер ячейки после загрузки всех карт
     type_map_list = list(map(lambda raster: raster.type_map, maps))
 
