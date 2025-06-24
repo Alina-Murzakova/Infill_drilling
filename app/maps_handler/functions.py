@@ -159,7 +159,7 @@ def calculate_reservoir_state_maps(data_wells, maps, dict_properties,
         maps = maps + [map_rrr_instance]
     if maps_to_calculate['water_cut']:
         map_water_cut = result.data_water_cut
-        map_water_cut = np.where(1.70141000918780E+0038, 0.0, map_water_cut)
+        map_water_cut = np.where(map_water_cut == 1.70141000918780E+0038, 100, map_water_cut)
         map_water_cut_instance = Map(map_water_cut, dst_geo_transform, dst_projection, type_map="water_cut")
         map_water_cut_instance.save_grd_file(f"{maps_directory}/{map_water_cut_instance.type_map}.grd")
         maps = maps + [map_water_cut_instance]

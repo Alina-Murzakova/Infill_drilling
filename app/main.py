@@ -78,9 +78,6 @@ if __name__ == '__main__':
     maps = maps + calculate_score_maps(maps=maps,
                                        dict_properties=dict_parameters_coefficients['reservoir_params'])
 
-    logger.info("Расчет текущей нефтенасыщенности на скважинах")
-    data_wells['Soil'] = data_wells.apply(get_current_So, args=(dict_parameters_coefficients,), axis=1)
-
     logger.info("Расчет проницаемости для фактических скважин через РБ")
     (data_wells,
      dict_parameters_coefficients) = get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients,

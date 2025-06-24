@@ -285,7 +285,7 @@ def read_raster(file_path, no_value=0):
     ndv = dataset.GetRasterBand(1).GetNoDataValue()
     band = dataset.GetRasterBand(1)
     data = band.ReadAsArray()
-    if ndv is not None:
+    if ndv is not None and not np.isnan(ndv):
         data = np.where(data >= ndv, no_value, data)
     geo_transform = dataset.GetGeoTransform()
     projection = dataset.GetProjection()
@@ -486,9 +486,7 @@ def get_map_risk_score(map_water_cut, map_initial_oil_saturation, map_pressure, 
     map_delta_P = Map(data_delta_P, map_pressure.geo_transform, map_pressure.projection,
                       type_map="delta_P").normalize_data()
     # Подготовка карты текущей обводненности
-    data_init_water_cut = (1 - map_initial_oil_saturation.data) * 100
-    mask = np.isnan(map_water_cut.data)
-    data_water_cut = np.where(mask, data_init_water_cut, map_water_cut.data)
+    data_water_cut = map_water_cut.data
 
     # Применение гауссова фильтра для сглаживания при объединении карт обводненности и начальной нефтенасыщенности
     # data_water_cut = gaussian_filter(data_water_cut, sigma=sigma)
