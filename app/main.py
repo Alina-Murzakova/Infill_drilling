@@ -6,7 +6,7 @@ from loguru import logger
 from app.input_output.input_economy import load_economy_data
 from app.input_output.input_frac_info import load_frac_info
 from app.input_output.input_geo_phys_properties import load_geo_phys_properties
-from app.input_output.input_wells_data import load_wells_data
+from app.input_output.input_wells_data import load_wells_data, prepare_wells_data
 from app.ranking_drilling.starting_rates import get_df_permeability_fact_wells
 from local_parameters import main_parameters, constants
 
@@ -39,9 +39,7 @@ if __name__ == '__main__':
     well_params.update(constants['default_project_well_params'])
 
     logger.info("Загрузка скважинных данных")
-    (data_history, data_wells,
-     info_object_calculation) = load_wells_data(data_well_directory=paths["data_well_directory"],
-                                                first_months=load_data_param['first_months'])
+    data_history, info_object_calculation = load_wells_data(data_well_directory=paths["data_well_directory"])
     name_field, name_object = info_object_calculation.get("field"), info_object_calculation.get("object_value")
     save_directory = get_save_path("Infill_drilling", name_field, name_object.replace('/', '-'))
 
@@ -50,6 +48,10 @@ if __name__ == '__main__':
     dict_parameters_coefficients.update({'well_params': well_params,
                                          'default_well_params': default_well_params,
                                          'coefficients': default_coefficients})
+    logger.info("Подготовка скважинных данных")
+    data_history, data_wells = prepare_wells_data(data_history,
+                                                  dict_properties=dict_parameters_coefficients,
+                                                  first_months=load_data_param['first_months'])
 
     if dict_parameters_coefficients['well_params']['switch_avg_frac_params']:
         logger.info(f"Загрузка фрак-листов")
@@ -77,9 +79,6 @@ if __name__ == '__main__':
     logger.info(f"Расчет оценочных карт")
     maps = maps + calculate_score_maps(maps=maps,
                                        dict_properties=dict_parameters_coefficients['reservoir_params'])
-
-    logger.info("Расчет текущей нефтенасыщенности на скважинах")
-    data_wells['Soil'] = data_wells.apply(get_current_So, args=(dict_parameters_coefficients,), axis=1)
 
     logger.info("Расчет проницаемости для фактических скважин через РБ")
     (data_wells,

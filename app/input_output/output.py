@@ -207,9 +207,9 @@ def save_ranking_drilling_to_excel(name_field, name_object, list_zones, filename
                  'Тип скважины': [well.well_type for well in drill_zone.list_project_wells],
                  'Длина, м': [round(well.length_geo, 1) for well in drill_zone.list_project_wells],
                  'Азимут, градусы': [round(well.azimuth, 1) for well in drill_zone.list_project_wells],
-                 'Обводненность, %': [round(well.water_cut, 1) for well in drill_zone.list_project_wells],
-                 'Запускной дебит жидкости, т/сут': [round(well.init_Ql_rate, 2) for well in
-                                                     drill_zone.list_project_wells],
+                 'Обводненность (объем), %': [round(well.water_cut, 1) for well in drill_zone.list_project_wells],
+                 'Запускной дебит жидкости, м3/сут': [round(well.init_Ql_rate_V, 2) for well in
+                                                      drill_zone.list_project_wells],
                  'Запускной дебит нефти, т/сут': [round(well.init_Qo_rate, 2) for well in
                                                   drill_zone.list_project_wells],
                  'Запускное забойное давление, атм': [round(well.P_well_init, 1) for well in
@@ -224,11 +224,12 @@ def save_ranking_drilling_to_excel(name_field, name_object, list_zones, filename
                  'Накопленная добыча нефти (25 лет), тыс.т': [round(np.sum(well.Qo) / 1000, 1) for well in
                                                               drill_zone.list_project_wells],
                  'Накопленная добыча жидкости (25 лет), тыс.т': [round(np.sum(well.Ql) / 1000, 1) for well in
-                                                                 drill_zone.list_project_wells],
+                                                                  drill_zone.list_project_wells],
                  'Соседние скважины': [well.gdf_nearest_wells.well_number.unique() for
                                        well in drill_zone.list_project_wells],
                  'PI (Рентабельный период)': [well.PI for well in drill_zone.list_project_wells],
-                 'NPV (Рентабельный период), тыс.руб.': [round(np.sum(well.NPV[well.NPV > 0])) for well in drill_zone.list_project_wells],
+                 'NPV (Рентабельный период), тыс.руб.': [round(np.sum(well.NPV[well.NPV > 0])) for well in
+                                                         drill_zone.list_project_wells],
                  'ГЭП': [well.year_economic_limit for well in drill_zone.list_project_wells]}
             )
             gdf_result_ranking_drilling = pd.concat([gdf_result_ranking_drilling,

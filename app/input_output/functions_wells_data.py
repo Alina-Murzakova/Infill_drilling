@@ -90,7 +90,7 @@ def identification_ZBS_MZS(data_history):
     return data_history
 
 
-def get_avg_last_param(data_history_work, data_history, last_months):
+def get_avg_last_param(data_history_work, data_history, last_months, dict_properties):
     """
     Функция для получения фрейма со средними последними параметрами работы скважин (добыча/закачка и обв)
     Parameters
@@ -98,6 +98,7 @@ def get_avg_last_param(data_history_work, data_history, last_months):
     data_history_work - история работы без учета остановок
     data_history - вся история работы
     last_months - количество последних месяцев для осреднения
+    dict_properties - словарь свойств и параметров по умолчанию
 
     Returns
     -------
@@ -121,14 +122,23 @@ def get_avg_last_param(data_history_work, data_history, last_months):
                                                                 Ql_rate_TR=('Ql_rate_TR', lambda x: x[x != 0].mean()),
                                                                 Winj_rate=('Winj_rate', lambda x: x[x != 0].mean()),
                                                                 Winj_rate_TR=(
-                                                                    'Winj_rate_TR', lambda x: x[x != 0].mean()))
+                                                                    'Winj_rate_TR', lambda x: x[x != 0].mean()),
+                                                                density_oil_TR=(
+                                                                    'density_oil_TR', lambda x: x[x != 0].mean())
+                                                                )
                       .fillna(0).reset_index())
+    # Массовая обводненность согласно МЭР
     data_last_rate['water_cut'] = (np.where(data_last_rate['Ql_rate'] > 0,
                                             (data_last_rate['Ql_rate'] - data_last_rate['Qo_rate']) * 100 /
                                             data_last_rate['Ql_rate'], 0))
-
+    # Объемная обводненность согласно ТР
+    data_last_rate['density_oil_TR'] = (np.where((data_last_rate['Ql_rate_TR'] != 0) &
+                                                 (data_last_rate['density_oil_TR'] == 0),
+                                                 dict_properties['fluid_params']['rho'],
+                                                 data_last_rate['density_oil_TR']))
     data_last_rate['water_cut_TR'] = (np.where(data_last_rate['Ql_rate_TR'] > 0,
-                                               (data_last_rate['Ql_rate_TR'] - data_last_rate['Qo_rate_TR']) * 100 /
+                                               (data_last_rate['Ql_rate_TR'] - data_last_rate['Qo_rate_TR'] /
+                                                data_last_rate['density_oil_TR']) * 100 /
                                                data_last_rate['Ql_rate_TR'], 0))
     # Заменяем последние параметры на последние средние параметры
     data_wells_last_param = data_wells_last_param.merge(data_last_rate, on='well_number', suffixes=('', '_avg'))
@@ -150,7 +160,7 @@ def calculate_cumsum(data_wells, df_sort_date):
     return data_wells
 
 
-def get_avg_first_param(data_wells, df_sort_date, first_months):
+def get_avg_first_param(data_wells, df_sort_date, first_months, dict_properties):
     """
     Функция для получения фрейма со средними стартовыми параметрами работы скважин
     Parameters
@@ -158,6 +168,7 @@ def get_avg_first_param(data_wells, df_sort_date, first_months):
     data_wells - фрейм со всеми скважинами
     df_sort_date - отсортированная история работы
     first_months - количество первых месяцев для осреднения
+    dict_properties - словарь свойств и параметров по умолчанию
 
     Returns
     -------
@@ -182,19 +193,25 @@ def get_avg_first_param(data_wells, df_sort_date, first_months):
                             init_P_well_prod=('P_well', lambda p_well: filter_pressure(p_well, data_first_rate.loc[
                                 p_well.index, 'P_reservoir'], type_pressure='P_well')),
                             init_P_reservoir_prod=('P_reservoir', lambda p_res: filter_pressure(
-                                data_first_rate.loc[p_res.index, 'P_well'], p_res, type_pressure='P_reservoir')))
+                                data_first_rate.loc[p_res.index, 'P_well'], p_res, type_pressure='P_reservoir')),
+                            init_density_oil_TR=('density_oil_TR', lambda x: x[x != 0].mean()))
                        .reset_index())
 
     data_wells = data_wells.merge(data_first_rate, how='left', on='well_number')
     data_wells = data_wells.fillna(0)
 
-    # Расчет обводненности
+    # Массовая средняя стартовая обводненность согласно МЭР
     data_wells['init_water_cut'] = np.where(data_wells['init_Ql_rate'] > 0,
                                             (data_wells['init_Ql_rate'] - data_wells['init_Qo_rate']) /
                                             data_wells['init_Ql_rate'], 0)
-
+    # Объемная средняя обводненность согласно ТР
+    data_wells['init_density_oil_TR'] = (np.where((data_wells['init_Ql_rate_TR'] != 0) &
+                                                  (data_wells['init_density_oil_TR'] == 0),
+                                                  dict_properties['fluid_params']['rho'],
+                                                  data_wells['init_density_oil_TR']))
     data_wells['init_water_cut_TR'] = np.where(data_wells['init_Ql_rate_TR'] > 0,
-                                               (data_wells['init_Ql_rate_TR'] - data_wells['init_Qo_rate_TR']) /
+                                               (data_wells['init_Ql_rate_TR'] - data_wells['init_Qo_rate_TR'] /
+                                                data_wells['init_density_oil_TR']) /
                                                data_wells['init_Ql_rate_TR'], 0)
     return data_wells
 
