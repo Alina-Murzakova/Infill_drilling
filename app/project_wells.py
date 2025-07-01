@@ -36,7 +36,8 @@ class ProjectWell:
         self.water_cut = None
         self.m = None
         self.permeability = None
-        self.init_Ql_rate = None
+        self.init_Ql_rate = None  # т/сут
+        self.init_Ql_rate_V = None  # м3/сут
         self.init_Qo_rate = None
         self.decline_rates = None
         self.r_eff = None
@@ -107,7 +108,7 @@ class ProjectWell:
             self.permeability = np.average(self.gdf_nearest_wells.loc[mask, 'permeability_fact'],
                                            weights=1 / np.square(self.gdf_nearest_wells.loc[mask, 'distances']))
         # Пористость на случай если в зоне нет карты
-        # выбираем только те строки, где значение проницаемости больше 0 и не nan
+        # выбираем только те строки, где значение пористости больше 0 и не nan
         mask = ((self.gdf_nearest_wells['m'] > 0) & self.gdf_nearest_wells['m'].notna() & mask_distance)
         if not sum(mask) == 0:
             self.m = np.average(self.gdf_nearest_wells.loc[mask, 'm'],
@@ -118,7 +119,7 @@ class ProjectWell:
             # Обводненность - Выбираем только те скважины, которые остановлены не более 10 лет назад
             mask = (self.gdf_nearest_wells['no_work_time'] <= 12 * 10 & self.gdf_nearest_wells['Ql_rate'] > 0)
             if not sum(mask) == 0:
-                self.water_cut = np.average(self.gdf_nearest_wells.loc[mask, 'water_cut'],
+                self.water_cut = np.average(self.gdf_nearest_wells.loc[mask, 'water_cut_V'],
                                             weights=1 / np.square(self.gdf_nearest_wells.loc[mask, 'distances']))
         pass
 
@@ -168,13 +169,12 @@ class ProjectWell:
         well_params['FracCount'] = check_FracCount(well_params['Type_Frac'],
                                                    well_params['length_FracStage'],
                                                    well_params['L'])
-        # logger.info(f"reservoir_params: {reservoir_params}, well_params: {well_params},"
-        #             f"fluid_params: {fluid_params}, coefficients: {coefficients}")
-        self.init_Ql_rate, self.init_Qo_rate = calculate_starting_rate(reservoir_params, fluid_params,
-                                                                       well_params, coefficients,
-                                                                       kv_kh, Swc, Sor, Fw, m1, Fo, m2, Bw)
-        logger.info(f"Для проектной скважины {self.well_number}: Q_liq = {round(self.init_Ql_rate, 2)},"
-                    f" Q_oil = {round(self.init_Qo_rate, 2)}")
+        self.init_Ql_rate_V, self.init_Qo_rate = calculate_starting_rate(reservoir_params, fluid_params,
+                                                                         well_params, coefficients,
+                                                                         kv_kh, Swc, Sor, Fw, m1, Fo, m2, Bw)
+        self.init_Ql_rate = self.init_Ql_rate_V * (self.water_cut / 100 * 1 + (1 - self.water_cut / 100) * fluid_params['rho'])
+        logger.info(f"Для проектной скважины {self.well_number}: Q_liq = {round(self.init_Ql_rate_V, 2)} м3/сут,"
+                    f" Q_oil = {round(self.init_Qo_rate, 2)} т/сут")
         pass
 
     def get_production_profile(self, data_decline_rate_stat, period=25 * 12, day_in_month=29, well_efficiency=0.95):

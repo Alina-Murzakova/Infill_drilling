@@ -117,9 +117,9 @@ def maps_load_directory(maps_directory):
 
 def calculate_reservoir_state_maps(data_wells, maps, dict_properties,
                                    default_size_pixel, maps_to_calculate, maps_directory):
-    data_wells = data_wells[["well_number", "work_marker", "no_work_time", "Qo_cumsum", "Winj_cumsum", "water_cut",
+    data_wells = data_wells[["well_number", "work_marker", "no_work_time", "Qo_cumsum", "Winj_cumsum", "water_cut_V",
                              "r_eff_not_norm", "NNT", "permeability", "T1_x_pix", "T1_y_pix", "T3_x_pix", "T3_y_pix"]]
-    data_wells = data_wells.rename(columns={'r_eff_not_norm': 'r_eff'})
+    data_wells = data_wells.rename(columns={'r_eff_not_norm': 'r_eff', 'water_cut_V': 'water_cut'})
     keys_data_wells = list(data_wells.columns)
     # Подготовка словаря из data_wells
     dict_data_wells = {key: np.asarray(data_wells[key]) for key in keys_data_wells}
@@ -154,12 +154,13 @@ def calculate_reservoir_state_maps(data_wells, maps, dict_properties,
 
     if maps_to_calculate['residual_recoverable_reserves']:
         map_rrr = result.data_RRR
+        map_rrr = np.where(map_rrr == 1.70141E+0038, 0.0, map_rrr)
         map_rrr_instance = Map(map_rrr, dst_geo_transform, dst_projection, type_map="residual_recoverable_reserves")
         map_rrr_instance.save_grd_file(f"{maps_directory}/{map_rrr_instance.type_map}.grd")
         maps = maps + [map_rrr_instance]
     if maps_to_calculate['water_cut']:
         map_water_cut = result.data_water_cut
-        map_water_cut = np.where(map_water_cut == 1.70141000918780E+0038, 100, map_water_cut)
+        map_water_cut = np.where(map_water_cut == 1.70141E+0038, 0.0, map_water_cut)
         map_water_cut_instance = Map(map_water_cut, dst_geo_transform, dst_projection, type_map="water_cut")
         map_water_cut_instance.save_grd_file(f"{maps_directory}/{map_water_cut_instance.type_map}.grd")
         maps = maps + [map_water_cut_instance]

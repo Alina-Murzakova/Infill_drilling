@@ -372,12 +372,12 @@ def shift_project_well(proj_row, nearest_intersected_well, gdf_fact_wells, other
                 logger.warning("Превышен лимит попыток сдвига, скважина не может быть сдвинута.")
                 return original_position, False  # Сдвиг не удался
 
-            # Смена Flag в случае, если изначально центр и больше 0,7*ГС вне кластера
+            # Смена Flag в случае, если изначально центр и больше part_line_in*ГС вне кластера
             if proj_row['cluster'].intersection(new_position).length >= (part_line_in * proj_row['length_pix']):
                 if proj_row['cluster'].contains(new_position.centroid):
                     Flag = True
 
-            # Меняем направление, если скважина начала выходить из кластера на >30%
+            # Меняем направление, если скважина начала выходить из кластера на > part_line_in
             if ((proj_row['cluster'].intersection(new_position).length < (
                     part_line_in * proj_row['length_pix']) and Flag) or
                     (not proj_row['cluster'].contains(new_position.centroid) and Flag) or

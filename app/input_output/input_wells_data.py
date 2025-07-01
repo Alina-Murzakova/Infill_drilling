@@ -10,21 +10,16 @@ from app.input_output.functions_wells_data import identification_ZBS_MZS, get_av
 
 
 @logger.catch
-def load_wells_data(data_well_directory, min_length_hor_well=150, first_months=6, last_months=3, priority_radius=200):
+def load_wells_data(data_well_directory):
     """
-    Функция, которая обрабатывает выгрузку МЭР (выгрузка по датам по всем скважинам//параметры задаются пользователем)
+    Функция загрузки истории скважин и определения исследуемого объекта (месторождение, пласт)
     Parameters
     ----------
     data_well_directory - путь к выгрузке
-    min_length_hor_well - максимальная длина ствола ННС
-    first_months - количество первых месяцев работы для определения стартового дебита нефти
-    last_months - количество последних месяцев работы для определения последнего дебита
-    priority_radius - радиус для приоритизации скважин (для выделения скважин в одной маленькой зоне)
 
     Returns
     -------
-    Фрейм с обработанной полной историей скважин
-    Фрейм с параметрами добычи на последнюю дату работы для всех скважин
+    Фрейм с полной историей скважин
     Словарь с данными о расчете {field, object}
     """
     # 1. Загрузка файла
@@ -58,7 +53,27 @@ def load_wells_data(data_well_directory, min_length_hor_well=150, first_months=6
         field = field[0]
         object_value = object_value[0]
     info = {'field': field, "object_value": object_value}
+    return data_history, info
 
+
+def prepare_wells_data(data_history, dict_properties, min_length_hor_well=150, first_months=6,
+                       last_months=3, priority_radius=200, pho_water=1):
+    """
+    Функция, которая обрабатывает выгрузку МЭР (выгрузка по датам по всем скважинам//параметры задаются пользователем)
+    Parameters
+    ----------
+    data_history - фрейм с полной историей скважин
+    dict_properties - словарь свойств и параметров по умолчанию
+    min_length_hor_well - максимальная длина ствола ННС
+    first_months - количество первых месяцев работы для определения стартового дебита нефти
+    last_months - количество последних месяцев работы для определения последнего дебита
+    priority_radius - радиус для приоритизации скважин (для выделения скважин в одной маленькой зоне)
+
+    Returns
+    -------
+    Фрейм с обработанной полной историей скважин
+    Фрейм с параметрами добычи на последнюю дату работы для всех скважин
+    """
     # Чистим ряд скважин (без характера работы, объекта или статуса)
     data_history = data_history[(data_history.work_marker != 0) & ((data_history.objects != 0) |
                                                                    (data_history.well_status != 0))]
@@ -67,18 +82,25 @@ def load_wells_data(data_well_directory, min_length_hor_well=150, first_months=6
     # 3. Обработка координат // разделение на горизонтальные и вертикальные скважины
     data_history = get_well_type(data_history, min_length_hor_well)
 
-    #  4. Определение ЗБС и МЗС, порядкового номера ствола и разделение добычи для МЗС
+    # 4. Определение ЗБС и МЗС, порядкового номера ствола и разделение добычи для МЗС
     data_history = identification_ZBS_MZS(data_history)
     logger.info(f"Количество МЗС - {data_history[data_history.type_wellbore == 'МЗС'].well_number_digit.nunique()}")
     logger.info(f"Количество ЗБС - {data_history[data_history.type_wellbore == 'ЗБС'].well_number.nunique()}")
 
+    # 5. Расчет объемной обводненности и плотности нефти для ТР
+    data_history['water_cut_V'] = (((data_history['Ql_rate'] - data_history['Qo_rate']) / pho_water) * 100 /
+                                   ((data_history['Ql_rate'] - data_history['Qo_rate']) / pho_water +
+                                    data_history['Qo_rate'] / dict_properties['fluid_params']['rho'])).fillna(0)
+    data_history['density_oil_TR'] = (data_history['Qo_rate_TR'] /
+                                      (data_history['Ql_rate_TR'] * (1 - data_history['water_cut_TR'] / 100))).fillna(0)
+
     data_history_work = data_history.copy()
     data_history_work = data_history_work[(data_history_work.Ql_rate > 0) | (data_history_work.Winj_rate > 0)]
 
-    # 5. Получение последних параметры работы скважин как среднее за last_months месяцев (добыча/закачка)
-    data_wells_last_param = get_avg_last_param(data_history_work, data_history, last_months)
+    # 6. Получение последних параметры работы скважин как среднее за last_months месяцев (добыча/закачка)
+    data_wells_last_param = get_avg_last_param(data_history_work, data_history, last_months, dict_properties)
 
-    # 6. Добавление колонки с указанием как долго не работает скважина для скважин с добычей/закачкой
+    # 7. Добавление колонки с указанием как долго не работает скважина для скважин с добычей/закачкой
     data_wells_last_param['no_work_time'] = round((data_history['date'].max() - data_wells_last_param.date).dt.days
                                                   / 29.3)
     # Все скважины на последнюю дату (даже если никогда не работали)
@@ -91,13 +113,13 @@ def load_wells_data(data_well_directory, min_length_hor_well=150, first_months=6
     # Датафрейм с параметрами по всем скважинам
     data_wells = pd.concat([data_wells_last_param, df_diff], ignore_index=True)
 
-    # 7. Определяем дату первой добычи
+    # 8. Определяем дату первой добычи
     data_wells_prod = data_history_work[(data_history_work.Ql_rate > 0)]
     data_wells_first_production = data_wells_prod.groupby('well_number')['date'].min().reset_index()
     data_wells_first_production.rename(columns={'date': 'first_production_date'}, inplace=True)
     data_wells = data_wells.merge(data_wells_first_production, on='well_number', how='left')
 
-    # 8. Определяем длительность последнего периода работы !!! Пока не используется
+    # 9. Определяем длительность последнего периода работы !!! Пока не используется
     # Разница в месяцах между текущей и предыдущей датой
     data_history_work['month_diff'] = -data_history_work.groupby('well_number')['date'].diff().dt.days.fillna(0) / 31
     # Определяем периоды работы (без перерывов)
@@ -111,22 +133,22 @@ def load_wells_data(data_well_directory, min_length_hor_well=150, first_months=6
                             .drop_duplicates())
     data_wells = data_wells.merge(data_continuous_work, on='well_number', how='left')
 
-    # 9. Нахождение накопленной добычи нефти и закачки
+    # 10. Нахождение накопленной добычи нефти и закачки
     df_sort_date = (data_history.copy().sort_values(by=['well_number', 'date'], ascending=[True, True])
                     .reset_index(drop=True))
     data_wells = calculate_cumsum(data_wells, df_sort_date)
 
-    # 10. Получение среднего стартового дебита за первые "first_months" месяцев
-    data_wells = get_avg_first_param(data_wells, df_sort_date, first_months)
+    # 11. Получение среднего стартового дебита за первые "first_months" месяцев
+    data_wells = get_avg_first_param(data_wells, df_sort_date, first_months, dict_properties)
 
-    # 11. Расчет азимута для горизонтальных скважин
+    # 12. Расчет азимута для горизонтальных скважин
     data_wells['azimuth'] = data_wells.apply(calculate_azimuth, axis=1)
 
-    # 12. Расчет Shapely объектов
+    # 13. Расчет Shapely объектов
     df_shapely = create_shapely_types(data_wells, list_names=['T1_x_geo', 'T1_y_geo', 'T3_x_geo', 'T3_y_geo'])
     data_wells[['POINT_T1_geo', 'POINT_T3_geo', 'LINESTRING_geo']] = df_shapely
 
-    # 13. Дополнительные преобразования
+    # 14. Дополнительные преобразования
     data_wells.drop(columns=['field', "object", "objects"], inplace=True)
     # дополнение data_wells всеми необходимыми колонками
     data_wells = pd.concat([sample_data_wells, data_wells])
@@ -151,8 +173,8 @@ def load_wells_data(data_well_directory, min_length_hor_well=150, first_months=6
 
     data_wells['continuous_work_months'] = data_wells['continuous_work_months'].astype(int)
 
-    # 14. Приоритизация скважин в пределах радиуса
+    # 15. Приоритизация скважин в пределах радиуса
     data_wells = range_priority_wells(data_wells, priority_radius)
     logger.info(f"Сумма дебит нефти {data_history.Qo_rate.sum()}")
     logger.info(f"Сумма НДН {data_wells.Qo_cumsum.sum()}")
-    return data_history, data_wells, info
+    return data_history, data_wells
