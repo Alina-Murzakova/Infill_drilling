@@ -161,7 +161,7 @@ def get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients, swi
                                               (data_wells_for_perm['init_P_well_prod'] > 0) &
                                               (data_wells_for_perm['init_P_reservoir_prod'] > 0) &
                                               (data_wells_for_perm['init_P_reservoir_prod'] >
-                                               data_wells_for_perm['init_P_well_prod'])]  # .copy()
+                                               data_wells_for_perm['init_P_well_prod'])]
     data_wells_for_perm['permeability_fact'] = data_wells_for_perm.apply(calculate_permeability_fact_wells,
                                                                          args=(dict_parameters_coefficients,),
                                                                          axis=1)
@@ -171,8 +171,8 @@ def get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients, swi
     data_wells['permeability_fact'] = data_wells['permeability_fact'].fillna(0)
 
     if switch:
-        # Верхняя граница для фильтрации выбросов (метод IQR)
-        permeability_upper_bound = apply_iqr_filter(data_wells, name_column='permeability_fact')
+        # Верхняя граница для фильтрации выбросов (персентиль q3)
+        permeability_lower_bound, permeability_upper_bound = quantile_filter(data_wells, name_column='permeability_fact')
         data_wells['permeability_fact'] = np.where(data_wells['permeability_fact'] > permeability_upper_bound,
                                                    permeability_upper_bound,
                                                    data_wells['permeability_fact'])  # 0 или permeability_upper_bound
@@ -194,6 +194,15 @@ def apply_iqr_filter(data_wells, name_column):
     # Определяем порог для отсеивания "выбросов"
     upper_bound = q3 + 1.5 * iqr
     return upper_bound
+
+
+def quantile_filter(data_wells, name_column):
+    """Функция определения верхнего и нижнего квантиля"""
+    column = data_wells[data_wells[name_column] > 0][name_column]
+    # Рассчитываем квартили
+    q1 = np.percentile(column, 25)
+    q3 = np.percentile(column, 75)
+    return q1, q3
 
 
 def check_FracCount(type_frac, length_FracStage=1, L=1):

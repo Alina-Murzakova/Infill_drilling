@@ -48,14 +48,14 @@ def calc_r_eff(cumulative_value, B, ro, eff_h, m, So, type_well, len_well, So_mi
         raise NameError(f"Wrong well type: {type_well}. Allowed values: vertical or horizontal")
 
 
-def well_effective_radius(row, default_radius, So_min, NUMBER_MONTHS=120, default_radius_inj=300):
+def well_effective_radius(row, So_min, default_radius, default_radius_inj):
     """
     Расчет радиуса дренирования/нагнетания на основе параметров разработки
     Parameters
     ----------
     row - строка из data_wells
+    So_min - Sor согласно заданным ОФП в constants
     default_radius - радиус по умолчанию (технически минимальный) для добывающего фонда
-    NUMBER_MONTHS - Количество месяцев для отнесения скважин к действующим
     default_radius_inj - радиус по умолчанию (технически минимальный) для нагнетательного фонда
 
     Returns R_eff
@@ -71,24 +71,17 @@ def well_effective_radius(row, default_radius, So_min, NUMBER_MONTHS=120, defaul
     Bo = row.Bo
     ro_oil = row.rho
     if work_type_well == "prod":
-        # Проверка на длительность работы
-        if row['no_work_time'] > NUMBER_MONTHS:
-            return default_radius
-        else:
-            cumulative_oil_prod = row.Qo_cumsum
-            R_eff = calc_r_eff(cumulative_oil_prod, Bo, ro_oil, eff_h, m, So, well_type, len_well, So_min)
-            if not R_eff or R_eff < default_radius:
-                R_eff = default_radius
-            return R_eff
+        cumulative_oil_prod = row.Qo_cumsum
+        R_eff = calc_r_eff(cumulative_oil_prod, Bo, ro_oil, eff_h, m, So, well_type, len_well, So_min)
+        if not R_eff or R_eff < default_radius:
+            R_eff = default_radius
+        return R_eff
     elif work_type_well == "inj":
-        if row['no_work_time'] > NUMBER_MONTHS:
-            return default_radius_inj
-        else:
-            cumulative_water_inj = row.V_useful_injection
-            R_eff = calc_r_eff(cumulative_water_inj, Bo, ro_oil, eff_h, m, So, well_type, len_well, So_min)
-            if not R_eff or R_eff < default_radius_inj:
-                R_eff = default_radius_inj
-            return R_eff
+        cumulative_water_inj = row.V_useful_injection
+        R_eff = calc_r_eff(cumulative_water_inj, Bo, ro_oil, eff_h, m, So, well_type, len_well, So_min)
+        if not R_eff or R_eff < default_radius_inj:
+            R_eff = default_radius_inj
+        return R_eff
 
 
 def get_value_map(well_type, T1_x, T1_y, T3_x, T3_y, length_of_well, raster):
@@ -285,8 +278,10 @@ def calculate_effective_radius(data_wells, dict_properties):
 
     # расчет радиусов по физическим параметрам
     default_radius = dict_properties['default_well_params']['default_radius']
+    default_radius_inj = dict_properties['default_well_params']['default_radius_inj']
     So_min = dict_properties['default_well_params']['Sor']
-    data_wells['r_eff_not_norm'] = data_wells.apply(well_effective_radius, args=(default_radius, So_min,), axis=1)
+    data_wells['r_eff_not_norm'] = data_wells.apply(well_effective_radius,
+                                                    args=(So_min, default_radius, default_radius_inj, ), axis=1)
 
     # нормировка эффективного радиуса фонда через площади ячеек Вороного
     data_wells = voronoi_normalize_r_eff(data_wells, df_parameters_voronoi)

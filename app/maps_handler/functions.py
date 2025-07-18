@@ -266,7 +266,7 @@ def calculate_score_maps(maps, dict_properties):
     return [map_reservoir_score, map_potential_score, map_risk_score, map_opportunity_index]
 
 
-def apply_wells_mask(base_map, data_wells):
+def apply_wells_mask(base_map, data_wells, dict_properties):
     """
     Создание по карте области исключения (маски) на основе действующего фонда
     + как опция в будущем учет также проектного фонда
@@ -274,13 +274,16 @@ def apply_wells_mask(base_map, data_wells):
     ----------
     base_map - карта, на основе которой будет отстроена маска
     data_wells - фрейм с параметрами добычи на последнюю дату работы для всех скважин
+    dict_properties - ГФХ пласта
 
     Returns
     -------
     modified_map - карта с вырезанной зоной действующих скважин
     """
     logger.info("Расчет буфера вокруг скважин")
-    union_buffer = active_well_outline(data_wells)
+    default_radius = dict_properties['default_well_params']['default_radius']
+    default_radius_inj = dict_properties['default_well_params']['default_radius_inj']
+    union_buffer = active_well_outline(data_wells, default_radius, default_radius_inj)
 
     logger.info("Создание маски буфера")
     if union_buffer:
@@ -294,15 +297,16 @@ def apply_wells_mask(base_map, data_wells):
     return modified_map
 
 
-def active_well_outline(df_wells):
+def active_well_outline(df_wells, default_radius, default_radius_inj, NUMBER_MONTHS=120):
     """
     Создание буфера вокруг действующих скважин
      Parameters
     ----------
     df_wells - DataFrame скважин с обязательными столбцами:
-                [well type, T1_x_geo, T1_y_geo, T3_x_geo, T3_y_geo]
-    buffer_radius - расстояние от скважин, на котором нельзя бурить // в перспективе замена на радиус дренирования,
-     нагнетания с индивидуальным расчетом для каждой скважины
+                [well type, T1_x_geo, T1_y_geo, T3_x_geo, T3_y_geo, no_work_time, r_eff_not_norm]
+    default_radius - радиус по умолчанию (технически минимальный) для добывающего фонда
+    default_radius_inj - радиус по умолчанию (технически минимальный) для нагнетательного фонда
+    NUMBER_MONTHS - Количество месяцев для отнесения скважин к действующим
 
     Returns
     -------
@@ -315,7 +319,19 @@ def active_well_outline(df_wells):
 
     def create_buffer(row):
         # Создание геометрии для каждой скважины
-        buffer_radius = row.r_eff  # радиус из строки
+        # Проверка на длительность работы
+        if row['no_work_time'] > NUMBER_MONTHS:
+            if row["work_marker"] == "prod":
+                buffer_radius = default_radius
+            elif row["work_marker"] == "inj":
+                if row['r_eff'] > default_radius_inj:
+                    buffer_radius = default_radius_inj
+                elif row['r_eff'] < default_radius:
+                    buffer_radius = default_radius
+                else:
+                    buffer_radius = row.r_eff
+        else:
+            buffer_radius = row.r_eff  # радиус из строки
         line = ogr.Geometry(ogr.wkbLineString)
         line.AddPoint(row.T1_x_geo, row.T1_y_geo)
         line.AddPoint(row.T3_x_geo, row.T3_y_geo)
