@@ -12,7 +12,6 @@ from local_parameters import main_parameters, constants
 
 from app.decline_rate.decline_rate import get_decline_rates
 from app.maps_handler.functions import mapping, calculate_reservoir_state_maps, calculate_score_maps
-from app.ranking_drilling.one_phase_model import get_current_So
 from well_active_zones import calculate_effective_radius
 from drill_zones.drilling_zones import calculate_drilling_zones
 from project_wells import calculate_reserves_by_voronoi
@@ -97,7 +96,8 @@ if __name__ == '__main__':
                                                                      epsilon=epsilon,
                                                                      min_samples=min_samples,
                                                                      percent_low=percent_low,
-                                                                     data_wells=data_wells)
+                                                                     data_wells=data_wells,
+                                                                     dict_properties=dict_parameters_coefficients)
 
     type_map_list = list(map(lambda raster: raster.type_map, maps))
     map_rrr = maps[type_map_list.index('residual_recoverable_reserves')]
@@ -135,5 +135,7 @@ if __name__ == '__main__':
             drill_zone.calculate_economy(FEM, well_params, method_taxes, dict_NDD)
 
     logger.info(f"Выгрузка данных расчета:")
+    FEM = None
+    method_taxes = None
     upload_data(name_field, name_object, save_directory, data_wells, maps, list_zones, info_clusterization_zones, FEM,
                 method_taxes, polygon_OI, **{**load_data_param, **well_params})

@@ -220,7 +220,7 @@ class DrillZone:
 
 
 @logger.catch
-def calculate_drilling_zones(maps, epsilon, min_samples, percent_low, data_wells):
+def calculate_drilling_zones(maps, epsilon, min_samples, percent_low, data_wells, dict_properties):
     """
     Выделение зон для уверенного бурения с высоким индексом возможности OI
     Parameters
@@ -241,7 +241,7 @@ def calculate_drilling_zones(maps, epsilon, min_samples, percent_low, data_wells
     map_opportunity_index = maps[type_maps_list.index("opportunity_index")]
 
     logger.info("Создание на карте области исключения (маски) на основе действующего фонда")
-    modified_map_opportunity_index = apply_wells_mask(map_opportunity_index, data_wells)
+    modified_map_opportunity_index = apply_wells_mask(map_opportunity_index, data_wells, dict_properties)
 
     logger.info("Кластеризация зон")
     list_zones, info = clusterization_zones(modified_map_opportunity_index, epsilon, min_samples, percent_low)

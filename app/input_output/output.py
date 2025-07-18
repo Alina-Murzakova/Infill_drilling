@@ -230,7 +230,8 @@ def save_ranking_drilling_to_excel(name_field, name_object, list_zones, filename
                  'PI (Рентабельный период)': [well.PI for well in drill_zone.list_project_wells],
                  'NPV (Рентабельный период), тыс.руб.': [round(np.sum(well.NPV[well.NPV > 0])) for well in
                                                          drill_zone.list_project_wells],
-                 'ГЭП': [well.year_economic_limit for well in drill_zone.list_project_wells]}
+                 'ГЭП': [well.year_economic_limit for well in drill_zone.list_project_wells],
+                 }
             )
             gdf_result_ranking_drilling = pd.concat([gdf_result_ranking_drilling,
                                                      gdf_project_wells_ranking_drilling], ignore_index=True)
@@ -277,7 +278,8 @@ def save_picture_clustering_zones(list_zones, filename, buffer_project_wells):
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(figsize=(10, 10))
     for drill_zone in list_zones:
-        ax = drill_zone.picture_clustering(ax, buffer_project_wells)
+        if drill_zone.num_project_wells != 0:
+            ax = drill_zone.picture_clustering(ax, buffer_project_wells)
     plt.gca().invert_yaxis()
     plt.savefig(filename, dpi=400)
     pass

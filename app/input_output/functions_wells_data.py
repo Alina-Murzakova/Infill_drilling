@@ -178,6 +178,9 @@ def get_avg_first_param(data_wells, df_sort_date, first_months, dict_properties)
     data_first_rate['cum_rate_liq'] = data_first_rate['Ql_rate'].groupby(data_first_rate['well_number']).cumsum()
     data_first_rate = data_first_rate[data_first_rate['cum_rate_liq'] != 0]
     data_first_rate = data_first_rate.groupby('well_number').head(first_months)
+    # # Определяем начальное Рпл, как максимальное за first_months
+    data_first_rate['P_reservoir'] = (data_first_rate.groupby('well_number')['P_reservoir']
+                                      .transform(clean_p_reservoir))
 
     # Определяем first_months для каждой скважины
     first_months_dict = data_first_rate.groupby('well_number').apply(get_first_months).to_dict()
@@ -196,6 +199,20 @@ def get_avg_first_param(data_wells, df_sort_date, first_months, dict_properties)
                                 data_first_rate.loc[p_res.index, 'P_well'], p_res, type_pressure='P_reservoir')),
                             init_density_oil_TR=('density_oil_TR', lambda x: x[x != 0].mean()))
                        .reset_index())
+    # !!! Оценка давлений через распределения для отсечения выбросов
+    data_first_rate['init_drawdown'] = np.where((data_first_rate['init_P_reservoir_prod'] > 0) &
+                                                (data_first_rate['init_P_well_prod'] > 0),
+                                                data_first_rate['init_P_reservoir_prod'] -
+                                                data_first_rate['init_P_well_prod'], 0)
+
+    q1, q3 = quantile_filter(data_first_rate, name_column="init_drawdown")
+    data_first_rate['init_drawdown'] = np.where((data_first_rate['init_drawdown'] < q1) &
+                                                (data_first_rate['init_drawdown'] != 0), q1,
+                                                data_first_rate['init_drawdown'])
+    data_first_rate['init_drawdown'] = np.where((data_first_rate['init_drawdown'] > q3) &
+                                                (data_first_rate['init_drawdown'] != 0), q3,
+                                                data_first_rate['init_drawdown'])
+    # data_first_rate['init_P_well_prod'] = data_first_rate['init_P_reservoir_prod'] - data_first_rate['init_drawdown']
 
     data_wells = data_wells.merge(data_first_rate, how='left', on='well_number')
     data_wells = data_wells.fillna(0)
@@ -251,17 +268,36 @@ def extract_well_number(well_name):
         return None
 
 
+def clean_p_reservoir(series):
+    s = series.copy()
+
+    for i in range(1, len(s)):
+        if (s.iloc[i] > s.iloc[i - 1]) and (s.iloc[i - 1] != 0):
+            value = s.iloc[i - 1]
+            for j in range(i - 1, -1, -1):
+                if s.iloc[j] == value:
+                    s.iloc[j] = s.iloc[i]
+                else:
+                    break
+    return s
+
+
 def get_first_months(data_first_rate):
-    """Подсчет количества месяцев с ненулевыми значениями для каждого параметра"""
-    nonzero_TR_counts = {
-        'Qo_rate_TR': (data_first_rate['Qo_rate_TR'].notna() & (data_first_rate['Qo_rate_TR'] != 0)).sum(),
-        'Ql_rate_TR': (data_first_rate['Ql_rate_TR'].notna() & (data_first_rate['Ql_rate_TR'] != 0)).sum(),
-        'P_well': (data_first_rate['P_well'].notna() & (data_first_rate['P_well'] != 0)).sum(),
-        'P_reservoir': (data_first_rate['P_reservoir'].notna() & (data_first_rate['P_reservoir'] != 0)).sum()
-    }
-    # Для каждого параметра, если >=3 месяцев ненулевых, берём 3, иначе 6
-    first_months = {param: 3 if count >= 3 else 6 for param, count in nonzero_TR_counts.items()}
-    # Берем максимум из всех параметров (чтобы не терять важные данные)
+    """Подсчет количества месяцев с ненулевыми значениями для каждого параметра,
+    при этом учитывается, что скважина должна работать (Ql_rate != 0)"""
+    params = ['Qo_rate_TR', 'Ql_rate_TR', 'P_well']
+
+    def count_months(series, ql_rate_series):
+        nonzero = 0
+        for i, (val, ql_rate) in enumerate(zip(series, ql_rate_series)):
+            if pd.notna(val) and val != 0 and pd.notna(ql_rate) and ql_rate != 0:
+                nonzero += 1
+            if nonzero >= 3:
+                return i + 1  # +1 потому что индекс с нуля
+        # если ненулевых месяцев <3 — берём 6 месяцев
+        return min(len(series), 6)
+
+    first_months = {param: count_months(data_first_rate[param], data_first_rate['Ql_rate']) for param in params}
     return max(first_months.values())
 
 
@@ -359,3 +395,12 @@ def range_priority_wells(data_wells, epsilon, step_priority_radius=20, ratio_clu
     # 1 - первый приоритет
     # 0 - второй приоритет
     return data_wells
+
+
+def quantile_filter(data_wells, name_column):
+    """Функция определения верхнего и нижнего квантиля"""
+    column = data_wells[data_wells[name_column] > 0][name_column]
+    # Рассчитываем квартили
+    q1 = np.percentile(column, 25)
+    q3 = np.percentile(column, 75)
+    return q1, q3
