@@ -14,7 +14,7 @@ from app.maps_handler.maps import read_array
 
 @logger.catch
 def upload_data(name_field, name_object, save_directory, data_wells, maps, list_zones, info_clusterization_zones,
-                FEM, method_taxes, polygon_OI, **kwargs):
+                FEM, method_taxes, polygon_OI, data_history, **kwargs):
     """Выгрузка данных после расчета"""
     name_field = name_field.replace('/', "_")
     name_object = name_object.replace('/', "_")
@@ -56,7 +56,9 @@ def upload_data(name_field, name_object, save_directory, data_wells, maps, list_
     map_residual_recoverable_reserves.save_img(f"{save_directory}/карта ОИЗ с ПФ.png", data_wells,
                                                list_zones, info_clusterization_zones, project_wells=True)
     logger.info("Сохранение рейтинга бурения проектных скважин в формате .xlsx")
-    save_ranking_drilling_to_excel(name_field, name_object, list_zones, f"{save_directory}/рейтинг_бурения_{name_field}_{name_object}.xlsx")
+    save_ranking_drilling_to_excel(name_field, name_object, list_zones,
+                                   f"{save_directory}/рейтинг_бурения_{name_field}_{name_object}.xlsx",
+                                   kwargs['switch_economy'])
 
     logger.info("Сохранение pickle файлов")
     with open(f'{save_directory}/data_wells.pickle', 'wb') as file:
@@ -65,6 +67,8 @@ def upload_data(name_field, name_object, save_directory, data_wells, maps, list_
         pickle.dump(list_zones, file, protocol=pickle.HIGHEST_PROTOCOL)
     with open(f'{save_directory}/maps.pickle', 'wb') as file:
         pickle.dump(maps, file, protocol=pickle.HIGHEST_PROTOCOL)
+    with open(f'{save_directory}/data_history.pickle', 'wb') as file:
+        pickle.dump(data_history, file, protocol=pickle.HIGHEST_PROTOCOL)
 
     # logger.info("Сохранение контуров зон в формате .txt для загрузки в NGT")
     # save_directory_contours = f"{save_directory}/контуры зон"
@@ -186,7 +190,7 @@ def create_new_dir(path: str) -> None:
     return
 
 
-def save_ranking_drilling_to_excel(name_field, name_object, list_zones, filename):
+def save_ranking_drilling_to_excel(name_field, name_object, list_zones, filename, switch_economy):
     gdf_result_ranking_drilling = gpd.GeoDataFrame()
     dict_project_wells_Qo, dict_project_wells_Ql = {}, {}
     dict_project_wells_Qo_rate, dict_project_wells_Ql_rate = {}, {}
@@ -216,7 +220,8 @@ def save_ranking_drilling_to_excel(name_field, name_object, list_zones, filename
                                                       drill_zone.list_project_wells],
                  'Пластовое давление, атм': [round(well.P_reservoir, 1) for well in drill_zone.list_project_wells],
                  'Нефтенасыщенная толщина, м': [round(well.NNT, 1) for well in drill_zone.list_project_wells],
-                 'Начальная нефтенасыщенность, д.ед': [round(well.So, 3) for well in drill_zone.list_project_wells],
+                 'Начальная нефтенасыщенность, д.ед': [round(well.So_init, 3) for well in drill_zone.list_project_wells],
+                 'Текущая нефтенасыщенность, д.ед': [round(well.So, 3) for well in drill_zone.list_project_wells],
                  'Пористость, д.ед': [round(well.m, 3) for well in drill_zone.list_project_wells],
                  'Проницаемость, мД': [round(well.permeability, 3) for well in drill_zone.list_project_wells],
                  'Эффективный радиус, м': [round(well.r_eff, 1) for well in drill_zone.list_project_wells],
@@ -226,15 +231,22 @@ def save_ranking_drilling_to_excel(name_field, name_object, list_zones, filename
                  'Накопленная добыча жидкости (25 лет), тыс.т': [round(np.sum(well.Ql) / 1000, 1) for well in
                                                                   drill_zone.list_project_wells],
                  'Соседние скважины': [well.gdf_nearest_wells.well_number.unique() for
-                                       well in drill_zone.list_project_wells],
-                 'PI (Рентабельный период)': [well.PI for well in drill_zone.list_project_wells],
-                 'NPV (Рентабельный период), тыс.руб.': [round(np.sum(well.NPV[well.NPV > 0])) for well in
-                                                         drill_zone.list_project_wells],
-                 'ГЭП': [well.year_economic_limit for well in drill_zone.list_project_wells],
-                 }
-            )
+                                       well in drill_zone.list_project_wells]
+                 })
+            if switch_economy:
+                df_project_wells_economy = pd.DataFrame(
+                    {'№ скважины': [well.well_number for well in drill_zone.list_project_wells],
+                     'PI (Рентабельный период)': [well.PI for well in drill_zone.list_project_wells],
+                     'NPV (Рентабельный период), тыс.руб.': [round(np.sum(well.NPV[well.NPV > 0])) for well in
+                                                             drill_zone.list_project_wells],
+                     'ГЭП': [well.year_economic_limit for well in drill_zone.list_project_wells],
+                     })
+                gdf_project_wells_ranking_drilling = gdf_project_wells_ranking_drilling.merge(df_project_wells_economy,
+                                                                                              left_on='№ скважины',
+                                                                                              right_on='№ скважины')
             gdf_result_ranking_drilling = pd.concat([gdf_result_ranking_drilling,
                                                      gdf_project_wells_ranking_drilling], ignore_index=True)
+
 
             [dict_project_wells_Qo.update({well.well_number: well.Qo}) for well in drill_zone.list_project_wells]
             [dict_project_wells_Ql.update({well.well_number: well.Ql}) for well in drill_zone.list_project_wells]
@@ -243,34 +255,37 @@ def save_ranking_drilling_to_excel(name_field, name_object, list_zones, filename
             [dict_project_wells_Ql_rate.update({well.well_number: well.Ql_rate})
              for well in drill_zone.list_project_wells]
 
-            [dict_project_wells_cumulative_cash_flow.update({well.well_number: well.cumulative_cash_flow})
-             for well in drill_zone.list_project_wells]
-            [dict_project_wells_CAPEX.update({well.well_number: well.CAPEX})
-             for well in drill_zone.list_project_wells]
-            [dict_project_wells_OPEX.update({well.well_number: well.OPEX})
-             for well in drill_zone.list_project_wells]
-            [dict_project_wells_NPV.update({well.well_number: well.NPV})
-             for well in drill_zone.list_project_wells]
+            if switch_economy:
+                [dict_project_wells_cumulative_cash_flow.update({well.well_number: well.cumulative_cash_flow})
+                 for well in drill_zone.list_project_wells]
+                [dict_project_wells_CAPEX.update({well.well_number: well.CAPEX})
+                 for well in drill_zone.list_project_wells]
+                [dict_project_wells_OPEX.update({well.well_number: well.OPEX})
+                 for well in drill_zone.list_project_wells]
+                [dict_project_wells_NPV.update({well.well_number: well.NPV})
+                 for well in drill_zone.list_project_wells]
 
     df_result_production_Qo = pd.DataFrame.from_dict(dict_project_wells_Qo, orient='index')
     df_result_production_Ql = pd.DataFrame.from_dict(dict_project_wells_Ql, orient='index')
     df_result_production_Qo_rate = pd.DataFrame.from_dict(dict_project_wells_Qo_rate, orient='index')
     df_result_production_Ql_rate = pd.DataFrame.from_dict(dict_project_wells_Ql_rate, orient='index')
-    df_result_cumulative_cash_flow = pd.DataFrame.from_dict(dict_project_wells_cumulative_cash_flow, orient='index')
-    df_result_CAPEX = pd.DataFrame.from_dict(dict_project_wells_CAPEX, orient='index')
-    df_result_OPEX = pd.DataFrame.from_dict(dict_project_wells_OPEX, orient='index')
-    df_result_NPV = pd.DataFrame.from_dict(dict_project_wells_NPV, orient='index')
-
     with pd.ExcelWriter(filename) as writer:
         gdf_result_ranking_drilling.to_excel(writer, sheet_name='РБ', index=False)
         df_result_production_Qo.to_excel(writer, sheet_name='Добыча нефти, т')
         df_result_production_Ql.to_excel(writer, sheet_name='Добыча жидкости, т')
         df_result_production_Qo_rate.to_excel(writer, sheet_name='Дебит нефти, т_сут')
         df_result_production_Ql_rate.to_excel(writer, sheet_name='Дебит жидкости, т_сут')
-        df_result_cumulative_cash_flow.to_excel(writer, sheet_name='Накопленный FCF, тыс руб')
-        df_result_CAPEX.to_excel(writer, sheet_name='CAPEX, тыс руб')
-        df_result_OPEX.to_excel(writer, sheet_name='OPEX, тыс руб')
-        df_result_NPV.to_excel(writer, sheet_name='NPV, тыс руб')
+
+    if switch_economy:
+        df_result_cumulative_cash_flow = pd.DataFrame.from_dict(dict_project_wells_cumulative_cash_flow, orient='index')
+        df_result_CAPEX = pd.DataFrame.from_dict(dict_project_wells_CAPEX, orient='index')
+        df_result_OPEX = pd.DataFrame.from_dict(dict_project_wells_OPEX, orient='index')
+        df_result_NPV = pd.DataFrame.from_dict(dict_project_wells_NPV, orient='index')
+        with pd.ExcelWriter(filename, mode='a', engine='openpyxl') as writer:
+            df_result_cumulative_cash_flow.to_excel(writer, sheet_name='Накопленный FCF, тыс руб')
+            df_result_CAPEX.to_excel(writer, sheet_name='CAPEX, тыс руб')
+            df_result_OPEX.to_excel(writer, sheet_name='OPEX, тыс руб')
+            df_result_NPV.to_excel(writer, sheet_name='NPV, тыс руб')
     pass
 
 

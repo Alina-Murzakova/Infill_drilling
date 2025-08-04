@@ -18,7 +18,7 @@ def get_one_phase_model(fluid_params, reservoir_params, Swc, Sor, Fw, m1, Fo, m2
     # Эффективный объемный коэффициент расширения жидкости
     B = get_b(Bo, Bw, f_w)
 
-    return mu, c_t, B
+    return mu, c_t, B, 1-Sw
 
 
 def get_sw(mu_w, mu_o, Bo, Bw, f_w, Fw, m1, Fo, m2, Swc, Sor):

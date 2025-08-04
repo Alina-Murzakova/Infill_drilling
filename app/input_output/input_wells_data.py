@@ -98,7 +98,7 @@ def prepare_wells_data(data_history, dict_properties, min_length_hor_well=150, f
     data_history_work = data_history_work[(data_history_work.Ql_rate > 0) | (data_history_work.Winj_rate > 0)]
 
     # 6. Получение последних параметры работы скважин как среднее за last_months месяцев (добыча/закачка)
-    data_wells_last_param = get_avg_last_param(data_history_work, data_history, last_months, dict_properties)
+    data_wells_last_param = get_avg_last_param(data_history_work, data_history, last_months, dict_properties, pho_water)
 
     # 7. Добавление колонки с указанием как долго не работает скважина для скважин с добычей/закачкой
     data_wells_last_param['no_work_time'] = round((data_history['date'].max() - data_wells_last_param.date).dt.days

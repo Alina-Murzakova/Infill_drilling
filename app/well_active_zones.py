@@ -279,7 +279,10 @@ def calculate_effective_radius(data_wells, dict_properties):
     # расчет радиусов по физическим параметрам
     default_radius = dict_properties['default_well_params']['default_radius']
     default_radius_inj = dict_properties['default_well_params']['default_radius_inj']
-    So_min = dict_properties['default_well_params']['Sor']
+    if dict_properties['switches']['switch_adaptation_relative_permeability']:
+        So_min = 0.3
+    else:
+        So_min = dict_properties['default_well_params']['Sor']
     data_wells['r_eff_not_norm'] = data_wells.apply(well_effective_radius,
                                                     args=(So_min, default_radius, default_radius_inj, ), axis=1)
 

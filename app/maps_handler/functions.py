@@ -105,7 +105,7 @@ def maps_load_directory(maps_directory):
     try:
         maps.append(read_raster(f'{maps_directory}/initial_oil_saturation.grd'))
     except FileNotFoundError:
-        logger.error(f"В папке отсутствует файл с картой изобар: initial_oil_saturation.grd")
+        logger.error(f"В папке отсутствует файл с картой начальной нефтенасыщенности: initial_oil_saturation.grd")
 
     logger.info(f"Загрузка карты пористости")
     try:
@@ -117,6 +117,12 @@ def maps_load_directory(maps_directory):
 
 def calculate_reservoir_state_maps(data_wells, maps, dict_properties,
                                    default_size_pixel, maps_to_calculate, maps_directory):
+    """
+    Функция для расчета карт ОИЗ, текущей нефтенасыщенности и обводненности по методу мат баланса
+    Returns
+    -------
+    Дополненный список карт
+    """
     data_wells = data_wells[["well_number", "work_marker", "no_work_time", "Qo_cumsum", "Winj_cumsum", "water_cut_V",
                              "r_eff_not_norm", "NNT", "permeability", "T1_x_pix", "T1_y_pix", "T3_x_pix", "T3_y_pix"]]
     data_wells = data_wells.rename(columns={'r_eff_not_norm': 'r_eff', 'water_cut_V': 'water_cut'})
@@ -131,7 +137,7 @@ def calculate_reservoir_state_maps(data_wells, maps, dict_properties,
     dict_maps['initial_oil_saturation'] = maps[type_maps_list.index("initial_oil_saturation")].data
     # Дополнительные свойства и параметры
     map_params = {'size_pixel': default_size_pixel,
-                  'switch_fracture': dict_properties['well_params']['switch_fracture']}
+                  'switch_fracture': dict_properties['switches']['switch_fracture']}
     reservoir_params = {'KIN': dict_properties['coefficients']['KIN'],
                         'azimuth_sigma_h_min': dict_properties['well_params']['azimuth_sigma_h_min'],
                         'l_half_fracture': dict_properties['well_params']['l_half_fracture']}

@@ -19,3 +19,4 @@ __pycache__/
 *.py[cod]
 So_current + interference_all_points+fractures.ipynb
 /app/water_cut/
+/app/test.py

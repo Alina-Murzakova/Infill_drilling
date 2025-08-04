@@ -1,3 +1,4 @@
+import math
 import numpy as np
 import pandas as pd
 import geopandas as gpd
@@ -26,14 +27,16 @@ def get_project_wells_from_clusters(name_cluster, polygon_OI, gdf_clusters, data
     gdf_fact_wells = gpd.GeoDataFrame(data_wells, geometry="LINESTRING_pix")
 
     # GeoDataFrame с фактическими ГС
-    gdf_fact_hor_wells = gdf_fact_wells[gdf_fact_wells["well_type"] == "horizontal"].reset_index(drop=True)
-    if gdf_fact_hor_wells.empty:
+    gdf_fact_type_wells = gdf_fact_wells[gdf_fact_wells["well_type"] == "horizontal"].reset_index(drop=True)
+    if gdf_fact_type_wells.empty:
         logger.warning("На объекте нет фактических горизонтальных скважин! \n "
-                       "Необходимо задать азимут, длину, Рзаб проектных скважин вручную.")
+                       "Все проектные скважины вертикальные.")
+        # GeoDataFrame с фактическими ННС
+        gdf_fact_type_wells = gdf_fact_wells[gdf_fact_wells["well_type"] == "vertical"].reset_index(drop=True)
 
     # Находим ближайшие фактические ГС для проектных точек и рассчитываем параметры по окружению
     gdf_project["azimuth"] = (gdf_project["POINT_T2_pix"].apply(
-        lambda center: pd.Series(get_well_path_nearest_wells(center, gdf_fact_hor_wells,
+        lambda center: pd.Series(get_well_path_nearest_wells(center, gdf_fact_type_wells,
                                                              threshold / default_size_pixel, k=k_wells))))
     gdf_project['length_pix'] = max_length / default_size_pixel
     # Получаем точки T1 и T3 на основе центров кластеров (T2)
@@ -250,7 +253,10 @@ def get_well_path_nearest_wells(center, gdf_fact_wells, threshold, k=5):
 
 def compute_t1_t3_points(row):
     """Расчет точек Т1 и Т3 на основе Т2 (центра) и азимута"""
-    azimuth_rad = np.radians(row['azimuth'])
+    azimuth = row['azimuth']
+    if math.isnan(azimuth):
+        azimuth = 0
+    azimuth_rad = np.radians(azimuth)
     half_length = row['length_pix'] / 2
 
     # Вычисление координат начальной и конечной точек

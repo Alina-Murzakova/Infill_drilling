@@ -67,7 +67,7 @@ def calculate_starting_rate(reservoir_params, fluid_params, well_params, coeffic
     """
     rho = fluid_params['rho']
     f_w = reservoir_params['f_w']
-    mu, c_t, B = get_one_phase_model(fluid_params, reservoir_params, Swc, Sor, Fw, m1, Fo, m2, Bw)
+    mu, c_t, B, So_current = get_one_phase_model(fluid_params, reservoir_params, Swc, Sor, Fw, m1, Fo, m2, Bw)
 
     # Коэффициент продуктивности | м3/сут/атм
     well_productivity = get_well_productivity(mu, c_t, B, reservoir_params, well_params, coefficients, kv_kh)
@@ -81,7 +81,7 @@ def calculate_starting_rate(reservoir_params, fluid_params, well_params, coeffic
         Q_liq = Q_max
 
     Q_oil = Q_liq * rho * (1 - f_w / 100)
-    return float(Q_liq), float(Q_oil)
+    return float(Q_liq), float(Q_oil), float(So_current)
 
 
 def calculate_permeability_fact_wells(row, dict_parameters_coefficients):
@@ -103,7 +103,7 @@ def calculate_permeability_fact_wells(row, dict_parameters_coefficients):
     fluid_params = dict_parameters_coefficients['fluid_params']
     coefficients = dict_parameters_coefficients['coefficients']
     well_params = copy.deepcopy(dict_parameters_coefficients['well_params'])
-    if dict_parameters_coefficients['well_params']['switch_avg_frac_params']:
+    if dict_parameters_coefficients['switches']['switch_avg_frac_params']:
         well_params['xfr'] = row['xfr']
         well_params['w_f'] = row['w_f']
         well_params['FracCount'] = row['FracCount']
@@ -127,7 +127,7 @@ def calculate_permeability_fact_wells(row, dict_parameters_coefficients):
         def error_function(k_h):
             reservoir_params['k_h'] = k_h
             # Расчет дебитов
-            Q_liq, _ = calculate_starting_rate(reservoir_params, fluid_params, well_params, coefficients,
+            Q_liq, _, _ = calculate_starting_rate(reservoir_params, fluid_params, well_params, coefficients,
                                                kv_kh, Swc, Sor, Fw, m1, Fo, m2, Bw)
             # Ошибка между расчетным и известным Q_liq
             abs_error = float(Q_liq) - row['init_Ql_rate_TR']
@@ -149,12 +149,14 @@ def calculate_permeability_fact_wells(row, dict_parameters_coefficients):
         return 0
 
 
-def get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients, switch):
+def get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients):
     """
     Расчет проницаемости по фактическому фонду через РБ
     Parameters
     ----------
-    switch - фильтрация выбросов по статистике в массиве фактических проницаемостей
+    switches['switch_permeability_fact'] - фильтрация выбросов по статистике в массиве фактических проницаемостей
+    switches['switch_avg_frac_params'] - берем параметры фраков из фрак-листов или по умолчанию
+
     """
     data_wells_for_perm = data_wells[(data_wells['m'] > 0) & (data_wells['NNT'] > 0)].copy()
     data_wells_for_perm = data_wells_for_perm[(data_wells_for_perm['init_Ql_rate_TR'] > 0) &
@@ -170,9 +172,10 @@ def get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients, swi
                                   how='left', on='well_number')
     data_wells['permeability_fact'] = data_wells['permeability_fact'].fillna(0)
 
-    if switch:
+    if dict_parameters_coefficients['switches']['switch_permeability_fact']:
         # Верхняя граница для фильтрации выбросов (персентиль q3)
-        permeability_lower_bound, permeability_upper_bound = quantile_filter(data_wells, name_column='permeability_fact')
+        permeability_lower_bound, permeability_upper_bound = quantile_filter(data_wells,
+                                                                             name_column='permeability_fact')
         data_wells['permeability_fact'] = np.where(data_wells['permeability_fact'] > permeability_upper_bound,
                                                    permeability_upper_bound,
                                                    data_wells['permeability_fact'])  # 0 или permeability_upper_bound

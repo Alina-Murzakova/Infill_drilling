@@ -32,7 +32,8 @@ class ProjectWell:
         self.gdf_nearest_wells = None
         self.P_reservoir = None
         self.NNT = None  # должен быть эффективный для РБ
-        self.So = None
+        self.So_init = None  # начальная нефтенасыщенность
+        self.So = None  # текущая нефтенасыщенность
         self.water_cut = None
         self.m = None
         self.permeability = None
@@ -115,7 +116,7 @@ class ProjectWell:
                                 weights=1 / np.square(self.gdf_nearest_wells.loc[mask, 'distances']))
 
         # Если установлен flag water_cut_map = False (расчет обв-ти с окружения)
-        if not dict_parameters_coefficients['well_params']['water_cut_map']:
+        if not dict_parameters_coefficients['switches']['water_cut_map']:
             # Обводненность - Выбираем только те скважины, которые остановлены не более 10 лет назад
             mask = (self.gdf_nearest_wells['no_work_time'] <= 12 * 10 & self.gdf_nearest_wells['Ql_rate'] > 0)
             if not sum(mask) == 0:
@@ -134,7 +135,7 @@ class ProjectWell:
         # Либо изначально в OI добавить фильтр в т.ч. по пористости
         if get_value_map(*list_arguments, raster=maps[type_map_list.index('porosity')]) != 0:
             self.m = get_value_map(*list_arguments, raster=maps[type_map_list.index('porosity')])
-        self.So = get_value_map(*list_arguments, raster=maps[type_map_list.index('initial_oil_saturation')])
+        self.So_init = get_value_map(*list_arguments, raster=maps[type_map_list.index('initial_oil_saturation')])
         if pd.isna(self.water_cut):
             self.water_cut = get_value_map(*list_arguments, raster=maps[type_map_list.index('water_cut')])
         pass
@@ -151,10 +152,10 @@ class ProjectWell:
         well_params = dict_parameters_coefficients['well_params']
         coefficients = dict_parameters_coefficients['coefficients']
 
-        # Проверка на отрицательную депрессию:
-        if self.P_reservoir - self.P_well_init < 0:
-            self.P_well_init = well_params['init_P_well']
-            if self.P_reservoir - self.P_well_init < 0:
+        # Проверка на отрицательную депрессию и фиксированную забойку:
+        if (self.P_reservoir - self.P_well_init) < 0 or dict_parameters_coefficients['switches']['fix_P_delta']:
+            self.P_well_init = well_params['P_well_init']
+            if (self.P_reservoir - self.P_well_init) < 0:
                 self.P_well_init = 0.4 * self.P_reservoir
 
         reservoir_params['f_w'] = self.water_cut
@@ -169,10 +170,11 @@ class ProjectWell:
         well_params['FracCount'] = check_FracCount(well_params['Type_Frac'],
                                                    well_params['length_FracStage'],
                                                    well_params['L'])
-        self.init_Ql_rate_V, self.init_Qo_rate = calculate_starting_rate(reservoir_params, fluid_params,
-                                                                         well_params, coefficients,
-                                                                         kv_kh, Swc, Sor, Fw, m1, Fo, m2, Bw)
-        self.init_Ql_rate = self.init_Ql_rate_V * (self.water_cut / 100 * 1 + (1 - self.water_cut / 100) * fluid_params['rho'])
+        self.init_Ql_rate_V, self.init_Qo_rate, self.So = calculate_starting_rate(reservoir_params, fluid_params,
+                                                                                  well_params, coefficients,
+                                                                                  kv_kh, Swc, Sor, Fw, m1, Fo, m2, Bw)
+        self.init_Ql_rate = self.init_Ql_rate_V * (
+                    self.water_cut / 100 * 1 + (1 - self.water_cut / 100) * fluid_params['rho'])
         logger.info(f"Для проектной скважины {self.well_number}: Q_liq = {round(self.init_Ql_rate_V, 2)} м3/сут,"
                     f" Q_oil = {round(self.init_Qo_rate, 2)} т/сут")
         pass

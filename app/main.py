@@ -16,8 +16,11 @@ from well_active_zones import calculate_effective_radius
 from drill_zones.drilling_zones import calculate_drilling_zones
 from project_wells import calculate_reserves_by_voronoi
 from input_output.output import get_save_path, upload_data
+from reservoir_kr_optimizer import get_reservoir_kr
 
 if __name__ == '__main__':
+    import logging
+    logging.basicConfig(level=logging.INFO, )
     logger.add('logs.log', mode='w')
 
     logger.info("Инициализация локальных переменных")
@@ -27,6 +30,8 @@ if __name__ == '__main__':
     parameters_calculation = main_parameters['parameters_calculation']
     # Параметры для скважин РБ
     well_params = main_parameters['well_params']
+    # Переключатели
+    switches = main_parameters['switches']
 
     # Константы расчета
     load_data_param = constants['load_data_param']
@@ -46,13 +51,14 @@ if __name__ == '__main__':
     dict_parameters_coefficients = load_geo_phys_properties(paths["path_geo_phys_properties"], name_field, name_object)
     dict_parameters_coefficients.update({'well_params': well_params,
                                          'default_well_params': default_well_params,
-                                         'coefficients': default_coefficients})
+                                         'coefficients': default_coefficients,
+                                         'switches': switches})
     logger.info("Подготовка скважинных данных")
     data_history, data_wells = prepare_wells_data(data_history,
                                                   dict_properties=dict_parameters_coefficients,
                                                   first_months=load_data_param['first_months'])
 
-    if dict_parameters_coefficients['well_params']['switch_avg_frac_params']:
+    if switches['switch_avg_frac_params']:
         logger.info(f"Загрузка фрак-листов")
         data_wells, dict_parameters_coefficients = load_frac_info(paths["path_frac"], data_wells, name_object,
                                                                   dict_parameters_coefficients)
@@ -60,11 +66,16 @@ if __name__ == '__main__':
     logger.info("Загрузка и обработка карт")
     maps, data_wells, maps_to_calculate = mapping(maps_directory=paths["maps_directory"],
                                                   data_wells=data_wells,
-                                                  **load_data_param)
+                                                  **{**load_data_param, **switches})
     default_size_pixel = maps[0].geo_transform[1]  # размер ячейки после загрузки всех карт
 
     logger.info("Расчет радиусов дренирования и нагнетания для скважин")
     data_wells = calculate_effective_radius(data_wells, dict_properties=dict_parameters_coefficients)
+
+    if switches['switch_adaptation_relative_permeability']:
+        logger.info("Авто-адаптация ОФП")
+        dict_parameters_coefficients = get_reservoir_kr(data_history.copy(), data_wells.copy(),
+                                                        dict_parameters_coefficients)
 
     if any(maps_to_calculate.values()):
         logger.info("Расчет карт текущего состояния: обводненности и ОИЗ")
@@ -81,8 +92,7 @@ if __name__ == '__main__':
 
     logger.info("Расчет проницаемости для фактических скважин через РБ")
     (data_wells,
-     dict_parameters_coefficients) = get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients,
-                                                                    switch=load_data_param['switch_permeability_fact'])
+     dict_parameters_coefficients) = get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients)
 
     logger.info("Оценка темпов падения для текущего фонда")
     data_decline_rate_stat, _, _ = get_decline_rates(data_history, data_wells)
@@ -119,9 +129,12 @@ if __name__ == '__main__':
     logger.info("Расчет запасов для проектных скважин")
     calculate_reserves_by_voronoi(list_zones, data_wells, map_rrr, save_directory)
 
-    logger.info(f"Загрузка исходных данных для расчета экономики")
-    FEM, method_taxes, dict_NDD = load_economy_data(paths['path_economy'], name_field,
-                                                    dict_parameters_coefficients['fluid_params']['gor'])
+    if switches['switch_economy']:
+        logger.info(f"Загрузка исходных данных для расчета экономики")
+        FEM, method_taxes, dict_NDD = load_economy_data(paths['path_economy'], name_field,
+                                                        dict_parameters_coefficients['fluid_params']['gor'])
+    else:
+        FEM, method_taxes, dict_NDD = None, None, None
 
     for drill_zone in list_zones:
         if drill_zone.rating != -1:
@@ -132,10 +145,9 @@ if __name__ == '__main__':
                                             parameters_calculation['period_calculation'] * 12,
                                             well_params['day_in_month'],
                                             well_params['well_efficiency'])
-            drill_zone.calculate_economy(FEM, well_params, method_taxes, dict_NDD)
+            if switches['switch_economy']:
+                drill_zone.calculate_economy(FEM, well_params, method_taxes, dict_NDD)
 
     logger.info(f"Выгрузка данных расчета:")
-    FEM = None
-    method_taxes = None
     upload_data(name_field, name_object, save_directory, data_wells, maps, list_zones, info_clusterization_zones, FEM,
-                method_taxes, polygon_OI, **{**load_data_param, **well_params})
+                method_taxes, polygon_OI, data_history, **{**load_data_param, **well_params, **switches})

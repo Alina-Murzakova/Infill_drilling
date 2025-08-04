@@ -90,7 +90,7 @@ def identification_ZBS_MZS(data_history):
     return data_history
 
 
-def get_avg_last_param(data_history_work, data_history, last_months, dict_properties):
+def get_avg_last_param(data_history_work, data_history, last_months, dict_properties, pho_water):
     """
     Функция для получения фрейма со средними последними параметрами работы скважин (добыча/закачка и обв)
     Parameters
@@ -124,7 +124,9 @@ def get_avg_last_param(data_history_work, data_history, last_months, dict_proper
                                                                 Winj_rate_TR=(
                                                                     'Winj_rate_TR', lambda x: x[x != 0].mean()),
                                                                 density_oil_TR=(
-                                                                    'density_oil_TR', lambda x: x[x != 0].mean())
+                                                                    'density_oil_TR', lambda x: x[x != 0].mean()),
+                                                                water_cut_V=(
+                                                                    'water_cut_V', lambda x: x[x != 0].mean())
                                                                 )
                       .fillna(0).reset_index())
     # Массовая обводненность согласно МЭР
@@ -143,7 +145,7 @@ def get_avg_last_param(data_history_work, data_history, last_months, dict_proper
     # Заменяем последние параметры на последние средние параметры
     data_wells_last_param = data_wells_last_param.merge(data_last_rate, on='well_number', suffixes=('', '_avg'))
     cols_to_replace = ['Qo_rate', 'Ql_rate', 'Qo_rate_TR', 'Ql_rate_TR', 'water_cut', 'water_cut_TR', 'Winj_rate',
-                       'Winj_rate_TR']
+                       'Winj_rate_TR', 'density_oil_TR', 'water_cut_V']
     for col in cols_to_replace:
         data_wells_last_param[col] = data_wells_last_param[f"{col}_avg"].fillna(0)
     data_wells_last_param.drop(columns=[f"{col}_avg" for col in cols_to_replace], inplace=True)
