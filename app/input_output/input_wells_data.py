@@ -75,6 +75,8 @@ def prepare_wells_data(data_history, dict_properties, min_length_hor_well=150, f
     Фрейм с параметрами добычи на последнюю дату работы для всех скважин
     """
     # Чистим ряд скважин (без характера работы, объекта или статуса)
+    data_history.loc[((data_history['Ql_rate'] > 0) | (data_history['Winj_rate'] > 0)) &
+                     (data_history['well_status'] == 0), 'well_status'] = 'РАБ.'
     data_history = data_history[(data_history.work_marker != 0) & ((data_history.objects != 0) |
                                                                    (data_history.well_status != 0))]
     logger.info(f"После фильтрации осталось {data_history.well_number.nunique()} скважин")
@@ -97,7 +99,7 @@ def prepare_wells_data(data_history, dict_properties, min_length_hor_well=150, f
     data_history_work = data_history.copy()
     data_history_work = data_history_work[(data_history_work.Ql_rate > 0) | (data_history_work.Winj_rate > 0)]
 
-    # 6. Получение последних параметры работы скважин как среднее за last_months месяцев (добыча/закачка)
+    # 6. Получение последних параметров работы скважин как среднее за last_months месяцев (добыча/закачка)
     data_wells_last_param = get_avg_last_param(data_history_work, data_history, last_months, dict_properties, pho_water)
 
     # 7. Добавление колонки с указанием как долго не работает скважина для скважин с добычей/закачкой

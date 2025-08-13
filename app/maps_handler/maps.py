@@ -304,7 +304,7 @@ def read_array(data_wells, name_column_map, type_map, geo_transform, size,
     Parameters
     ----------
     data_wells - DataFrame
-    name_column_map - наименование колонок, по значениям котрой строится карта
+    name_column_map - наименование колонок, по значениям которой строится карта
     type_map - тип карты
     radius - радиус экстраполяции за крайние скважины
     geo_transform - геотрансформация карты
