@@ -27,30 +27,51 @@ def identification_ZBS_MZS(data_history):
     """
     # Выделение числовой части из номера скважины
     data_history['well_number_digit'] = data_history["well_number"].apply(extract_well_number).astype(int)
-    # Количество работающих стволов в каждый месяц на одном объекте
-    amount_work_well_every_month = (data_history.groupby(['well_number_digit', 'date', 'objects',
-                                                          'work_marker', 'well_status'])['well_number']
-                                    .transform('count'))  # nunique
-    # Если в один месяц работает больше 1 скважины на одном объекте - это МЗС
-    data_history['is_mzs'] = amount_work_well_every_month > 1
-    # Если в каждый месяц работает только 1 скважина, но их несколько - это ЗБС
-    data_history['is_zbs'] = (amount_work_well_every_month == 1) & (data_history.groupby('well_number_digit')
-                                                                    ['well_number'].transform('nunique') > 1)
+    # Количество стволов в каждый месяц на одном объекте
+    data_history['amount_work_well_every_month'] = (data_history.groupby(['well_number_digit', 'date', 'work_marker',
+                                                                          'T_head_x_geo', 'T_head_y_geo'])  # 'objects', 'well_status'
+                                                    ['well_number'].transform('count'))  # nunique
+    # Если в один месяц больше 1 ствола на одном объекте - это МЗС
+    data_history['is_mzs'] = data_history['amount_work_well_every_month'] > 1
+
+    data_history['mzs_record_count'] = (data_history.loc[data_history['is_mzs']].groupby('well_number')['is_mzs']
+                                        .transform('count'))
+
+    data_history['general_record_count'] = (data_history.groupby('well_number')['well_number'].transform('count'))
+
+    well_zbs_except = data_history.loc[(data_history['mzs_record_count'] == 1) &
+                                       (data_history['general_record_count'] > 1), 'well_number_digit'].unique()
+
+    # Если в каждый месяц работает только 1 ствол, но их несколько - это ЗБС
+    mask_zbs = ((data_history['amount_work_well_every_month'] == 1) &
+                (data_history.groupby(['well_number_digit', 'T_head_x_geo', 'T_head_y_geo'])['well_number']
+                 .transform('nunique') > 1))
+    data_history['is_zbs'] = mask_zbs | data_history['well_number_digit'].isin(well_zbs_except)
+
+    # --- Корректировки ---
+    data_history.loc[data_history['well_number_digit'].isin(well_zbs_except), 'is_mzs'] = False
     # Если хотя бы в одной строчке МЗС, то везде МЗС
     data_history['is_mzs'] = data_history.groupby('well_number')['is_mzs'].transform('any')
     data_history['is_zbs'] = np.where(data_history['is_mzs'], False, data_history['is_zbs'])
-
-    data_history['type_wellbore'] = 'Материнский ствол'
-    data_history.loc[data_history['is_mzs'], 'type_wellbore'] = 'МЗС'
-    data_history.loc[data_history['is_zbs'], 'type_wellbore'] = 'ЗБС'
-    data_history = data_history.drop(['is_mzs', 'is_zbs'], axis=1)
+    data_history['is_zbs'] = data_history.groupby('well_number')['is_zbs'].transform('any')
 
     # Определяем дату появления скважины (первая строка с ненулевым состоянием)
     data_history['first_well_date'] = (data_history.where(data_history['object'] != 0).groupby('well_number')['date']
                                        .transform('min'))
+    # Накопленное количество стволов скважины
+    data_history = (data_history.sort_values(by=['well_number_digit', 'date'], ascending=[True, True])
+                    .reset_index(drop=True))
+    data_history['cum_num_wellbore'] = (data_history.groupby(['well_number_digit'])['amount_work_well_every_month']
+                                        .cummax())
+
+    data_history['type_wellbore'] = 'Материнский ствол'
+    data_history.loc[(data_history['is_mzs'] & (data_history['cum_num_wellbore'] > 1)), 'type_wellbore'] = 'МЗС'
+    data_history.loc[data_history['is_zbs'], 'type_wellbore'] = 'ЗБС'
+    data_history = data_history.drop(['is_mzs', 'is_zbs'], axis=1)
 
     # Копирование и разделение параметров в МЗС
     # Работа только с МЗС
+    Ql_rate_before_mzs = data_history.Ql_rate.sum()
     mask_mzs = data_history['type_wellbore'] == 'МЗС'
     if sum(mask_mzs):
         # Копирование ряда параметров в МЗС
@@ -58,7 +79,7 @@ def identification_ZBS_MZS(data_history):
                            'P_reservoir']
         # Временно заменяем нули на NaN для корректного заполнения в столбцах columns_to_copy
         data_history.loc[mask_mzs, columns_to_copy] = data_history.loc[mask_mzs, columns_to_copy].replace(0, np.nan)
-        grouped_mzs = data_history.loc[mask_mzs].groupby(['well_number_digit', 'date', 'objects'])
+        grouped_mzs = data_history.loc[mask_mzs].groupby(['well_number_digit', 'date'])  # , 'objects'
         data_history.loc[mask_mzs, columns_to_copy] = (
             grouped_mzs[columns_to_copy].transform(lambda x: x.ffill().bfill())
             .fillna(0))
@@ -80,13 +101,19 @@ def identification_ZBS_MZS(data_history):
             .groupby(['well_number_digit', 'date', 'type_wellbore'])['first_well_date']
             .transform("min"))
 
-        # Нумеруем стволы в порядке хронологии
-        data_history['number_wellbore'] = data_history.groupby('well_number_digit')['first_well_date'].transform(
-            lambda x: x.rank(method='dense') - 1).astype(int)
+    # Нумеруем стволы в порядке хронологии
+    data_history['number_wellbore'] = data_history.groupby('well_number_digit')['first_well_date'].transform(
+        lambda x: x.rank(method='dense') - 1).astype(int)
 
-        data_history['type_wellbore'] = np.where((data_history['number_wellbore'] == 0) &
-                                                 (data_history['type_wellbore'] != "МЗС"), 'Материнский ствол',
-                                                 data_history['type_wellbore'])
+    data_history['type_wellbore'] = np.where((data_history['number_wellbore'] == 0) &
+                                             (data_history['type_wellbore'] != "МЗС"), 'Материнский ствол',
+                                             data_history['type_wellbore'])
+    data_history['number_wellbore'] = np.where((data_history['type_wellbore'] == 'Материнский ствол'),
+                                               0, data_history['number_wellbore'])
+    data_history = data_history.sort_values(by=['well_number', 'date'], ascending=[True, False]).reset_index(drop=True)
+    Ql_rate_after_mzs = data_history.Ql_rate.sum()
+    logger.info(f"Сумма дебит нефти до МЗС: {Ql_rate_before_mzs},\n"
+                f"Сумма дебит нефти после МЗС: {Ql_rate_after_mzs} ")
     return data_history
 
 
@@ -99,6 +126,7 @@ def get_avg_last_param(data_history_work, data_history, last_months, dict_proper
     data_history - вся история работы
     last_months - количество последних месяцев для осреднения
     dict_properties - словарь свойств и параметров по умолчанию
+    pho_water - плотность воды
 
     Returns
     -------
@@ -116,23 +144,44 @@ def get_avg_last_param(data_history_work, data_history, last_months, dict_proper
                                     (data_last_rate['reverse_cum_rate_inj'] != 0)]
     data_last_rate = data_last_rate.groupby('well_number').head(last_months)
 
-    data_last_rate = (data_last_rate.groupby('well_number').agg(Qo_rate=('Qo_rate', lambda x: x[x != 0].mean()),
-                                                                Ql_rate=('Ql_rate', lambda x: x[x != 0].mean()),
-                                                                Qo_rate_TR=('Qo_rate_TR', lambda x: x[x != 0].mean()),
-                                                                Ql_rate_TR=('Ql_rate_TR', lambda x: x[x != 0].mean()),
-                                                                Winj_rate=('Winj_rate', lambda x: x[x != 0].mean()),
-                                                                Winj_rate_TR=(
-                                                                    'Winj_rate_TR', lambda x: x[x != 0].mean()),
-                                                                density_oil_TR=(
-                                                                    'density_oil_TR', lambda x: x[x != 0].mean()),
-                                                                water_cut_V=(
-                                                                    'water_cut_V', lambda x: x[x != 0].mean())
-                                                                )
-                      .fillna(0).reset_index())
+    def agg_last_param(group):
+        # Проверка последнего рабочего месяца на добычу и закачку
+        Ql_last = group['Ql_rate'].iloc[0]
+        Winj_last = group['Winj_rate'].iloc[0]
+
+        if Ql_last != 0:
+            Qo_rate = group['Qo_rate'][group['Qo_rate'] != 0].mean()
+            Ql_rate = group['Ql_rate'][group['Ql_rate'] != 0].mean()
+            Qo_rate_TR = group['Qo_rate_TR'][group['Qo_rate_TR'] != 0].mean()
+            Ql_rate_TR = group['Ql_rate_TR'][group['Ql_rate_TR'] != 0].mean()
+            density_oil_TR = group['density_oil_TR'][group['density_oil_TR'] != 0].mean()
+        else:
+            Qo_rate = Ql_rate = Qo_rate_TR = Ql_rate_TR = density_oil_TR = 0
+
+        if Winj_last != 0:
+            Winj_rate = group['Winj_rate'][group['Winj_rate'] != 0].mean()
+            Winj_rate_TR = group['Winj_rate_TR'][group['Winj_rate_TR'] != 0].mean()
+        else:
+            Winj_rate = Winj_rate_TR = 0
+
+        return pd.Series({'Qo_rate': Qo_rate,
+                          'Ql_rate': Ql_rate,
+                          'Qo_rate_TR': Qo_rate_TR,
+                          'Ql_rate_TR': Ql_rate_TR,
+                          'Winj_rate': Winj_rate,
+                          'Winj_rate_TR': Winj_rate_TR,
+                          'density_oil_TR': density_oil_TR,
+                          })
+
+    data_last_rate = data_last_rate.groupby('well_number').apply(agg_last_param).fillna(0).reset_index()
     # Массовая обводненность согласно МЭР
     data_last_rate['water_cut'] = (np.where(data_last_rate['Ql_rate'] > 0,
                                             (data_last_rate['Ql_rate'] - data_last_rate['Qo_rate']) * 100 /
                                             data_last_rate['Ql_rate'], 0))
+    # Объемная обводненность согласно МЭР
+    data_last_rate['water_cut_V'] = (((data_last_rate['Ql_rate'] - data_last_rate['Qo_rate']) / pho_water) * 100 /
+                                     ((data_last_rate['Ql_rate'] - data_last_rate['Qo_rate']) / pho_water +
+                                     data_last_rate['Qo_rate'] / dict_properties['fluid_params']['rho'])).fillna(0)
     # Объемная обводненность согласно ТР
     data_last_rate['density_oil_TR'] = (np.where((data_last_rate['Ql_rate_TR'] != 0) &
                                                  (data_last_rate['density_oil_TR'] == 0),

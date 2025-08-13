@@ -1,0 +1,71 @@
+import datetime
+
+"""___________Блок параметров доступных пользователю на стартовой странице___________"""
+
+# абсолютные пути к исходным данным
+main_parameters = {
+    'paths': {'data_well_directory': r"/example_data/МесторождениеX_объект1.xlsx",
+              'maps_directory': r"/example_data/maps",
+              'path_geo_phys_properties': r"/example_data/ГФХ.xlsx",
+              'path_economy': None,
+              'path_frac': r"/example_data/Фрак-лист_МесторождениеX_объект1.xls"},
+
+
+    'parameters_calculation': {'min_radius': 300,  # минимальный радиус зоны для бурения в точке: 300/default_size_pixel 
+                               'sensitivity_quality_drill': 70,  # чувствительность к качеству зоны % max: epsilon^2/pi 
+                               'percent_top': 30,  
+                               'init_profit_cum_oil': 30,
+                               'period_calculation': 25},
+
+    'switches': {'switch_avg_frac_params': True,  # берем параметры фраков из фрак-листов или по умолчанию
+                 'switch_fracture': False,  # учет АГРП на нагнетательных скважинах
+                 'switch_permeability_fact': True,
+                 'switch_economy': False,  # расчет экономики
+                 'switch_adaptation_relative_permeability': False,  # авто-адаптация ОФП
+                 'water_cut_map': True,  # обводненность для РБ с карты (True) / с окружения (False)
+                 'accounting_GS': True,  # учет горизонтальных стволов
+                 'fix_P_delta': False},
+
+    # параметры для скважин РБ
+    'well_params': {'L': 1000,
+                    'xfr': 100,
+                    'w_f': 4,
+                    'Type_Frac': 'МГРП',  # список None, ГРП, МГРП
+                    'length_FracStage': 100,  # при МГРП вычисляет кол-во стадий
+                    'k_f': 235,
+                    't_p': 11,
+                    'r_w': 0.108,
+                    'init_P_well': 90,  
+                    'well_efficiency': 0.95,
+                    'azimuth_sigma_h_min': 45,  # азимут минимального горизонтального напряжения (град.)
+                    'l_half_fracture': 150,  # полу-длина трещины АГРП
+                    }}
+
+"""___________Блок параметров по-умолчанию доступных пользователю для корректировки___________"""
+
+constants = {'load_data_param': {'default_size_pixel': 50,
+                                 'first_months': 6,
+                                 'last_months': 3,
+                                 'priority_radius': 200,
+                                 'radius_interpolate': 1000},
+             'default_coefficients': {'KPPP': 0.9,
+                                      'skin': 0,
+                                      'KUBS': 1,
+                                      'KIN': 0.336},
+             'default_well_params': {'kv_kh': 0.1,
+                                     'Swc': 0.5,
+                                     'Sor': 0.314,
+                                     'Fw': 0.1,
+                                     'm1': 2,
+                                     'Fo': 0.05,
+                                     'm2': 3,
+                                     'Bw': 1,
+                                     'default_radius': 50,
+                                     'default_radius_inj': 300},
+             "default_project_well_params": {'buffer_project_wells': 150,
+                                             'day_in_month': 29,
+                                             'threshold': 2500,
+                                             'k': 5,
+                                             'min_length': 300,
+                                             'start_date': datetime.date(datetime.date.today().year, 1, 1)}}
+
