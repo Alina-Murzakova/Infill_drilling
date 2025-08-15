@@ -192,8 +192,8 @@ pip install -r requirements.txt
 - [ ] Оптимизация расположения скважин с учётом экономических показателей
 
 ## 🧑‍💻 Авторы
-* [Anastasia Rybakovskaya](https://github.com/ryba-kovskaya)
 * [Alina Murzakova](https://github.com/Alina-Murzakova)
+* [Anastasia Rybakovskaya](https://github.com/ryba-kovskaya)
 
 ## 📄 Лицензия
 Проект распространяется под лицензией [MIT](LICENSE).
