@@ -170,6 +170,13 @@ def calculate_reservoir_state_maps(data_wells, maps, dict_properties,
         map_water_cut_instance = Map(map_water_cut, dst_geo_transform, dst_projection, type_map="water_cut")
         map_water_cut_instance.save_grd_file(f"{maps_directory}/{map_water_cut_instance.type_map}.grd")
         maps = maps + [map_water_cut_instance]
+
+        # Сохранение в папке карты текущей нефтенасыщенности
+        map_So_current = result.data_So_current
+        map_So_current = np.where(map_So_current == 1.70141E+0038, 0.0, map_So_current)
+        map_So_current_instance = Map(map_So_current, dst_geo_transform, dst_projection, type_map="oil_saturation")
+        map_So_current_instance.save_grd_file(f"{maps_directory}/{map_So_current_instance.type_map}.grd")
+        maps = maps + [map_So_current_instance]
     return maps
 
 

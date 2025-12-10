@@ -17,12 +17,10 @@ from app.project_wells import calculate_reserves_by_voronoi
 from app.input_output.output import get_save_path, upload_data
 from app.reservoir_kr_optimizer import get_reservoir_kr
 
-
 # if __name__ == '__main__':
 def run_model(main_parameters, constants):
     import logging
     logging.basicConfig(level=logging.INFO, )
-    logger.add('logs.log', mode='w')
 
     logger.info("Инициализация локальных переменных")
     # Пути
@@ -47,6 +45,7 @@ def run_model(main_parameters, constants):
     data_history, info_object_calculation = load_wells_data(data_well_directory=paths["data_well_directory"])
     name_field, name_object = info_object_calculation.get("field"), info_object_calculation.get("object_value")
     save_directory = get_save_path("Infill_drilling", name_field, name_object.replace('/', '-'))
+    logger.add(f"{save_directory}/logs.log", mode='w')
 
     logger.info(f"Загрузка ГФХ по пласту {name_object.replace('/', '-')} месторождения {name_field}")
     dict_parameters_coefficients = load_geo_phys_properties(paths["path_geo_phys_properties"], name_field, name_object)
