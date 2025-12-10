@@ -8,8 +8,7 @@ from app.input_output.input_frac_info import load_frac_info
 from app.input_output.input_geo_phys_properties import load_geo_phys_properties
 from app.input_output.input_wells_data import load_wells_data, prepare_wells_data
 from app.ranking_drilling.starting_rates import get_df_permeability_fact_wells
-from app.local_parameters import main_parameters, constants
-
+# from app.local_parameters import main_parameters, constants
 from app.decline_rate.decline_rate import get_decline_rates
 from app.maps_handler.functions import mapping, calculate_reservoir_state_maps, calculate_score_maps
 from app.well_active_zones import calculate_effective_radius
@@ -18,7 +17,8 @@ from app.project_wells import calculate_reserves_by_voronoi
 from app.input_output.output import get_save_path, upload_data
 from app.reservoir_kr_optimizer import get_reservoir_kr
 
-if __name__ == '__main__':
+# if __name__ == '__main__':
+def run_model(main_parameters, constants):
     import logging
     logging.basicConfig(level=logging.INFO, )
 
@@ -92,7 +92,8 @@ if __name__ == '__main__':
 
     logger.info("Расчет проницаемости для фактических скважин через РБ")
     (data_wells,
-     dict_parameters_coefficients) = get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients)
+     dict_parameters_coefficients) = get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients,
+                                                                    save_directory)
 
     logger.info("Оценка темпов падения для текущего фонда")
     data_decline_rate_stat, _, _ = get_decline_rates(data_history, data_wells)

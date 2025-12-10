@@ -9,10 +9,11 @@ openpyxl~=3.1.5
 scikit-learn~=1.5.1
 mpmath~=1.3.0
 geopandas~=1.0.1
-shapaly~=2.0.5
+shapely~=2.0.5
 voronoi-diagram-for-polygons~=0.1.6
 tqdm~=4.67.0
 alphashape~=1.3.1
 xlrd~=2.0.1
 rasterio~=1.4.3
+pyqt6~=6.10.0
 git+https://github.com/Alina-Murzakova/reservoir-maps.git

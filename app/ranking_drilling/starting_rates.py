@@ -149,7 +149,7 @@ def calculate_permeability_fact_wells(row, dict_parameters_coefficients):
         return 0
 
 
-def get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients):
+def get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients, save_directory):
     """
     Расчет проницаемости по фактическому фонду через РБ
     Parameters
@@ -180,6 +180,29 @@ def get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients):
                                                    permeability_upper_bound,
                                                    data_wells['permeability_fact'])  # 0 или permeability_upper_bound
     avg_permeability = data_wells[data_wells['permeability_fact'] != 0]['permeability_fact'].mean()
+
+    data_wells_excel = data_wells[["well_number", "work_marker", "well_status", "well_type", "date",
+                                   "r_eff_voronoy",
+                                   "length_geo", "FracCount",
+                                   "xfr", "w_f",
+                                   "init_Ql_rate_TR", "init_water_cut_TR",
+                                   "init_P_well_prod", "init_P_reservoir_prod",
+                                   "NNT", "m", "permeability", "permeability_fact"]]
+
+    data_wells_excel = data_wells_excel[data_wells_excel['permeability_fact'] != 0]
+    data_wells_excel.columns = ['Номер скважины', 'характер', 'состояние', 'тип', 'дата',
+                                'эффективный радиус через площадь ячейки вороного, м',
+                                'длина ствола скважины T1-T3, м', 'количество стадий ГРП, шт',
+                                'полудлина трещины ГРП, м', 'раскрытие трещины ГРП, мм',
+                                'запускной Qж ТР, т/сут', 'стартовая обводненность ТР (объем), д.ед.',
+                                'запускное забойное давление добывающей скважины, атм',
+                                'стартовое пластовое давление ТР, атм',
+                                'нефтенасыщенная толщина, м', 'пористость, д.ед',
+                                'проницаемость c карты, мД', 'проницаемость обратным счетом через РБ, мД',
+                                ]
+    with pd.ExcelWriter(f"{save_directory}/Фактическая_проницаемость_скважины.xlsx") as writer:
+        data_wells_excel.to_excel(writer)
+
     # Перезапись значения проницаемости по объекту из ГФХ на среднюю по фактическому фонду
     dict_parameters_coefficients['reservoir_params']['k_h'] = avg_permeability
     dict_parameters_coefficients['well_params']['init_P_well'] = data_wells[data_wells['init_P_well_prod']
