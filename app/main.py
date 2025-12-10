@@ -8,20 +8,19 @@ from app.input_output.input_frac_info import load_frac_info
 from app.input_output.input_geo_phys_properties import load_geo_phys_properties
 from app.input_output.input_wells_data import load_wells_data, prepare_wells_data
 from app.ranking_drilling.starting_rates import get_df_permeability_fact_wells
-from local_parameters import main_parameters, constants
+from app.local_parameters import main_parameters, constants
 
 from app.decline_rate.decline_rate import get_decline_rates
 from app.maps_handler.functions import mapping, calculate_reservoir_state_maps, calculate_score_maps
-from well_active_zones import calculate_effective_radius
-from drill_zones.drilling_zones import calculate_drilling_zones
-from project_wells import calculate_reserves_by_voronoi
-from input_output.output import get_save_path, upload_data
-from reservoir_kr_optimizer import get_reservoir_kr
+from app.well_active_zones import calculate_effective_radius
+from app.drill_zones.drilling_zones import calculate_drilling_zones
+from app.project_wells import calculate_reserves_by_voronoi
+from app.input_output.output import get_save_path, upload_data
+from app.reservoir_kr_optimizer import get_reservoir_kr
 
 if __name__ == '__main__':
     import logging
     logging.basicConfig(level=logging.INFO, )
-    logger.add('logs.log', mode='w')
 
     logger.info("Инициализация локальных переменных")
     # Пути
@@ -46,6 +45,7 @@ if __name__ == '__main__':
     data_history, info_object_calculation = load_wells_data(data_well_directory=paths["data_well_directory"])
     name_field, name_object = info_object_calculation.get("field"), info_object_calculation.get("object_value")
     save_directory = get_save_path("Infill_drilling", name_field, name_object.replace('/', '-'))
+    logger.add(f"{save_directory}/logs.log", mode='w')
 
     logger.info(f"Загрузка ГФХ по пласту {name_object.replace('/', '-')} месторождения {name_field}")
     dict_parameters_coefficients = load_geo_phys_properties(paths["path_geo_phys_properties"], name_field, name_object)
