@@ -1,6 +1,4 @@
-from PyQt6 import QtWidgets, QtGui
-
-from app.gui.widgets.functions_ui import widgets_switch
+from PyQt6 import QtWidgets, QtGui, QtCore
 from app.gui.widgets.res_fluid_params_ui import Ui_ResFluidPage
 
 
@@ -10,27 +8,25 @@ class ResFluidWidget(QtWidgets.QWidget):
         self.ui = Ui_ResFluidPage()
         self.ui.setupUi(self)
 
-        # Группируем связанные элементы
-        self.relative_perm_elements = [
-            # (поле_ввода, подпись)
-            (self.ui.leSor, self.ui.lblSor),
-            (self.ui.leSwc, self.ui.lblSwc),
-            (self.ui.leFo, self.ui.lblFo),
-            (self.ui.leFw, self.ui.lblFw),
-            (self.ui.leCoreyOil, self.ui.lblCoreyOil),
-            (self.ui.leCoreyWater, self.ui.lblCoreyWater)
-        ]
+        self.setup_validators()
 
-        # Подключаем сигнал
-        self.ui.chkRelativePerm.toggled.connect(self.toggle_relative_perm_fields)
+    def setup_validators(self):
+        """Проверка полей"""
+        float_validator = QtGui.QRegularExpressionValidator(
+            QtCore.QRegularExpression(r"^(0(\.\d{0,3})?|1(\.0{0,3})?)$"))  # 0.000-1.000
+        power_validator = QtGui.QRegularExpressionValidator(
+            QtCore.QRegularExpression(r"^(10(\.0{0,3})?|[0-9](\.\d{0,3})?)$"))  # 0.000-10.000
+        specific_validator = QtGui.QRegularExpressionValidator(
+            QtCore.QRegularExpression(r"^(1(\.([0-4]\d{0,2}|5(\.0{0,2})?)?)?|0(\.\d{0,3})?)$"))  # 0.000-1.500
 
-        # Устанавливаем начальное состояние
-        self.toggle_relative_perm_fields(self.ui.chkRelativePerm.isChecked())
-
-    def toggle_relative_perm_fields(self, is_checked):
-        """Включает/выключает поля ОФП"""
-        for widgets in self.relative_perm_elements:
-            widgets_switch(is_checked, widgets, type_switch='not_same')
+        self.ui.leSor.setValidator(float_validator)
+        self.ui.leSwc.setValidator(float_validator)
+        self.ui.leFo.setValidator(float_validator)
+        self.ui.leFw.setValidator(float_validator)
+        self.ui.leCoreyOil.setValidator(power_validator)
+        self.ui.leCoreyWater.setValidator(power_validator)
+        self.ui.leBw.setValidator(specific_validator)
+        self.ui.leAnisotropy.setValidator(specific_validator)
 
     def get_data(self):
         return {

@@ -36,8 +36,8 @@ class EconomyWidget(QtWidgets.QWidget):
 
     def setup_validators(self):
         """Проверка полей"""
-        # day_validator = QtGui.QIntValidator(0, 31)
-        day_validator = QtGui.QRegularExpressionValidator(QtCore.QRegularExpression(r"([0-9]|[12][0-9]|3[01])"))
+        day_validator = QtGui.QRegularExpressionValidator(
+            QtCore.QRegularExpression(r"^(30(\.\d{1,3})?|3[01](\.0{1,3})?|[12]?\d(\.\d{1,3})?)$"))  # 0.000-31.000
         self.ui.leNumDays.setValidator(day_validator)
 
     def get_data(self):

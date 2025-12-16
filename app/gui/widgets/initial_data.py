@@ -60,19 +60,20 @@ class InitialDataWidget(QtWidgets.QWidget):
             typ, exts = paths_info[key]
 
             if typ == "file":
-                if not os.path.isfile(path):
-                    QtWidgets.QMessageBox.critical(self, "Ошибка",
-                                                   f"Файл '{os.path.basename(path)}' не найден.")  # attr
-                    return False
-                elif exts and not any(path.lower().endswith(ext) for ext in exts):
+                if exts and not any(path.lower().endswith(ext) for ext in exts):
                     QtWidgets.QMessageBox.critical(self, "Ошибка",
                                                    f"Файл '{os.path.basename(path)}' "
                                                    f"имеет недопустимое расширение (.xlsx, .xls или .xlsm).")
                     return False
+                elif not os.path.isfile(path):
+                    QtWidgets.QMessageBox.critical(self, "Ошибка",
+                                                   f"Файл '{os.path.dirname(path)}' не найден.")
+                    return False
+
             elif typ == "directory":
                 if not os.path.isdir(path):
                     QtWidgets.QMessageBox.critical(self, "Ошибка",
-                                                   f"Файл '{os.path.dirname(path)}' папка не существует.")
+                                                   f"Папка '{os.path.dirname(path)}' не существует.")
                     return False
 
         return True

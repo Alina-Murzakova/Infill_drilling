@@ -12,9 +12,8 @@ class DrillingZoneWidget(QtWidgets.QWidget):
 
     def setup_validators(self):
         """Проверка полей"""
-        int_validator = QtGui.QIntValidator(0, 999999)
-        # percent_validator = QtGui.QIntValidator(0, 100)
-        percent_validator = QtGui.QRegularExpressionValidator(QtCore.QRegularExpression(r"100|[0-9]{1,2}"))
+        int_validator = QtGui.QRegularExpressionValidator(QtCore.QRegularExpression(r"^(0|[1-9]\d{0,5})$"))  # 0-999999
+        percent_validator = QtGui.QRegularExpressionValidator(QtCore.QRegularExpression(r"^(100|[1-9]?\d)$"))  # 0-100
         self.ui.lePercentTop.setValidator(percent_validator)
 
         self.ui.lePercentTop.setValidator(percent_validator)
