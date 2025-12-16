@@ -17,7 +17,7 @@
    <property name="geometry">
     <rect>
      <x>20</x>
-     <y>30</y>
+     <y>40</y>
      <width>490</width>
      <height>480</height>
     </rect>
@@ -53,7 +53,7 @@ QGroupBox::title {
     <property name="geometry">
      <rect>
       <x>20</x>
-      <y>80</y>
+      <y>130</y>
       <width>421</width>
       <height>41</height>
      </rect>
@@ -81,7 +81,7 @@ QGroupBox::title {
       </widget>
      </item>
      <item>
-      <widget class="QDateEdit" name="deStartDate">
+      <widget class="QDateEdit" name="leStartDate">
        <property name="buttonSymbols">
         <enum>QAbstractSpinBox::NoButtons</enum>
        </property>
@@ -100,7 +100,7 @@ QGroupBox::title {
     <property name="geometry">
      <rect>
       <x>20</x>
-      <y>120</y>
+      <y>170</y>
       <width>421</width>
       <height>41</height>
      </rect>
@@ -156,6 +156,49 @@ QGroupBox::title {
     <property name="text">
      <string>Расчёт экономических показателей</string>
     </property>
+   </widget>
+   <widget class="QWidget" name="horizontalLayoutWidget_47">
+    <property name="geometry">
+     <rect>
+      <x>20</x>
+      <y>80</y>
+      <width>421</width>
+      <height>41</height>
+     </rect>
+    </property>
+    <layout class="QHBoxLayout" name="hlEconomy" stretch="0,0,0">
+     <property name="spacing">
+      <number>55</number>
+     </property>
+     <property name="rightMargin">
+      <number>10</number>
+     </property>
+     <item>
+      <widget class="QLabel" name="lblEconomy">
+       <property name="font">
+        <font>
+         <pointsize>10</pointsize>
+        </font>
+       </property>
+       <property name="text">
+        <string>Экономика</string>
+       </property>
+       <property name="wordWrap">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLineEdit" name="leEconomy"/>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btnEconomy">
+       <property name="text">
+        <string>Выбрать файл</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
    </widget>
   </widget>
  </widget>

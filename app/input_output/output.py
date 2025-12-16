@@ -3,6 +3,7 @@ import pickle
 import alphashape
 import win32api
 
+from datetime import datetime
 from loguru import logger
 import geopandas as gpd
 import pandas as pd
@@ -142,19 +143,20 @@ def save_contours(list_zones, map_conv, save_directory_contours, type_calc='buff
     pass
 
 
-def get_save_path(program_name: str = "default", field: str = "field", object_value: str = "object") -> str:
+def get_save_path(program_name: str = "default") -> str:
     """
     Получение пути на запись
     :return:
     """
     path_program = os.getcwd()
+    current_datetime = datetime.now().strftime("%d.%m.%Y")
     # Проверка возможности записи в директорию программы
     if os.access(path_program, os.W_OK):
         if "\\app" in path_program:
             path_program = path_program.replace("\\app", "")
         if "\\drill_zones" in path_program:
             path_program = path_program.replace("\\drill_zones", "")
-        save_path = f"{path_program}\\output\\{field}_{object_value}"
+        save_path = f"{path_program}\\output\\{current_datetime}"
     else:
         # Поиск другого диска с возможностью записи: D: если он есть и C:, если он один
         # В будущем можно исправить с запросом на сохранение
@@ -175,10 +177,10 @@ def get_save_path(program_name: str = "default", field: str = "field", object_va
                        or dir_.upper() == "PROFILES"]
 
         if len(profile_dir) < 1:
-            save_path = f"{save_drive}\\{program_name}_output\\{field}_{object_value}"
+            save_path = f"{save_drive}\\{program_name}_output\\{current_datetime}"
         else:
             save_path = (f"{save_drive}\\{profile_dir[0]}\\{current_user}\\"
-                         f"{program_name}_output\\{field}_{object_value}")
+                         f"{program_name}_output\\{current_datetime}")
 
     create_new_dir(save_path)
     return save_path

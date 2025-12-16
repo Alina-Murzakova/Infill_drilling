@@ -1,4 +1,6 @@
 from PyQt6 import QtWidgets, QtGui, QtCore
+
+from app.gui.widgets.functions_ui import widgets_switch
 from app.gui.widgets.mapping_ui import Ui_MappingPage
 
 
@@ -9,6 +11,24 @@ class MappingWidget(QtWidgets.QWidget):
         self.ui.setupUi(self)
 
         self.setup_validators()
+
+        # Группируем связанные элементы
+        self.Frac_inj_elements = [
+            # (поле_ввода, подпись)
+            (self.ui.leFracHalfLength, self.ui.lblFracHalfLength),
+            (self.ui.leMinHorStress, self.ui.lblMinHorStress),
+        ]
+
+        # Подключаем сигнал
+        self.ui.chkManageAutoFrac.toggled.connect(self.toggle_Frac_inj_fields)
+
+        # Устанавливаем начальное состояние
+        self.toggle_Frac_inj_fields(self.ui.chkManageAutoFrac.isChecked())
+
+    def toggle_Frac_inj_fields(self, is_checked):
+        """Включает/выключает поля АГРП"""
+        for widgets in self.Frac_inj_elements:
+            widgets_switch(is_checked, widgets, type_switch='same')
 
     def setup_validators(self):
         """Проверка полей"""

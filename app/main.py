@@ -55,7 +55,7 @@ def run_model(main_parameters, constants, total_stages, progress=None, is_cancel
     log_stage("Загрузка скважинных данных")
     data_history, info_object_calculation = load_wells_data(data_well_directory=paths["data_well_directory"])
     name_field, name_object = info_object_calculation.get("field"), info_object_calculation.get("object_value")
-    save_directory = get_save_path("Infill_drilling", name_field, name_object.replace('/', '-'))
+    save_directory = f"{paths['save_directory']}\\{name_field}_{name_object.replace('/', '-')}"
     logger.add(f"{save_directory}/logs.log", mode='w')
 
     log_stage(f"Загрузка ГФХ по пласту {name_object.replace('/', '-')} месторождения {name_field}")
@@ -163,3 +163,9 @@ def run_model(main_parameters, constants, total_stages, progress=None, is_cancel
     log_stage(f"Выгрузка данных расчета:")
     upload_data(name_field, name_object, save_directory, data_wells, maps, list_zones, info_clusterization_zones, FEM,
                 method_taxes, polygon_OI, data_history, **{**load_data_param, **well_params, **switches})
+
+
+if __name__ == '__main__':
+    from app.local_parameters import main_parameters, constants
+    main_parameters['paths']['save_directory'] = get_save_path("Infill_drilling")
+    run_model(main_parameters, constants)

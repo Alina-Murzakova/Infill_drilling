@@ -1,12 +1,12 @@
 from PyQt6 import QtWidgets
 from app.gui.widgets.initial_data_ui import Ui_InitialDataPage
+from app.input_output.output import get_save_path
 
 paths_info = {
     "data_well_directory": ("file", [".xls", ".xlsx", ".xlsm"]),
     "maps_directory": ("directory", []),
     "path_geo_phys_properties": ("file", [".xls", ".xlsx", ".xlsm"]),
-    "path_frac": ("file", [".xls", ".xlsx", ".xlsm"]),
-    "path_economy": ("file", [".xls", ".xlsx", ".xlsm"]),
+    "save_directory": ("directory", []),
 }
 
 
@@ -15,6 +15,7 @@ class InitialDataWidget(QtWidgets.QWidget):
         super().__init__()
         self.ui = Ui_InitialDataPage()
         self.ui.setupUi(self)
+        self.ui.leSave.setText(get_save_path('Infill_drilling'))
 
         self.setup_file_buttons()
 
@@ -23,8 +24,7 @@ class InitialDataWidget(QtWidgets.QWidget):
             "data_well_directory": self.ui.leHistory.text(),
             "maps_directory": self.ui.leMaps.text(),
             "path_geo_phys_properties": self.ui.leProperty.text(),
-            "path_frac": self.ui.leFrac.text(),
-            "path_economy": self.ui.leEconomy.text(),
+            "save_directory": self.ui.leSave.text()
         }
 
     def setup_file_buttons(self):
@@ -33,8 +33,7 @@ class InitialDataWidget(QtWidgets.QWidget):
             (self.ui.btnHistory, self.ui.leHistory, "file", "Excel Files (*.xlsx *.xls *.xlsm);;All Files (*)"),
             (self.ui.btnMaps, self.ui.leMaps, "directory", ""),
             (self.ui.btnProperty, self.ui.leProperty, "file", "Excel Files (*.xlsx *.xls *.xlsm);;All Files (*)"),
-            (self.ui.btnFrac, self.ui.leFrac, "file", "Excel Files (*.xlsx *.xls *.xlsm);;All Files (*)"),
-            (self.ui.btnEconomy, self.ui.leEconomy, "file", "Excel Files (*.xlsx *.xls *.xlsm);;All Files (*)"),
+            (self.ui.btnSave, self.ui.leSave, "directory", "")
         ]
 
         for btn, line_edit, dlg_type, file_filter in buttons:

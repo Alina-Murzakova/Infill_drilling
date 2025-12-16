@@ -79,7 +79,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def convert_to_backend_format(gui_data: dict) -> tuple:
         """Переформирование данных в формат local_parameters"""
         main_parameters = {
-            "paths": gui_data["paths"],
+            "paths": {**gui_data["paths"],
+                      'path_frac': gui_data["well_params"]["path_frac"],
+                      'path_economy': gui_data["economy"]["start_date"]},
 
             "parameters_calculation": {
                 **gui_data["drill_zone_params"],
@@ -207,7 +209,7 @@ class MainWindow(QtWidgets.QMainWindow):
         line_edits = self.ui.stackedWidget.findChildren(QtWidgets.QLineEdit)
 
         for le in line_edits:
-            if not le.text().strip():
+            if not le.text().strip() and le.isEnabled():
                 le.setStyleSheet("border: 1px solid red;")
                 all_ok = False
             else:
