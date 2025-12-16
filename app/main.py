@@ -8,7 +8,6 @@ from app.input_output.input_frac_info import load_frac_info
 from app.input_output.input_geo_phys_properties import load_geo_phys_properties
 from app.input_output.input_wells_data import load_wells_data, prepare_wells_data
 from app.ranking_drilling.starting_rates import get_df_permeability_fact_wells
-# from app.local_parameters import main_parameters, constants
 from app.decline_rate.decline_rate import get_decline_rates
 from app.maps_handler.functions import mapping, calculate_reservoir_state_maps, calculate_score_maps
 from app.well_active_zones import calculate_effective_radius
@@ -17,7 +16,7 @@ from app.project_wells import calculate_reserves_by_voronoi
 from app.input_output.output import get_save_path, upload_data
 from app.reservoir_kr_optimizer import get_reservoir_kr
 
-# if __name__ == '__main__':
+
 def run_model(main_parameters, constants):
     import logging
     logging.basicConfig(level=logging.INFO, )
@@ -44,7 +43,7 @@ def run_model(main_parameters, constants):
     logger.info("Загрузка скважинных данных")
     data_history, info_object_calculation = load_wells_data(data_well_directory=paths["data_well_directory"])
     name_field, name_object = info_object_calculation.get("field"), info_object_calculation.get("object_value")
-    save_directory = get_save_path("Infill_drilling", name_field, name_object.replace('/', '-'))
+    save_directory = f"{paths['save_directory']}\\{name_field}_{name_object.replace('/', '-')}"
     logger.add(f"{save_directory}/logs.log", mode='w')
 
     logger.info(f"Загрузка ГФХ по пласту {name_object.replace('/', '-')} месторождения {name_field}")
@@ -152,3 +151,9 @@ def run_model(main_parameters, constants):
     logger.info(f"Выгрузка данных расчета:")
     upload_data(name_field, name_object, save_directory, data_wells, maps, list_zones, info_clusterization_zones, FEM,
                 method_taxes, polygon_OI, data_history, **{**load_data_param, **well_params, **switches})
+
+
+if __name__ == '__main__':
+    from app.local_parameters import main_parameters, constants
+    main_parameters['paths']['save_directory'] = get_save_path("Infill_drilling")
+    run_model(main_parameters, constants)
