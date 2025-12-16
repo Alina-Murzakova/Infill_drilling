@@ -413,7 +413,7 @@ QTabBar::tab:last {
        <item>
         <widget class="QLineEdit" name="leLenStage">
          <property name="text">
-          <string/>
+          <string>100</string>
          </property>
         </widget>
        </item>
@@ -492,7 +492,7 @@ QTabBar::tab:last {
        <item>
         <widget class="QLineEdit" name="leXfr">
          <property name="text">
-          <string/>
+          <string>100</string>
          </property>
         </widget>
        </item>
@@ -529,7 +529,7 @@ QTabBar::tab:last {
        <item>
         <widget class="QLineEdit" name="leWf">
          <property name="text">
-          <string/>
+          <string>4</string>
          </property>
         </widget>
        </item>
@@ -566,7 +566,7 @@ QTabBar::tab:last {
        <item>
         <widget class="QLineEdit" name="lePermProppant">
          <property name="text">
-          <string/>
+          <string>235</string>
          </property>
         </widget>
        </item>

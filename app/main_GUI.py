@@ -1,11 +1,15 @@
 import sys
 import os
+import time
 
 from PyQt6 import QtWidgets, QtGui, QtCore
 from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import QThread, QObject, pyqtSignal
+from loguru import logger
 
 from app.gui.main_window_ui import Ui_MainWindow
 from app.main import run_model
+from app.exceptions import CalculationCancelled
 
 path_program = os.getcwd()
 icons = [
@@ -28,6 +32,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.main_parameters = None
         self.constants = None
 
+        # Отдельный поток для расчета
+        self.thread = None
+        self.worker = None
+
         # Находим иконки по правильным путям
         for i, item in enumerate(self.ui.listWidget.findItems("*", QtCore.Qt.MatchFlag.MatchWildcard)):
             icon_path = os.path.join(path_program, "gui", "icons", icons[i])
@@ -46,6 +54,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Запуск расчета
         self.ui.btnCalc.clicked.connect(self.run_calculation)
+
+        # Отмена расчета
+        self.ui.btnCancel.clicked.connect(self.cancel_calculation)
 
     def go_to_start_page(self):
         """Метод для перехода в Файл - О программе"""
@@ -146,17 +157,53 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(self, "Ошибка", "Заполните все поля!")
             return
 
-        # if not self.ui.initial_data_page.validate_paths():
-        #     return
+        if not self.ui.initial_data_page.validate_paths():
+            return
 
         gui_data = self.collect_all_gui_data()
         self.main_parameters, self.constants = self.convert_to_backend_format(gui_data)
-        print("Кнопка нажата")
-        run_model(self.main_parameters, self.constants)
+
+        self.ui.progressBar.setValue(0)
+        self.ui.plainTextEdit.clear()
+        self.ui.btnCancel.setEnabled(True)  # активируем кнопку отмены
+        self.ui.btnCalc.setEnabled(False)  # блокируем кнопку расчёта
+
+        # Создаём поток и worker в главном потоке
+        self.thread = QThread()
+        self.worker = Worker(self.main_parameters, self.constants)
+
+        # Перенос Worker в другой поток
+        self.worker.moveToThread(self.thread)
+
+        # Связываем сигналы (но еще не запускаем)
+        self.worker.progress.connect(self.ui.progressBar.setValue)
+        self.worker.log.connect(self.ui.plainTextEdit.appendPlainText)
+        self.thread.started.connect(self.worker.run)  # запуск расчета после старта потока
+        self.worker.finished.connect(self.thread.quit)  # завершение работы потока (иначе жил бы постоянно)
+        self.worker.finished.connect(self.worker.deleteLater)  # удаление Worker (чтобы не было утечек памяти)
+        self.thread.finished.connect(self.thread.deleteLater)  # удаляем поток
+
+        # Когда поток полностью завершился — показать QMessageBox
+        self.worker.finished.connect(self.finished_calculation)
+
+        # Запуск потока
+        self.thread.start()
+
+    def finished_calculation(self, success: bool, message: str):
+        self.ui.btnCalc.setEnabled(True)
+        self.ui.btnCancel.setEnabled(False)
+        if success:
+            QtWidgets.QMessageBox.information(self, "Готово", message)
+        else:
+            QtWidgets.QMessageBox.warning(self, "Прервано", message)
+
+    def cancel_calculation(self):
+        if self.worker:
+            self.ui.btnCancel.setEnabled(False)
+            self.worker.stop()
 
     def check_fields(self):
         all_ok = True
-
         line_edits = self.ui.stackedWidget.findChildren(QtWidgets.QLineEdit)
 
         for le in line_edits:
@@ -166,6 +213,87 @@ class MainWindow(QtWidgets.QMainWindow):
             else:
                 le.setStyleSheet("")  # сброс оформления
         return all_ok
+
+
+class Worker(QObject):
+    """Объект для выполнения кода"""
+    finished = pyqtSignal(bool, str)  # сигнал об окончании расчета
+    progress = pyqtSignal(int)  # для прогрессбара
+    log = pyqtSignal(str)  # логирование
+
+    def __init__(self, main_parameters, constants, total_stages=18):
+        super().__init__()
+        self.main_parameters = main_parameters
+        self.constants = constants
+        self.total_stages = total_stages
+        self._is_active = True
+
+        # Перехват loguru-логов
+        self.qt_logger = QtLogger()
+        self.qt_logger.log.connect(self.log_message)
+        logger.remove()  # удаляем стандартные обработчики loguru
+        logger.add(self.qt_logger, level="INFO")
+
+    def stop(self):
+        self._is_active = False
+        self.log.emit("Расчёт отменён")
+
+    def is_cancelled(self):
+        return not self._is_active
+
+    def log_message(self, msg):
+        """Вызывается при каждом logger.info"""
+        self.log.emit(msg)
+
+    def run(self):
+        """Запуск основной функции"""
+        self.log.emit("Расчёт запущен")
+        start_time = time.perf_counter()
+        try:
+            # Передаем Qt-сигналы в run_model
+            run_model(
+                self.main_parameters,
+                self.constants,
+                self.total_stages,
+                progress=self.progress.emit,
+                is_cancelled=self.is_cancelled
+            )
+
+            elapsed = time.perf_counter() - start_time
+            self.finished.emit(True, f"Расчёт успешно завершён.\nВремя: {format_time(elapsed)}")
+
+        except CalculationCancelled:
+            self.finished.emit(False, "Расчёт отменён пользователем.")
+
+        except Exception as e:
+            self.finished.emit(False, f"⚠ Ошибка расчёта:\n{str(e)}")
+
+
+class QtLogger(QObject):
+    log = pyqtSignal(str)
+
+    def __init__(self):
+        super().__init__()
+
+    def write(self, msg):
+        msg = msg.strip()
+        if msg:  # фильтруем пустые строки
+            self.log.emit(msg)
+
+    def flush(self):
+        pass
+
+
+def format_time(seconds):
+    if seconds < 60:
+        return f"{seconds:.1f} сек"
+    elif seconds < 3600:
+        m, s = divmod(seconds, 60)
+        return f"{int(m)} мин {int(s)} сек"
+    else:
+        h, rem = divmod(seconds, 3600)
+        m, s = divmod(rem, 60)
+        return f"{int(h)} ч {int(m)} мин {int(s)} сек"
 
 
 if __name__ == "__main__":

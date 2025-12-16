@@ -1,4 +1,4 @@
-from PyQt6 import QtWidgets
+from PyQt6 import QtWidgets, QtGui, QtCore
 from app.gui.widgets.well_params_ui import Ui_WellParamsPage
 
 
@@ -7,6 +7,47 @@ class WellParamsWidget(QtWidgets.QWidget):
         super().__init__()
         self.ui = Ui_WellParamsPage()
         self.ui.setupUi(self)
+
+        self.setup_validators()
+
+    def setup_validators(self):
+        """Проверка полей"""
+        int_validator = QtGui.QRegularExpressionValidator(QtCore.QRegularExpression(r"^(0|[1-9]\d{0,5})$"))  # 0-999999
+        float_validator = QtGui.QRegularExpressionValidator(
+            QtCore.QRegularExpression(r"^(0(\.\d{0,3})?|1(\.0{0,3})?)$"))  # 0.000-1.000
+        pressure_validator = QtGui.QRegularExpressionValidator(
+            QtCore.QRegularExpression(r"^(1000(\.0{0,3})?|[1-9]\d{0,2}(\.\d{1,3})?)$"))  # 1.0-1000.0
+        skin_validator = QtGui.QRegularExpressionValidator(
+            QtCore.QRegularExpression(r"^(-?(100(\.0{0,3})?|[0-9]?\d(\.\d{0,3})?))$"))  # -100.000-(+100.000)
+
+        # ---------- Общие ----------
+        self.ui.leWellRadius.setValidator(float_validator)
+        self.ui.leRampUpTime.setValidator(int_validator)
+        self.ui.leWellEfficiency.setValidator(float_validator)
+        self.ui.leKUBS.setValidator(float_validator)
+        self.ui.leKPPP.setValidator(float_validator)
+        self.ui.leSkin.setValidator(skin_validator)
+
+        # ---------- ГРП ----------
+        self.ui.leLenStage.setValidator(int_validator)
+        self.ui.leXfr.setValidator(int_validator)
+        self.ui.leWf.setValidator(int_validator)
+        self.ui.lePermProppant.setValidator(int_validator)
+
+        # ---------- Фактический фонд ----------
+        self.ui.leFirstMonths.setValidator(int_validator)
+        self.ui.leLastMonths.setValidator(int_validator)
+        self.ui.leMinBufferProd.setValidator(int_validator)
+        self.ui.leMiBufferInj.setValidator(int_validator)
+
+        # ---------- Проектный фонд ----------
+        self.ui.leMaxLenWell.setValidator(int_validator)
+        self.ui.leMinLenHor.setValidator(int_validator)
+        self.ui.leProjectBuffer.setValidator(int_validator)
+        self.ui.lePwell.setValidator(pressure_validator)
+        self.ui.leNumNearWells.setValidator(int_validator)
+        self.ui.leThreshold.setValidator(int_validator)
+        self.ui.leForecastPeriod.setValidator(int_validator)
 
     def get_data(self):
         return {
