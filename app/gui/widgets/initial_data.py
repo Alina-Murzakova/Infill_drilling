@@ -2,13 +2,6 @@ from PyQt6 import QtWidgets
 from app.gui.widgets.initial_data_ui import Ui_InitialDataPage
 from app.input_output.output import get_save_path
 
-paths_info = {
-    "data_well_directory": ("file", [".xls", ".xlsx", ".xlsm"]),
-    "maps_directory": ("directory", []),
-    "path_geo_phys_properties": ("file", [".xls", ".xlsx", ".xlsm"]),
-    "save_directory": ("directory", []),
-}
-
 
 class InitialDataWidget(QtWidgets.QWidget):
     def __init__(self):
@@ -49,31 +42,3 @@ class InitialDataWidget(QtWidgets.QWidget):
             return
         if path:
             line_edit.setText(path)
-
-    def validate_paths(self):
-        import os
-
-        data = self.get_data()
-
-        for key, p in data.items():
-            path = data[key].strip()
-            typ, exts = paths_info[key]
-
-            if typ == "file":
-                if exts and not any(path.lower().endswith(ext) for ext in exts):
-                    QtWidgets.QMessageBox.critical(self, "Ошибка",
-                                                   f"Файл '{os.path.basename(path)}' "
-                                                   f"имеет недопустимое расширение (.xlsx, .xls или .xlsm).")
-                    return False
-                elif not os.path.isfile(path):
-                    QtWidgets.QMessageBox.critical(self, "Ошибка",
-                                                   f"Файл '{os.path.dirname(path)}' не найден.")
-                    return False
-
-            elif typ == "directory":
-                if not os.path.isdir(path):
-                    QtWidgets.QMessageBox.critical(self, "Ошибка",
-                                                   f"Папка '{os.path.dirname(path)}' не существует.")
-                    return False
-
-        return True

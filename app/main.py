@@ -21,7 +21,7 @@ from app.exceptions import CalculationCancelled
 def run_model(main_parameters, constants, total_stages, progress=None, is_cancelled=None):
     import logging
     logging.basicConfig(level=logging.INFO, )
-    stage_number = 0
+    stage_number = -1
 
     def log_stage(msg):
         """Функция для логирования и определения № шага расчета"""
