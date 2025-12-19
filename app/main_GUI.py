@@ -10,6 +10,7 @@ from loguru import logger
 from app.gui.main_window_ui import Ui_MainWindow
 from app.main import run_model
 from app.exceptions import CalculationCancelled
+from app.gui.widgets.functions_ui import validate_paths
 
 path_program = os.getcwd()
 icons = [
@@ -81,7 +82,7 @@ class MainWindow(QtWidgets.QMainWindow):
         main_parameters = {
             "paths": {**gui_data["paths"],
                       'path_frac': gui_data["well_params"]["path_frac"],
-                      'path_economy': gui_data["economy"]["start_date"]},
+                      'path_economy': gui_data["economy"]["path_economy"]},
 
             "parameters_calculation": {
                 **gui_data["drill_zone_params"],
@@ -159,11 +160,10 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(self, "Ошибка", "Заполните все поля!")
             return
 
-        if not self.ui.initial_data_page.validate_paths():
-            return
-
         gui_data = self.collect_all_gui_data()
         self.main_parameters, self.constants = self.convert_to_backend_format(gui_data)
+        if not validate_paths(self.main_parameters["paths"], parent=self):
+            return
 
         self.ui.progressBar.setValue(0)
         self.ui.plainTextEdit.clear()
@@ -197,6 +197,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if success:
             QtWidgets.QMessageBox.information(self, "Готово", message)
         else:
+            self.ui.progressBar.setValue(0)
             QtWidgets.QMessageBox.warning(self, "Прервано", message)
 
     def cancel_calculation(self):
@@ -214,6 +215,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 all_ok = False
             else:
                 le.setStyleSheet("")  # сброс оформления
+                le.style().unpolish(le)
+                le.style().polish(le)
+                le.update()
         return all_ok
 
 
@@ -233,8 +237,8 @@ class Worker(QObject):
         # Перехват loguru-логов
         self.qt_logger = QtLogger()
         self.qt_logger.log.connect(self.log_message)
-        logger.remove()  # удаляем стандартные обработчики loguru
-        logger.add(self.qt_logger, level="INFO")
+        self._sink_id = None
+        self._sink_id = logger.add(self.qt_logger, level="INFO")
 
     def stop(self):
         self._is_active = False
@@ -262,13 +266,21 @@ class Worker(QObject):
             )
 
             elapsed = time.perf_counter() - start_time
-            self.finished.emit(True, f"Расчёт успешно завершён.\nВремя: {format_time(elapsed)}")
+            self.finished.emit(True, f"Расчёт успешно завершён\nВремя: {format_time(elapsed)}")
 
         except CalculationCancelled:
-            self.finished.emit(False, "Расчёт отменён пользователем.")
+            message = "Расчёт отменён пользователем"
+            logger.info(message)
+            self.finished.emit(False, message)
 
         except Exception as e:
-            self.finished.emit(False, f"⚠ Ошибка расчёта:\n{str(e)}")
+            message = f"⚠ Ошибка расчёта:\n{str(e)}"
+            logger.error(message)
+            self.finished.emit(False, message)
+
+        finally:
+            if self._sink_id is not None:
+                logger.remove(self._sink_id)
 
 
 class QtLogger(QObject):

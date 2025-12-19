@@ -21,7 +21,7 @@ from app.exceptions import CalculationCancelled
 def run_model(main_parameters, constants, total_stages, progress=None, is_cancelled=None):
     import logging
     logging.basicConfig(level=logging.INFO, )
-    stage_number = 0
+    stage_number = -1
 
     def log_stage(msg):
         """Функция для логирования и определения № шага расчета"""
@@ -168,4 +168,4 @@ def run_model(main_parameters, constants, total_stages, progress=None, is_cancel
 if __name__ == '__main__':
     from app.local_parameters import main_parameters, constants
     main_parameters['paths']['save_directory'] = get_save_path("Infill_drilling")
-    run_model(main_parameters, constants)
+    run_model(main_parameters, constants, total_stages=18)

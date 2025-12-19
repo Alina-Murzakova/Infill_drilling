@@ -82,6 +82,12 @@ QGroupBox::title {
      </item>
      <item>
       <widget class="QDateEdit" name="leStartDate">
+       <property name="minimumSize">
+        <size>
+         <width>0</width>
+         <height>21</height>
+        </size>
+       </property>
        <property name="buttonSymbols">
         <enum>QAbstractSpinBox::NoButtons</enum>
        </property>
@@ -166,9 +172,9 @@ QGroupBox::title {
       <height>41</height>
      </rect>
     </property>
-    <layout class="QHBoxLayout" name="hlEconomy" stretch="0,0,0">
+    <layout class="QHBoxLayout" name="hlEconomy" stretch="12,18,10">
      <property name="spacing">
-      <number>55</number>
+      <number>15</number>
      </property>
      <property name="rightMargin">
       <number>10</number>
