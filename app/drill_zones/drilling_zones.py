@@ -25,8 +25,11 @@ class DrillZone:
         self.list_project_wells = []
         self.num_project_wells = None
 
-        self.Qo_rate = None
-        self.Ql_rate = None
+        # Средние атрибуты с фонда
+        self.init_avr_Qo_rate = None
+        self.init_avr_Ql_rate = None
+        self.init_avr_water_cut = None
+        # Суммарная добыча
         self.Qo = None
         self.Ql = None
 
@@ -73,9 +76,9 @@ class DrillZone:
         # Начальное количество скважин на основе запасов/площади
         num_project_wells = int(self.reserves // init_profit_cum_oil)
 
-        logger.info(f"Проверка зоны на размещение {num_project_wells} скважин в зоне {self.rating}")
         # Рассматриваем только зоны, куда можно вписать >=1 скважину
-        if num_project_wells >= 1:
+        if num_project_wells:
+            logger.info(f"Проверка зоны на размещение {num_project_wells} скважин в зоне {self.rating}")
             logger.info(f"Кластеризация перспективной зоны {self.rating}")
             num_project_wells, labels = clusterize_drill_zone((self.x_coordinates, self.y_coordinates),
                                                               map_rrr, num_project_wells, init_profit_cum_oil,
@@ -156,17 +159,11 @@ class DrillZone:
     def get_production_profile(self):
         """ Расчет атрибутов профилей зоны"""
         logger.info(f"Расчет атрибутов профилей зоны {self.rating}")
+        Qo_rate, Ql_rate, water_cut = [], [], []
         for project_well in self.list_project_wells:
-            if self.Qo_rate is None:
-                self.Qo_rate = project_well.Qo_rate.copy()
-            else:
-                if self.Qo_rate is not None:
-                    self.Qo_rate += project_well.Qo_rate
-            if self.Ql_rate is None:
-                self.Ql_rate = project_well.Ql_rate.copy()
-            else:
-                if self.Ql_rate is not None:
-                    self.Ql_rate += project_well.Ql_rate
+            Qo_rate.append(project_well.init_Qo_rate)
+            Ql_rate.append(project_well.init_Ql_rate_V)
+            water_cut.append(project_well.water_cut.copy())
             if self.Qo is None:
                 self.Qo = project_well.Qo.copy()
             else:
@@ -177,6 +174,12 @@ class DrillZone:
             else:
                 if self.Ql is not None:
                     self.Ql += project_well.Ql
+        self.init_avr_Qo_rate = np.mean(Qo_rate)
+        self.init_avr_Ql_rate = np.mean(Ql_rate)
+        self.init_avr_water_cut = np.mean(water_cut)
+
+        self.Qo = np.sum(self.Qo)
+        self.Ql = np.sum(self.Ql)
         pass
 
     def calculate_economy(self, FEM, well_params, method, dict_NDD=None):

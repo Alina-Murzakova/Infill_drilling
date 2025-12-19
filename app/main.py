@@ -113,6 +113,7 @@ def run_model(main_parameters, constants, total_stages, progress=None, is_cancel
     # Параметры кластеризации
     epsilon = parameters_calculation["min_radius"] / default_size_pixel
     min_samples = int(parameters_calculation["sensitivity_quality_drill"] / 100 * epsilon ** 2 * math.pi)
+    min_samples = 1 if min_samples == 0 else min_samples
     percent_low = 100 - parameters_calculation["percent_top"]
     list_zones, info_clusterization_zones = calculate_drilling_zones(maps=maps,
                                                                      epsilon=epsilon,
@@ -161,11 +162,13 @@ def run_model(main_parameters, constants, total_stages, progress=None, is_cancel
                 drill_zone.calculate_economy(FEM, well_params, method_taxes, dict_NDD)
 
     log_stage(f"Выгрузка данных расчета:")
-    upload_data(name_field, name_object, save_directory, data_wells, maps, list_zones, info_clusterization_zones, FEM,
-                method_taxes, polygon_OI, data_history, **{**load_data_param, **well_params, **switches})
+    summary_table = upload_data(name_field, name_object, save_directory, data_wells, maps, list_zones,
+                                info_clusterization_zones, FEM, method_taxes, polygon_OI, data_history,
+                                **{**load_data_param, **well_params, **switches})
+    return summary_table, save_directory
 
 
 if __name__ == '__main__':
     from app.local_parameters import main_parameters, constants
     main_parameters['paths']['save_directory'] = get_save_path("Infill_drilling")
-    run_model(main_parameters, constants)
+    run_model(main_parameters, constants, total_stages=None)

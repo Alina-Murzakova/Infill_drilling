@@ -65,6 +65,16 @@ QGroupBox::title {
    <property name="title">
     <string>Статистика результатов</string>
    </property>
+   <widget class="QTableView" name="tableSummary">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>40</y>
+      <width>471</width>
+      <height>351</height>
+     </rect>
+    </property>
+   </widget>
   </widget>
  </widget>
  <resources/>
