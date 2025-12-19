@@ -2,7 +2,7 @@ import os
 import pickle
 import alphashape
 import win32api
-
+from decimal import Decimal
 from datetime import datetime
 from loguru import logger
 import geopandas as gpd
@@ -20,7 +20,7 @@ def upload_data(name_field, name_object, save_directory, data_wells, maps, list_
     name_field = name_field.replace('/', "_")
     name_object = name_object.replace('/', "_")
     type_map_list = list(map(lambda raster: raster.type_map, maps))
-
+    df_summary_table = summary_table(list_zones)
     dict_calculated_maps = {'residual_recoverable_reserves': "ОИЗ",
                             'water_cut': "обводненность",
                             'reservoir_score': "оценка резервуара",
@@ -76,7 +76,51 @@ def upload_data(name_field, name_object, save_directory, data_wells, maps, list_
     # create_new_dir(save_directory_contours)
     # save_contours(list_zones, map_residual_recoverable_reserves, save_directory_contours, type_calc='alpha',
     #               buffer_size=40)
-    pass
+    return df_summary_table
+
+
+def summary_table(list_zones):
+    """Подготовка краткой сводки по расчету"""
+
+    def round_if_numeric(value, decimal=2):
+        # Проверяем все основные числовые типы
+        if isinstance(value, (int, float, np.integer, np.floating, Decimal)):
+            return round(float(value), decimal)
+        return value
+
+    df_summary_table = pd.DataFrame(
+        {'Зона': [int(drill_zone.rating) if isinstance(drill_zone.rating, float)
+                  else drill_zone.rating for drill_zone in list_zones],
+         'Количество\nскважин': [int(drill_zone.num_project_wells) if isinstance(drill_zone.num_project_wells, float)
+                                 else drill_zone.num_project_wells for drill_zone in list_zones],
+         'Средний OI': [round_if_numeric(np.mean(drill_zone.opportunity_index_values)) for drill_zone in list_zones],
+         'Запасы, тыс т': [round_if_numeric(drill_zone.reserves) for drill_zone in list_zones],
+         'Средний запускной\nдебит нефти, т/сут': [round_if_numeric(drill_zone.init_avr_Qo_rate) for drill_zone in
+                                                   list_zones],
+         'Средний запускной\nдебит жидкости, м3/сут':
+             [round_if_numeric(drill_zone.init_avr_Ql_rate, 2) for drill_zone in list_zones],
+         'Средняя\nобводненность, %':
+             [round_if_numeric(drill_zone.init_avr_water_cut, 2) for drill_zone in list_zones],
+         'Накопленная добыча\nнефти (25 лет), тыс.т':
+             [round(drill_zone.Qo / 1000, 2) if isinstance(drill_zone.Qo, float)
+              else drill_zone.Qo for drill_zone in list_zones],
+         'Накопленная добыча\nжидкости (25 лет), тыс.т':
+             [round(drill_zone.Ql / 1000, 2) if isinstance(drill_zone.Ql, float)
+              else drill_zone.Ql for drill_zone in list_zones],
+         })
+    df_summary_table = df_summary_table[df_summary_table['Зона'] != -1]
+    df_summary_table.loc['Всего'] = [
+        'Всего',
+        df_summary_table['Количество\nскважин'].sum(),
+        round(df_summary_table['Средний OI'].mean(), 2),
+        round(df_summary_table['Запасы, тыс т'].sum(), 2),
+        df_summary_table['Средний запускной\nдебит нефти, т/сут'].mean(),
+        df_summary_table['Средний запускной\nдебит жидкости, м3/сут'].mean(),
+        df_summary_table['Средняя\nобводненность, %'].mean(),
+        df_summary_table['Накопленная добыча\nнефти (25 лет), тыс.т'].sum(),
+        df_summary_table['Накопленная добыча\nжидкости (25 лет), тыс.т'].sum()]
+    df_summary_table = df_summary_table.fillna('')
+    return df_summary_table
 
 
 def save_contours(list_zones, map_conv, save_directory_contours, type_calc='buffer', buffer_size=60, alpha=0.01):
@@ -222,7 +266,8 @@ def save_ranking_drilling_to_excel(name_field, name_object, list_zones, filename
                                                       drill_zone.list_project_wells],
                  'Пластовое давление, атм': [round(well.P_reservoir, 1) for well in drill_zone.list_project_wells],
                  'Нефтенасыщенная толщина, м': [round(well.NNT, 1) for well in drill_zone.list_project_wells],
-                 'Начальная нефтенасыщенность, д.ед': [round(well.So_init, 3) for well in drill_zone.list_project_wells],
+                 'Начальная нефтенасыщенность, д.ед': [round(well.So_init, 3) for well in
+                                                       drill_zone.list_project_wells],
                  'Текущая нефтенасыщенность, д.ед': [round(well.So, 3) for well in drill_zone.list_project_wells],
                  'Пористость, д.ед': [round(well.m, 3) for well in drill_zone.list_project_wells],
                  'Проницаемость, мД': [round(well.permeability, 3) for well in drill_zone.list_project_wells],
@@ -231,7 +276,7 @@ def save_ranking_drilling_to_excel(name_field, name_object, list_zones, filename
                  'Накопленная добыча нефти (25 лет), тыс.т': [round(np.sum(well.Qo) / 1000, 1) for well in
                                                               drill_zone.list_project_wells],
                  'Накопленная добыча жидкости (25 лет), тыс.т': [round(np.sum(well.Ql) / 1000, 1) for well in
-                                                                  drill_zone.list_project_wells],
+                                                                 drill_zone.list_project_wells],
                  'Соседние скважины': [well.gdf_nearest_wells.well_number.unique() for
                                        well in drill_zone.list_project_wells]
                  })
@@ -248,7 +293,6 @@ def save_ranking_drilling_to_excel(name_field, name_object, list_zones, filename
                                                                                               right_on='№ скважины')
             gdf_result_ranking_drilling = pd.concat([gdf_result_ranking_drilling,
                                                      gdf_project_wells_ranking_drilling], ignore_index=True)
-
 
             [dict_project_wells_Qo.update({well.well_number: well.Qo}) for well in drill_zone.list_project_wells]
             [dict_project_wells_Ql.update({well.well_number: well.Ql}) for well in drill_zone.list_project_wells]

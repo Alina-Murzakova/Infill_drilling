@@ -1,10 +1,12 @@
 import sys
 import os
 import time
+import pandas as pd
 
+from app.gui.widgets.result import ResultWidget
 from PyQt6 import QtWidgets, QtGui, QtCore
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import QThread, QObject, pyqtSignal
+from PyQt6.QtCore import QThread, QObject, pyqtSignal, Qt
 from loguru import logger
 
 from app.gui.main_window_ui import Ui_MainWindow
@@ -36,6 +38,11 @@ class MainWindow(QtWidgets.QMainWindow):
         # Отдельный поток для расчета
         self.thread = None
         self.worker = None
+
+        # Создаем виджет результатов и добавляем его в stackedWidget
+        self.result_widget = ResultWidget()
+        # Находим индекс страницы результатов (предположим, что это 7-я страница)
+        self.ui.stackedWidget.insertWidget(7, self.result_widget)
 
         # Находим иконки по правильным путям
         for i, item in enumerate(self.ui.listWidget.findItems("*", QtCore.Qt.MatchFlag.MatchWildcard)):
@@ -180,6 +187,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Связываем сигналы (но еще не запускаем)
         self.worker.progress.connect(self.ui.progressBar.setValue)
         self.worker.log.connect(self.ui.plainTextEdit.appendPlainText)
+        self.worker.results_ready.connect(self.handle_results)   # для передачи данных в виджет результатов
         self.thread.started.connect(self.worker.run)  # запуск расчета после старта потока
         self.worker.finished.connect(self.thread.quit)  # завершение работы потока (иначе жил бы постоянно)
         self.worker.finished.connect(self.worker.deleteLater)  # удаление Worker (чтобы не было утечек памяти)
@@ -190,6 +198,16 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Запуск потока
         self.thread.start()
+
+    def handle_results(self, summary_table: pd.DataFrame, save_directory: str):
+        """Обработка результатов расчета"""
+        # Передаем данные в виджет результатов
+        self.result_widget.set_summary_table(summary_table)
+        self.result_widget.set_results_folder(save_directory)
+
+        # Автоматически переключаемся на вкладку результатов
+        self.ui.stackedWidget.setCurrentWidget(self.result_widget)
+        self.ui.listWidget.setCurrentRow(6)  # 6 соответствует 7-й странице (индексация с 0)
 
     def finished_calculation(self, success: bool, message: str):
         self.ui.btnCalc.setEnabled(True)
@@ -226,6 +244,7 @@ class Worker(QObject):
     finished = pyqtSignal(bool, str)  # сигнал об окончании расчета
     progress = pyqtSignal(int)  # для прогрессбара
     log = pyqtSignal(str)  # логирование
+    results_ready = pyqtSignal(object, str)  # передача результатов (DataFrame, путь)
 
     def __init__(self, main_parameters, constants, total_stages=18):
         super().__init__()
@@ -233,6 +252,10 @@ class Worker(QObject):
         self.constants = constants
         self.total_stages = total_stages
         self._is_active = True
+
+        # Храним результаты здесь
+        self.summary_table = None
+        self.save_directory = None
 
         # Перехват loguru-логов
         self.qt_logger = QtLogger()
@@ -257,13 +280,17 @@ class Worker(QObject):
         start_time = time.perf_counter()
         try:
             # Передаем Qt-сигналы в run_model
-            run_model(
+            self.summary_table, self.save_directory = run_model(
                 self.main_parameters,
                 self.constants,
                 self.total_stages,
                 progress=self.progress.emit,
                 is_cancelled=self.is_cancelled
             )
+
+            # ОТПРАВЛЯЕМ РЕЗУЛЬТАТЫ
+            if self.summary_table is not None:
+                self.results_ready.emit(self.summary_table, self.save_directory)
 
             elapsed = time.perf_counter() - start_time
             self.finished.emit(True, f"Расчёт успешно завершён\nВремя: {format_time(elapsed)}")
