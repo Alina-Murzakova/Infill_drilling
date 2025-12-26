@@ -99,7 +99,7 @@ class WellParamsWidget(QtWidgets.QWidget):
 
             # ---------- ГРП ----------
             "Type_Frac": self.get_frac_type(),
-            "switch_avg_frac_params": self.ui.chkUseFracSheet.isChecked(),
+            "switch_fracList_params": self.ui.chkUseFracSheet.isChecked(),
             "length_FracStage": float(self.ui.leLenStage.text()),
             "xfr": float(self.ui.leXfr.text()),
             "w_f": float(self.ui.leWf.text()),
@@ -109,17 +109,17 @@ class WellParamsWidget(QtWidgets.QWidget):
             # ---------- Фактический фонд ----------
             "first_months": int(self.ui.leFirstMonths.text()),
             "last_months": int(self.ui.leLastMonths.text()),
-            "default_radius": float(self.ui.leMinBufferProd.text()),
+            "default_radius_prod": float(self.ui.leMinBufferProd.text()),
             "default_radius_inj": float(self.ui.leMiBufferInj.text()),
-            "switch_permeability_fact": self.ui.chkFiltrationPerm.isChecked(),
+            "switch_filtration_perm_fact": self.ui.chkFiltrationPerm.isChecked(),
 
             # ---------- Проектный фонд ----------
             "L": int(self.ui.leMaxLenWell.text()),
             "min_length": int(self.ui.leMinLenHor.text()),
             "buffer_project_wells": int(self.ui.leProjectBuffer.text()),
-            "fix_P_delta": self.ui.chkSetPwell.isChecked(),
-            "P_well_init": self.ui.lePwell.text(),
-            "water_cut_map": self.get_water_cut_source(),
+            "switch_fix_P_well_init": self.ui.chkSetPwell.isChecked(),
+            "fix_P_well_init": self.ui.lePwell.text(),
+            "switch_wc_from_map": self.get_water_cut_source(),
             "k": int(self.ui.leNumNearWells.text()),
             "threshold": float(self.ui.leThreshold.text()),
             "period_calculation": int(self.ui.leForecastPeriod.text()),

@@ -3,9 +3,11 @@ import pandas as pd
 import numpy as np
 
 from loguru import logger
-
+from copy import deepcopy
 from app.decline_rate.decline_rate import get_avg_decline_rates
-from app.well_active_zones import get_parameters_voronoi_cells, save_picture_voronoi
+from app.input_output.output_functions import save_picture_voronoi
+from app.well_active_zones import get_parameters_voronoi_cells
+
 from app.decline_rate.functions import production_model
 from app.well_active_zones import get_value_map
 from app.ranking_drilling.starting_rates import calculate_starting_rate, check_FracCount
@@ -96,7 +98,7 @@ class ProjectWell:
         mask = ((self.gdf_nearest_wells['init_P_well_prod'] > 0) &
                 self.gdf_nearest_wells['init_P_well_prod'].notna() & mask_distance)
         if sum(mask) == 0:
-            self.P_well_init = dict_parameters_coefficients['well_params']['init_P_well']
+            self.P_well_init = dict_parameters_coefficients['well_params']["proj_wells_params"]['all_P_wells_init']
         else:
             self.P_well_init = np.average(self.gdf_nearest_wells.loc[mask, 'init_P_well_prod'],
                                           weights=1 / np.square(self.gdf_nearest_wells.loc[mask, 'distances']))
@@ -104,7 +106,7 @@ class ProjectWell:
         mask = ((self.gdf_nearest_wells['permeability_fact'] > 0) &
                 self.gdf_nearest_wells['permeability_fact'].notna() & mask_distance)
         if sum(mask) == 0:
-            self.permeability = dict_parameters_coefficients['reservoir_params']['k_h']
+            self.permeability = dict_parameters_coefficients['reservoir_fluid_properties']['k_h']
         else:
             self.permeability = np.average(self.gdf_nearest_wells.loc[mask, 'permeability_fact'],
                                            weights=1 / np.square(self.gdf_nearest_wells.loc[mask, 'distances']))
@@ -116,7 +118,7 @@ class ProjectWell:
                                 weights=1 / np.square(self.gdf_nearest_wells.loc[mask, 'distances']))
 
         # Если установлен flag water_cut_map = False (расчет обв-ти с окружения)
-        if not dict_parameters_coefficients['switches']['water_cut_map']:
+        if not dict_parameters_coefficients['switches']['switch_wc_from_map']:
             # Обводненность - Выбираем только те скважины, которые остановлены не более 10 лет назад
             mask = (self.gdf_nearest_wells['no_work_time'] <= 12 * 10 & self.gdf_nearest_wells['Ql_rate'] > 0)
             if not sum(mask) == 0:
@@ -143,18 +145,22 @@ class ProjectWell:
     def get_starting_rates(self, maps, dict_parameters_coefficients):
         self.get_params_maps(maps)
 
+        # Создаем локальную копию
+        local_dict = deepcopy(dict_parameters_coefficients)
+
         kv_kh, Swc, Sor, Fw, m1, Fo, m2, Bw = (
-            list(map(lambda name: dict_parameters_coefficients['default_well_params'][name],
+            list(map(lambda name: local_dict['reservoir_fluid_properties'][name],
                      ['kv_kh', 'Swc', 'Sor', 'Fw', 'm1', 'Fo', 'm2', 'Bw'])))
 
-        reservoir_params = dict_parameters_coefficients['reservoir_params']
-        fluid_params = dict_parameters_coefficients['fluid_params']
-        well_params = dict_parameters_coefficients['well_params']
-        coefficients = dict_parameters_coefficients['coefficients']
+        reservoir_params = local_dict['reservoir_fluid_properties']
+        fluid_params = local_dict['reservoir_fluid_properties']
+        well_params = (local_dict['well_params']['general'] | local_dict['well_params']["fracturing"]
+                       | local_dict['well_params']["proj_wells_params"])
+        coefficients = local_dict['well_params']['general']
 
         # Проверка на отрицательную депрессию и фиксированную забойку:
-        if (self.P_reservoir - self.P_well_init) < 0 or dict_parameters_coefficients['switches']['fix_P_delta']:
-            self.P_well_init = well_params['P_well_init']
+        if (self.P_reservoir - self.P_well_init) < 0 or local_dict['switches']['switch_fix_P_well_init']:
+            self.P_well_init = well_params['fix_P_well_init']
             if (self.P_reservoir - self.P_well_init) < 0:
                 self.P_well_init = 0.4 * self.P_reservoir
 
@@ -174,7 +180,7 @@ class ProjectWell:
                                                                                   well_params, coefficients,
                                                                                   kv_kh, Swc, Sor, Fw, m1, Fo, m2, Bw)
         self.init_Ql_rate = self.init_Ql_rate_V * (
-                    self.water_cut / 100 * 1 + (1 - self.water_cut / 100) * fluid_params['rho'])
+                self.water_cut / 100 * 1 + (1 - self.water_cut / 100) * fluid_params['rho'])
         logger.info(f"Для проектной скважины {self.well_number}: Q_liq = {round(self.init_Ql_rate_V, 2)} м3/сут,"
                     f" Q_oil = {round(self.init_Qo_rate, 2)} т/сут")
         pass
@@ -255,8 +261,7 @@ def calculate_reserves_by_voronoi(list_zones, df_fact_wells, map_rrr, save_direc
     gdf_all_wells = pd.merge(gdf_all_wells, df_parameters_voronoi, on='well_number', how='left')
     # сохранение картинки Вороных
     if save_directory:
-        save_picture_voronoi(gdf_all_wells, f"{save_directory}/voronoy.png",
-                             type_coord="geo", default_size_pixel=1)
+        save_picture_voronoi(gdf_all_wells, f"{save_directory}", type_coord="geo", default_size_pixel=1)
     # оставляем только проектные скважины
     gdf_project_wells = gdf_all_wells[gdf_all_wells['work_marker'].isna()].reset_index(drop=True)
     # Подготовка сетки точек к расчету запасов

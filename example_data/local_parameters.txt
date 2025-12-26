@@ -24,7 +24,7 @@ main_parameters = {
                  'switch_adaptation_relative_permeability': False,  # авто-адаптация ОФП
                  'water_cut_map': True,  # обводненность для РБ с карты (True) / с окружения (False)
                  'accounting_GS': True,  # учет горизонтальных стволов
-                 'fix_P_delta': False},
+                 'freeze_P_well_init': False},
 
     # параметры для скважин РБ
     'well_params': {'L': 1000,
@@ -35,7 +35,7 @@ main_parameters = {
                     'k_f': 235,
                     't_p': 11,
                     'r_w': 0.108,
-                    'init_P_well': 90,  
+                    'fix_P_well_init': 90,
                     'well_efficiency': 0.95,
                     'azimuth_sigma_h_min': 45,  # азимут минимального горизонтального напряжения (град.)
                     'l_half_fracture': 150,  # полу-длина трещины АГРП

@@ -49,8 +49,8 @@ class MappingWidget(QtWidgets.QWidget):
         return {
             "default_size_pixel": int(self.ui.leSizePixel.text()),
             "radius_interpolate": int(self.ui.leRadiusInterpolate.text()),
-            "accounting_GS": self.ui.chkManageHorWells.isChecked(),
-            "switch_fracture": self.ui.chkManageAutoFrac.isChecked(),
+            "switch_accounting_horwell": self.ui.chkManageHorWells.isChecked(),
+            "switch_frac_inj_well": self.ui.chkManageAutoFrac.isChecked(),
             "azimuth_sigma_h_min": int(self.ui.leMinHorStress.text()),
             "l_half_fracture": float(self.ui.leFracHalfLength.text()),
             "KIN": float(self.ui.leKIN.text())

@@ -181,11 +181,12 @@ def get_avg_last_param(data_history_work, data_history, last_months, dict_proper
     # Объемная обводненность согласно МЭР
     data_last_rate['water_cut_V'] = (((data_last_rate['Ql_rate'] - data_last_rate['Qo_rate']) / pho_water) * 100 /
                                      ((data_last_rate['Ql_rate'] - data_last_rate['Qo_rate']) / pho_water +
-                                     data_last_rate['Qo_rate'] / dict_properties['fluid_params']['rho'])).fillna(0)
+                                     data_last_rate['Qo_rate'] /
+                                      dict_properties['reservoir_fluid_properties']['rho'])).fillna(0)
     # Объемная обводненность согласно ТР
     data_last_rate['density_oil_TR'] = (np.where((data_last_rate['Ql_rate_TR'] != 0) &
                                                  (data_last_rate['density_oil_TR'] == 0),
-                                                 dict_properties['fluid_params']['rho'],
+                                                 dict_properties['reservoir_fluid_properties']['rho'],
                                                  data_last_rate['density_oil_TR']))
     data_last_rate['water_cut_TR'] = (np.where(data_last_rate['Ql_rate_TR'] > 0,
                                                (data_last_rate['Ql_rate_TR'] - data_last_rate['Qo_rate_TR'] /
@@ -275,7 +276,7 @@ def get_avg_first_param(data_wells, df_sort_date, first_months, dict_properties)
     # Объемная средняя обводненность согласно ТР
     data_wells['init_density_oil_TR'] = (np.where((data_wells['init_Ql_rate_TR'] != 0) &
                                                   (data_wells['init_density_oil_TR'] == 0),
-                                                  dict_properties['fluid_params']['rho'],
+                                                  dict_properties['reservoir_fluid_properties']['rho'],
                                                   data_wells['init_density_oil_TR']))
     data_wells['init_water_cut_TR'] = np.where(data_wells['init_Ql_rate_TR'] > 0,
                                                (data_wells['init_Ql_rate_TR'] - data_wells['init_Qo_rate_TR'] /

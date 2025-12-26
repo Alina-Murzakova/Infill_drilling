@@ -93,7 +93,8 @@ def prepare_wells_data(data_history, dict_properties, min_length_hor_well=150, f
     # 5. Расчет объемной обводненности и плотности нефти для ТР
     data_history['water_cut_V'] = (((data_history['Ql_rate'] - data_history['Qo_rate']) / pho_water) * 100 /
                                    ((data_history['Ql_rate'] - data_history['Qo_rate']) / pho_water +
-                                    data_history['Qo_rate'] / dict_properties['fluid_params']['rho'])).fillna(0)
+                                    data_history['Qo_rate'] /
+                                    dict_properties['reservoir_fluid_properties']['rho'])).fillna(0)
     data_history['density_oil_TR'] = (data_history['Qo_rate_TR'] /
                                       (data_history['Ql_rate_TR'] * (1 - data_history['water_cut_TR'] / 100))).fillna(0)
 

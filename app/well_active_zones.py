@@ -266,8 +266,8 @@ def calculate_effective_radius(data_wells, dict_properties):
 
     """
     # добавление колонок свойств для расчета из файла ГФХ
-    data_wells['Bo'] = dict_properties['fluid_params']['Bo']  # объемный коэффициент нефти, д.ед
-    data_wells['rho'] = dict_properties['fluid_params']['rho']  # плотность нефти в поверхностных условиях, г/см3
+    data_wells['Bo'] = dict_properties['reservoir_fluid_properties']['Bo']  # объемный коэффициент нефти, д.ед
+    data_wells['rho'] = dict_properties['reservoir_fluid_properties']['rho']  # плотность нефти в поверхностных условиях, г/см3
 
     # Расчет параметров ячеек вороного
     data_wells_work = data_wells[(data_wells['Qo_cumsum'] > 0) | (data_wells['Winj_cumsum'] > 0)].reset_index(drop=True)
@@ -277,12 +277,12 @@ def calculate_effective_radius(data_wells, dict_properties):
     data_wells = calculate_useful_injection(data_wells)
 
     # расчет радиусов по физическим параметрам
-    default_radius = dict_properties['default_well_params']['default_radius']
-    default_radius_inj = dict_properties['default_well_params']['default_radius_inj']
+    default_radius = dict_properties['well_params']['fact_wells_params']['default_radius_prod']
+    default_radius_inj = dict_properties['well_params']['fact_wells_params']['default_radius_inj']
     if dict_properties['switches']['switch_adaptation_relative_permeability']:
         So_min = 0.3
     else:
-        So_min = dict_properties['default_well_params']['Sor']
+        So_min = dict_properties['reservoir_fluid_properties']['Sor']
     data_wells['r_eff_not_norm'] = data_wells.apply(well_effective_radius,
                                                     args=(So_min, default_radius, default_radius_inj, ), axis=1)
 
@@ -292,82 +292,6 @@ def calculate_effective_radius(data_wells, dict_properties):
     del data_wells['rho']
     del data_wells['V_useful_injection']
     return data_wells
-
-
-def save_picture_voronoi(df_Coordinates, filename, type_coord="geo", default_size_pixel=1):
-    """Сохранение картинки с ячейками Вороных"""
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    if type_coord == 'geo':
-        LINESTRING = 'LINESTRING_geo'
-    elif type_coord == 'pix':
-        LINESTRING = 'LINESTRING_pix'
-    else:
-        LINESTRING = None
-        logger.error("Неверный тип координат.")
-
-    df_MZS = df_Coordinates[df_Coordinates.type_wellbore == "МЗС"].copy()
-    df_Coordinates_other = df_Coordinates[df_Coordinates.type_wellbore != "МЗС"].copy()
-    # Проверка на наличие МЗС
-    if not df_MZS.empty:
-        df_Coordinates_MZS = df_MZS.copy()
-        df_Coordinates_MZS[LINESTRING] = df_Coordinates_MZS.groupby("well_number_digit")[LINESTRING].transform(
-            combine_to_linestring)
-        # Если есть МЗС, то формирование для них одной строки
-        df_Coordinates_MZS.drop_duplicates(subset=['well_number_digit'], keep='first', inplace=True)
-        df_Coordinates = pd.concat([df_Coordinates_other, df_Coordinates_MZS], ignore_index=True)
-
-    gdf_Coordinates = gpd.GeoDataFrame(df_Coordinates, geometry=LINESTRING)
-    # буферизация скважин || тк вороные строятся для полигонов буферизируем точки и линии скважин
-    gdf_Coordinates["Polygon"] = gdf_Coordinates.set_geometry(LINESTRING).buffer(1, resolution=3)
-
-    # Выпуклая оболочка - будет служить контуром для ячеек вороного || отступаем от границ фонда на 1000 м
-    convex_hull = gdf_Coordinates.set_geometry("Polygon").union_all().convex_hull
-    convex_hull = gpd.GeoDataFrame(geometry=[convex_hull]).buffer(1000 / default_size_pixel).boundary
-
-    # Подготовим данные границы и полигонов скважины в нужном формате для алгоритма
-    def rounded_geometry(geometry, precision=0):
-        """ Округление координат точек в полигоне || на вход voronoiDiagram4plg надо подавать целые координаты """
-        if isinstance(geometry, Polygon):
-            rounded_exterior = [(round(x, precision), round(y, precision)) for x, y in geometry.exterior.coords]
-            return Polygon(rounded_exterior)
-
-    # Данные полигонов скважин polygon
-    polygons_wells = gdf_Coordinates[["Polygon"]].copy()
-    polygons_wells.columns = ["geometry"]
-    polygons_wells["geometry"] = polygons_wells["geometry"].apply(rounded_geometry)
-
-    # Граница в формате MultiPolygon
-    boundary = MultiPolygon([rounded_geometry(Polygon(convex_hull[0]))])
-    boundary = gpd.GeoDataFrame({'geometry': [boundary]})
-
-    # Вороные
-    boundary = boundary.set_geometry('geometry')
-    polygons_wells = polygons_wells.set_geometry('geometry')
-    vd = voronoiDiagram4plg(polygons_wells, boundary)
-
-    fig, ax = plt.subplots(figsize=(20, 50))
-
-    boundary.plot(color='white', edgecolor='black', ax=ax)
-    vd.plot(ax=ax, color='blue')  # cmap="winter"
-    vd.boundary.plot(ax=ax, color='white')
-
-    gdf_Coordinates_current = gdf_Coordinates[gdf_Coordinates['work_marker'].notna()].copy()
-    gdf_Coordinates_current.set_geometry("LINESTRING_geo").plot(color='black', markersize=50, ax=ax)
-    gdf_Coordinates_current.set_geometry("POINT_T1_geo").plot(color='black', markersize=10, ax=ax)
-
-    gdf_Coordinates_project = gdf_Coordinates[gdf_Coordinates['work_marker'].isna()].copy()
-    gdf_Coordinates_project.set_geometry("LINESTRING_geo").plot(color='red', markersize=50, ax=ax)
-    gdf_Coordinates_project.set_geometry("POINT_T1_geo").plot(color='red', markersize=10, ax=ax)
-
-    # Добавление текста с именами скважин рядом с точками T1
-    for point, name in zip(gdf_Coordinates['POINT_T1_geo'], gdf_Coordinates['well_number']):
-        if point is not None:  # Проверяем, что линия не пустая
-            plt.text(point.x + 30, point.y - 30, name, fontsize=6, ha='left')  # Координаты (x, y)
-    plt.savefig(filename)
-    plt.close(fig)
-    pass
 
 
 def calculate_useful_injection(data_wells, max_distance_inj_prod=1000):
