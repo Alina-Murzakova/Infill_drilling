@@ -74,9 +74,9 @@ def load_frac_info(path_frac, data_wells, name_object, dict_parameters_coefficie
     avg_w_f = np.mean(data_frac[data_frac['w_f'] > 0]['w_f'])
     avg_length_FracStage = np.mean(data_frac[data_frac['length_FracStage'] > 0]['length_FracStage'])
     if avg_xfr == 0 or pd.isna(avg_xfr):
-        avg_xfr = dict_parameters_coefficients['well_params']['xfr']
+        avg_xfr = dict_parameters_coefficients['well_params']["fracturing"]['xfr']
     if avg_w_f == 0 or pd.isna(avg_w_f):
-        avg_w_f = dict_parameters_coefficients['well_params']['w_f']
+        avg_w_f = dict_parameters_coefficients['well_params']["fracturing"]['w_f']
 
     data_frac['xfr'] = np.where((data_frac['xfr'] == 0) & (data_frac['FracCount'] > 0), round(avg_xfr, 1),
                                 data_frac['xfr'])
@@ -85,10 +85,10 @@ def load_frac_info(path_frac, data_wells, name_object, dict_parameters_coefficie
 
     data_frac = data_frac.drop(['total_Frac', 'well_type', 'length_geo'], axis=1)
     # Перезапись значений по умолчанию xfr и w_f и length_FracStage по объекту на средние по фактическому фонду
-    dict_parameters_coefficients['well_params']['xfr'] = round(avg_xfr, 1)
-    dict_parameters_coefficients['well_params']['w_f'] = round(avg_w_f, 1)
+    dict_parameters_coefficients['well_params']["fracturing"]['xfr'] = round(avg_xfr, 1)
+    dict_parameters_coefficients['well_params']["fracturing"]['w_f'] = round(avg_w_f, 1)
     if avg_length_FracStage != 0 and not pd.isna(avg_length_FracStage):
-        dict_parameters_coefficients['well_params']['length_FracStage'] = round(avg_length_FracStage, 0)
+        dict_parameters_coefficients['well_params']["fracturing"]['length_FracStage'] = round(avg_length_FracStage, 0)
     data_wells.drop(columns=['xfr', 'w_f', 'FracCount', 'length_FracStage'], inplace=True)
     data_wells = data_wells.merge(data_frac, how='left', on='well_number')
     data_wells[['FracCount', 'xfr', 'w_f', 'length_FracStage']] = data_wells[['FracCount', 'xfr',

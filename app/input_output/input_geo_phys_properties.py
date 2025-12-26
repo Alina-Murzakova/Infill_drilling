@@ -102,14 +102,14 @@ def formatting_dict_geo_phys_properties(dict_geo_phys_properties):
     rho - плотность нефти | г/см3
     gor - Газосодержание| м3/т
     """
-    return {'reservoir_params': {'c_r': dict_geo_phys_properties['formation_compressibility'] / 100000,
-                                 'P_init': dict_geo_phys_properties['init_pressure'] * 10,
-                                 'k_h': dict_geo_phys_properties['permeability']},
-            'fluid_params': {'mu_w': dict_geo_phys_properties['water_viscosity_in_situ'],
-                             'mu_o': dict_geo_phys_properties['oil_viscosity_in_situ'],
-                             'c_o': dict_geo_phys_properties['oil_compressibility'] / 100000,
-                             'c_w': dict_geo_phys_properties['water_compressibility'] / 100000,
-                             'Bo': dict_geo_phys_properties['Bo'],
-                             'Pb': dict_geo_phys_properties['bubble_point_pressure'] * 10,
-                             'rho': dict_geo_phys_properties['oil_density_at_surf'],
-                             'gor': dict_geo_phys_properties['gas_oil_ratio']}}
+    return {'c_r': dict_geo_phys_properties['formation_compressibility'] / 100000,
+            'P_init': dict_geo_phys_properties['init_pressure'] * 10,
+            'k_h': dict_geo_phys_properties['permeability'],
+            'mu_w': dict_geo_phys_properties['water_viscosity_in_situ'],
+            'mu_o': dict_geo_phys_properties['oil_viscosity_in_situ'],
+            'c_o': dict_geo_phys_properties['oil_compressibility'] / 100000,
+            'c_w': dict_geo_phys_properties['water_compressibility'] / 100000,
+            'Bo': dict_geo_phys_properties['Bo'],
+            'Pb': dict_geo_phys_properties['bubble_point_pressure'] * 10,
+            'rho': dict_geo_phys_properties['oil_density_at_surf'],
+            'gor': dict_geo_phys_properties['gas_oil_ratio']}

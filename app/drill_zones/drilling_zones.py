@@ -60,11 +60,11 @@ class DrillZone:
         """Расчет количества проектных скважин в перспективной зоне"""
         # Инициализация параметров
         gdf_project_wells = gpd.GeoDataFrame(geometry=[])
-        buffer_project_wells = dict_parameters['well_params']['buffer_project_wells']
-        threshold = dict_parameters['well_params']['threshold']
-        k_wells = dict_parameters['well_params']['k']
-        min_length = dict_parameters['well_params']['min_length']
-        max_length = dict_parameters['well_params']['L']
+        buffer_project_wells = dict_parameters['well_params']['proj_wells_params']['buffer_project_wells']
+        threshold = dict_parameters['well_params']['proj_wells_params']['threshold']
+        k_wells = dict_parameters['well_params']['proj_wells_params']['k']
+        min_length = dict_parameters['well_params']['proj_wells_params']['min_length']
+        max_length = dict_parameters['well_params']['proj_wells_params']['L']
         # Площадь буфера
         min_area_proj_cluster = (2 * (buffer_project_wells * default_size_pixel) * max_length +
                                  np.pi * (buffer_project_wells * default_size_pixel) ** 2) / 1000000

@@ -11,10 +11,10 @@ import math
 def get_reservoir_kr(data_history, data_wells, dict_parameters_coefficients, S_or=0.3):
     """Функция для авто-адаптации относительных фазовых проницаемостей объекта на основе history_matching"""
     # Константы
-    mu_w = dict_parameters_coefficients['fluid_params']['mu_w']
-    mu_o = dict_parameters_coefficients['fluid_params']['mu_o']
-    Bw = dict_parameters_coefficients['default_well_params']['Bw']
-    Bo = dict_parameters_coefficients['fluid_params']['Bo']
+    mu_w = dict_parameters_coefficients['reservoir_fluid_properties']['mu_w']
+    mu_o = dict_parameters_coefficients['reservoir_fluid_properties']['mu_o']
+    Bw = dict_parameters_coefficients['reservoir_fluid_properties']['Bw']
+    Bo = dict_parameters_coefficients['reservoir_fluid_properties']['Bo']
 
     # Оставим только текущие добывающие
     prod_wells = data_wells[data_wells.work_marker == 'prod']['well_number']
@@ -67,12 +67,12 @@ def get_reservoir_kr(data_history, data_wells, dict_parameters_coefficients, S_o
                     f"Fo = {round(kro0_opt, 3)}, m2 = {round(no_opt, 3)}")
 
     # Обновление значения концевых точек в словаре параметров
-    dict_parameters_coefficients['default_well_params']['Swc'] = Swi_opt
-    dict_parameters_coefficients['default_well_params']['Sor'] = S_or
-    dict_parameters_coefficients['default_well_params']['Fw'] = krw0_opt
-    dict_parameters_coefficients['default_well_params']['m1'] = nw_opt
-    dict_parameters_coefficients['default_well_params']['Fo'] = kro0_opt
-    dict_parameters_coefficients['default_well_params']['m2'] = no_opt
+    dict_parameters_coefficients['reservoir_fluid_properties']['Swc'] = Swi_opt
+    dict_parameters_coefficients['reservoir_fluid_properties']['Sor'] = S_or
+    dict_parameters_coefficients['reservoir_fluid_properties']['Fw'] = krw0_opt
+    dict_parameters_coefficients['reservoir_fluid_properties']['m1'] = nw_opt
+    dict_parameters_coefficients['reservoir_fluid_properties']['Fo'] = kro0_opt
+    dict_parameters_coefficients['reservoir_fluid_properties']['m2'] = no_opt
 
     return dict_parameters_coefficients
 

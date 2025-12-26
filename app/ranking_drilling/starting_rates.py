@@ -1,7 +1,6 @@
 import math
 import numpy as np
-import copy
-import pandas as pd
+from copy import deepcopy
 
 from loguru import logger
 from scipy.optimize import root_scalar
@@ -94,16 +93,21 @@ def calculate_permeability_fact_wells(row, dict_parameters_coefficients):
     -------
     k_h: найденное значение проницаемости (мД)
     """
+    # Создаем локальную копию
+    local_dict = deepcopy(dict_parameters_coefficients)
+
     # Переопределим параметры из словаря
     kv_kh, Swc, Sor, Fw, m1, Fo, m2, Bw = (
-        list(map(lambda name: dict_parameters_coefficients['default_well_params'][name],
+        list(map(lambda name: local_dict['reservoir_fluid_properties'][name],
                  ['kv_kh', 'Swc', 'Sor', 'Fw', 'm1', 'Fo', 'm2', 'Bw'])))
 
-    reservoir_params = dict_parameters_coefficients['reservoir_params']
-    fluid_params = dict_parameters_coefficients['fluid_params']
-    coefficients = dict_parameters_coefficients['coefficients']
-    well_params = copy.deepcopy(dict_parameters_coefficients['well_params'])
-    if dict_parameters_coefficients['switches']['switch_avg_frac_params']:
+    reservoir_params = local_dict['reservoir_fluid_properties']
+    fluid_params = local_dict['reservoir_fluid_properties']
+    well_params = (local_dict['well_params']['general'] | (local_dict['well_params']["fracturing"])
+                   | local_dict['well_params']["proj_wells_params"])
+    coefficients = local_dict['well_params']['general']
+
+    if local_dict['switches']['switch_frac_inj_well']:
         well_params['xfr'] = row['xfr']
         well_params['w_f'] = row['w_f']
         well_params['FracCount'] = row['FracCount']
@@ -128,7 +132,7 @@ def calculate_permeability_fact_wells(row, dict_parameters_coefficients):
             reservoir_params['k_h'] = k_h
             # Расчет дебитов
             Q_liq, _, _ = calculate_starting_rate(reservoir_params, fluid_params, well_params, coefficients,
-                                               kv_kh, Swc, Sor, Fw, m1, Fo, m2, Bw)
+                                                  kv_kh, Swc, Sor, Fw, m1, Fo, m2, Bw)
             # Ошибка между расчетным и известным Q_liq
             abs_error = float(Q_liq) - row['init_Ql_rate_TR']
             return abs_error
@@ -149,7 +153,7 @@ def calculate_permeability_fact_wells(row, dict_parameters_coefficients):
         return 0
 
 
-def get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients, save_directory):
+def get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients):
     """
     Расчет проницаемости по фактическому фонду через РБ
     Parameters
@@ -158,6 +162,7 @@ def get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients, sav
     switches['switch_avg_frac_params'] - берем параметры фраков из фрак-листов или по умолчанию
 
     """
+
     data_wells_for_perm = data_wells[(data_wells['m'] > 0) & (data_wells['NNT'] > 0)].copy()
     data_wells_for_perm = data_wells_for_perm[(data_wells_for_perm['init_Ql_rate_TR'] > 0) &
                                               (data_wells_for_perm['init_P_well_prod'] > 0) &
@@ -172,7 +177,7 @@ def get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients, sav
                                   how='left', on='well_number')
     data_wells['permeability_fact'] = data_wells['permeability_fact'].fillna(0)
 
-    if dict_parameters_coefficients['switches']['switch_permeability_fact']:
+    if dict_parameters_coefficients['switches']['switch_filtration_perm_fact']:
         # Верхняя граница для фильтрации выбросов (персентиль q3)
         permeability_lower_bound, permeability_upper_bound = quantile_filter(data_wells,
                                                                              name_column='permeability_fact')
@@ -181,33 +186,19 @@ def get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients, sav
                                                    data_wells['permeability_fact'])  # 0 или permeability_upper_bound
     avg_permeability = data_wells[data_wells['permeability_fact'] != 0]['permeability_fact'].mean()
 
-    data_wells_excel = data_wells[["well_number", "work_marker", "well_status", "well_type", "date",
-                                   "r_eff_voronoy",
-                                   "length_geo", "FracCount",
-                                   "xfr", "w_f",
-                                   "init_Ql_rate_TR", "init_water_cut_TR",
-                                   "init_P_well_prod", "init_P_reservoir_prod",
-                                   "NNT", "m", "permeability", "permeability_fact"]]
-
-    data_wells_excel = data_wells_excel[data_wells_excel['permeability_fact'] != 0]
-    data_wells_excel.columns = ['Номер скважины', 'характер', 'состояние', 'тип', 'дата',
-                                'эффективный радиус через площадь ячейки вороного, м',
-                                'длина ствола скважины T1-T3, м', 'количество стадий ГРП, шт',
-                                'полудлина трещины ГРП, м', 'раскрытие трещины ГРП, мм',
-                                'запускной Qж ТР, т/сут', 'стартовая обводненность ТР (объем), д.ед.',
-                                'запускное забойное давление добывающей скважины, атм',
-                                'стартовое пластовое давление ТР, атм',
-                                'нефтенасыщенная толщина, м', 'пористость, д.ед',
-                                'проницаемость c карты, мД', 'проницаемость обратным счетом через РБ, мД',
-                                ]
-    with pd.ExcelWriter(f"{save_directory}/Фактическая_проницаемость_скважины.xlsx") as writer:
-        data_wells_excel.to_excel(writer)
+    data_wells_permeability_excel = data_wells[["well_number", "work_marker", "well_status", "well_type", "date",
+                                                "r_eff_voronoy",
+                                                "length_geo", "FracCount",
+                                                "xfr", "w_f",
+                                                "init_Ql_rate_TR", "init_water_cut_TR",
+                                                "init_P_well_prod", "init_P_reservoir_prod",
+                                                "NNT", "m", "permeability", "permeability_fact"]]
 
     # Перезапись значения проницаемости по объекту из ГФХ на среднюю по фактическому фонду
-    dict_parameters_coefficients['reservoir_params']['k_h'] = avg_permeability
-    dict_parameters_coefficients['well_params']['init_P_well'] = data_wells[data_wells['init_P_well_prod']
-                                                                            != 0]['init_P_well_prod'].mean()
-    return data_wells, dict_parameters_coefficients
+    dict_parameters_coefficients['reservoir_fluid_properties']['k_h'] = avg_permeability
+    dict_parameters_coefficients['well_params']['proj_wells_params']['all_P_wells_init'] = (
+        data_wells[data_wells['init_P_well_prod'] != 0]['init_P_well_prod'].mean())
+    return data_wells, dict_parameters_coefficients, data_wells_permeability_excel
 
 
 def apply_iqr_filter(data_wells, name_column):

@@ -1,6 +1,7 @@
 import sys
 import os
 import time
+
 import pandas as pd
 
 from app.gui.widgets.result import ResultWidget
@@ -10,6 +11,7 @@ from PyQt6.QtCore import QThread, QObject, pyqtSignal, Qt
 from loguru import logger
 
 from app.gui.main_window_ui import Ui_MainWindow
+from app.input_output.output import get_save_path
 from app.main import run_model
 from app.exceptions import CalculationCancelled
 from app.gui.widgets.functions_ui import validate_paths
@@ -32,8 +34,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.setupUi(self)
 
         # Параметры расчета в формате local_parameters
-        self.main_parameters = None
-        self.constants = None
+        self.parameters = None
 
         # Отдельный поток для расчета
         self.thread = None
@@ -84,81 +85,76 @@ class MainWindow(QtWidgets.QMainWindow):
         }
 
     @staticmethod
-    def convert_to_backend_format(gui_data: dict) -> tuple:
+    def convert_to_backend_format(gui_data: dict):
         """Переформирование данных в формат local_parameters"""
-        main_parameters = {
+        parameters = {
             "paths": {**gui_data["paths"],
                       'path_frac': gui_data["well_params"]["path_frac"],
                       'path_economy': gui_data["economy"]["path_economy"]},
 
-            "parameters_calculation": {
-                **gui_data["drill_zone_params"],
-                "period_calculation": gui_data["well_params"]["period_calculation"],
-            },
-
             "switches": {
-                "switch_avg_frac_params": gui_data["well_params"]["switch_avg_frac_params"],
-                "switch_fracture": gui_data["mapping_params"]["switch_fracture"],
-                "switch_permeability_fact": gui_data["well_params"]["switch_permeability_fact"],
+                "switch_fracList_params": gui_data["well_params"]["switch_fracList_params"],
+                "switch_frac_inj_well": gui_data["mapping_params"]["switch_frac_inj_well"],
+                "switch_filtration_perm_fact": gui_data["well_params"]["switch_filtration_perm_fact"],
                 "switch_economy": gui_data["economy"]["switch_economy"],
                 "switch_adaptation_relative_permeability":
                     gui_data["res_fluid_params"]["switch_adaptation_relative_permeability"],
-                "water_cut_map": gui_data["well_params"]["water_cut_map"],
-                "accounting_GS": gui_data["mapping_params"]["accounting_GS"],
-                "fix_P_delta": gui_data["well_params"]["fix_P_delta"],
+                "switch_wc_from_map": gui_data["well_params"]["switch_wc_from_map"],
+                "switch_accounting_horwell": gui_data["mapping_params"]["switch_accounting_horwell"],
+                "switch_fix_P_well_init": gui_data["well_params"]["switch_fix_P_well_init"],
             },
 
-            "well_params": {
-                "L": gui_data["well_params"]["L"],
-                "xfr": gui_data["well_params"]["xfr"],
-                "w_f": gui_data["well_params"]["w_f"],
-                "Type_Frac": gui_data["well_params"]["Type_Frac"],
-                "length_FracStage": gui_data["well_params"]["length_FracStage"],
-                "k_f": gui_data["well_params"]["k_f"],
-                "t_p": gui_data["well_params"]["t_p"],
-                "r_w": gui_data["well_params"]["r_w"],
-                "P_well_init": gui_data["well_params"]["P_well_init"],
-                "well_efficiency": gui_data["well_params"]["well_efficiency"],
-                "azimuth_sigma_h_min": gui_data["mapping_params"]["azimuth_sigma_h_min"],
-                "l_half_fracture": gui_data["mapping_params"]["l_half_fracture"],
-            },
-        }
-        constants = {
-            "load_data_param": {
-                "default_size_pixel": gui_data["mapping_params"]["default_size_pixel"],
-                "first_months": gui_data["well_params"]["first_months"],
-                "last_months": gui_data["well_params"]["last_months"],
-                "radius_interpolate": gui_data["mapping_params"]["radius_interpolate"],
-            },
-            "default_coefficients": {
-                "KPPP": gui_data["well_params"]["KPPP"],
-                "skin": gui_data["well_params"]["skin"],
-                "KUBS": gui_data["well_params"]["KUBS"],
-                "KIN": gui_data["mapping_params"]["KIN"],
-            },
-            "default_well_params": {
-                "kv_kh": gui_data["res_fluid_params"]["kv_kh"],
-                "Swc": gui_data["res_fluid_params"]["Swc"],
-                "Sor": gui_data["res_fluid_params"]["Sor"],
-                "Fw": gui_data["res_fluid_params"]["Fw"],
-                "m1": gui_data["res_fluid_params"]["m1"],
-                "Fo": gui_data["res_fluid_params"]["Fo"],
-                "m2": gui_data["res_fluid_params"]["m2"],
-                "Bw": gui_data["res_fluid_params"]["Bw"],
-                "default_radius": gui_data["well_params"]["default_radius"],
-                "default_radius_inj": gui_data["well_params"]["default_radius_inj"],
-            },
-            "default_project_well_params": {
-                "buffer_project_wells": gui_data["well_params"]["buffer_project_wells"],
-                "day_in_month": gui_data["economy"]["day_in_month"],
-                "threshold": gui_data["well_params"]["threshold"],
-                "k": gui_data["well_params"]["k"],
-                "min_length": gui_data["well_params"]["min_length"],
-                "start_date": gui_data["economy"]["start_date"],
-            },
-        }
+            'maps': {"default_size_pixel": gui_data["mapping_params"]["default_size_pixel"],
+                     "radius_interpolate": gui_data["mapping_params"]["radius_interpolate"],
+                     "azimuth_sigma_h_min": gui_data["mapping_params"]["azimuth_sigma_h_min"],
+                     "l_half_fracture": gui_data["mapping_params"]["l_half_fracture"],
+                     "KIN": gui_data["mapping_params"]["KIN"]},
 
-        return main_parameters, constants
+            "drill_zones": {**gui_data["drill_zone_params"]},
+
+            'well_params': {
+                "general":
+                    {"t_p": gui_data["well_params"]["t_p"],
+                     "r_w": gui_data["well_params"]["r_w"],
+                     "well_efficiency": gui_data["well_params"]["well_efficiency"],
+                     "KPPP": gui_data["well_params"]["KPPP"],
+                     "skin": gui_data["well_params"]["skin"],
+                     "KUBS": gui_data["well_params"]["KUBS"]},
+
+                "fracturing":
+                    {"Type_Frac": gui_data["well_params"]["Type_Frac"],
+                     "length_FracStage": gui_data["well_params"]["length_FracStage"],
+                     "k_f": gui_data["well_params"]["k_f"],
+                     "xfr": gui_data["well_params"]["xfr"],
+                     "w_f": gui_data["well_params"]["w_f"]},
+
+                "fact_wells_params":
+                    {"first_months": gui_data["well_params"]["first_months"],
+                     "last_months": gui_data["well_params"]["last_months"],
+                     "default_radius_prod": gui_data["well_params"]["default_radius_prod"],
+                     "default_radius_inj": gui_data["well_params"]["default_radius_inj"]},
+
+            "proj_wells_params":
+                {"L": gui_data["well_params"]["L"],
+                 "min_length": gui_data["well_params"]["min_length"],
+                 "buffer_project_wells": gui_data["well_params"]["buffer_project_wells"],
+                 "fix_P_well_init": gui_data["well_params"]["fix_P_well_init"],
+                 "k": gui_data["well_params"]["k"],
+                 "threshold": gui_data["well_params"]["threshold"],
+                 'period_calculation': gui_data["well_params"]["period_calculation"]}},
+
+            "reservoir_fluid_properties": {"kv_kh": gui_data["res_fluid_params"]["kv_kh"],
+                                           "Swc": gui_data["res_fluid_params"]["Swc"],
+                                           "Sor": gui_data["res_fluid_params"]["Sor"],
+                                           "Fw": gui_data["res_fluid_params"]["Fw"],
+                                           "m1": gui_data["res_fluid_params"]["m1"],
+                                           "Fo": gui_data["res_fluid_params"]["Fo"],
+                                           "m2": gui_data["res_fluid_params"]["m2"],
+                                           "Bw": gui_data["res_fluid_params"]["Bw"]},
+
+            "economy_params": {"day_in_month": gui_data["economy"]["day_in_month"],
+                               "start_date": gui_data["economy"]["start_date"]}}
+        return parameters
 
     def run_calculation(self):
         """Запуска расчета"""
@@ -168,8 +164,8 @@ class MainWindow(QtWidgets.QMainWindow):
             return
 
         gui_data = self.collect_all_gui_data()
-        self.main_parameters, self.constants = self.convert_to_backend_format(gui_data)
-        if not validate_paths(self.main_parameters["paths"], parent=self):
+        self.parameters = self.convert_to_backend_format(gui_data)
+        if not validate_paths(self.parameters["paths"], parent=self):
             return
 
         self.ui.progressBar.setValue(0)
@@ -179,7 +175,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Создаём поток и worker в главном потоке
         self.thread = QThread()
-        self.worker = Worker(self.main_parameters, self.constants)
+        self.worker = Worker(self.parameters)
 
         # Перенос Worker в другой поток
         self.worker.moveToThread(self.thread)
@@ -187,7 +183,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Связываем сигналы (но еще не запускаем)
         self.worker.progress.connect(self.ui.progressBar.setValue)
         self.worker.log.connect(self.ui.plainTextEdit.appendPlainText)
-        self.worker.results_ready.connect(self.handle_results)   # для передачи данных в виджет результатов
+        self.worker.results_ready.connect(self.handle_results)  # для передачи данных в виджет результатов
         self.thread.started.connect(self.worker.run)  # запуск расчета после старта потока
         self.worker.finished.connect(self.thread.quit)  # завершение работы потока (иначе жил бы постоянно)
         self.worker.finished.connect(self.worker.deleteLater)  # удаление Worker (чтобы не было утечек памяти)
@@ -246,16 +242,16 @@ class Worker(QObject):
     log = pyqtSignal(str)  # логирование
     results_ready = pyqtSignal(object, str)  # передача результатов (DataFrame, путь)
 
-    def __init__(self, main_parameters, constants, total_stages=18):
+    def __init__(self, parameters, total_stages=18):
         super().__init__()
-        self.main_parameters = main_parameters
-        self.constants = constants
+        self.parameters = parameters
         self.total_stages = total_stages
         self._is_active = True
 
         # Храним результаты здесь
         self.summary_table = None
-        self.save_directory = None
+        # Получаем предварительную save_directory из параметров до запуска
+        self.save_directory = get_save_path("Infill_drilling")
 
         # Перехват loguru-логов
         self.qt_logger = QtLogger()
@@ -281,8 +277,7 @@ class Worker(QObject):
         try:
             # Передаем Qt-сигналы в run_model
             self.summary_table, self.save_directory = run_model(
-                self.main_parameters,
-                self.constants,
+                self.parameters,
                 self.total_stages,
                 progress=self.progress.emit,
                 is_cancelled=self.is_cancelled
@@ -303,11 +298,41 @@ class Worker(QObject):
         except Exception as e:
             message = f"⚠ Ошибка расчёта:\n{str(e)}"
             logger.error(message)
+            # Сохраняем логи при ошибке
+            self._save_error_to_file(e)
+
             self.finished.emit(False, message)
 
         finally:
             if self._sink_id is not None:
                 logger.remove(self._sink_id)
+
+    def _save_error_to_file(self, error):
+        """Сохраняет информацию об ошибке в файл"""
+        try:
+            if self.save_directory:
+                from pathlib import Path
+                from datetime import datetime
+                import traceback
+                log_path = Path(self.save_directory) / ".debug" / "error.log"
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+
+                content = f"Время ошибки: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                content += f"Тип ошибки: {type(error).__name__}\n"
+                content += f"Сообщение: {str(error)}\n\n"
+                content += "Трассировка:\n"
+                content += traceback.format_exc()
+
+                # Записываем в файл (дописываем, если файл существует)
+                with open(log_path, 'a', encoding='utf-8') as f:
+                    f.write("=" * 60 + "\n")
+                    f.write(content)
+                    f.write("=" * 60 + "\n\n")
+
+                logger.info(f"Информация об ошибке сохранена в: {log_path}")
+
+        except Exception as log_error:
+            logger.error(f"Не удалось сохранить информацию об ошибке: {log_error}")
 
 
 class QtLogger(QObject):

@@ -16,7 +16,7 @@ def mapping(maps_directory, data_wells, **kwargs):
     # Инициализация параметров загрузки
     default_size_pixel = kwargs['default_size_pixel']
     radius_interpolate = kwargs['radius_interpolate']
-    accounting_GS = kwargs['accounting_GS']
+    accounting_horwell = kwargs['switch_accounting_horwell']
 
     logger.info(f"path: {maps_directory}")
     content = os.listdir(path=maps_directory)
@@ -32,7 +32,7 @@ def mapping(maps_directory, data_wells, **kwargs):
     dst_geo_transform, dst_projection, shape = get_final_resolution(maps, default_size_pixel)
 
     logger.info(f"Построение карт на основе дискретных значений")
-    maps = maps + maps_load_df(data_wells, dst_geo_transform, shape, accounting_GS, radius_interpolate)
+    maps = maps + maps_load_df(data_wells, dst_geo_transform, shape, accounting_horwell, radius_interpolate)
 
     logger.info(f"Преобразование карт к единому размеру и сетке")
     maps = list(map(lambda raster: raster.resize(dst_geo_transform, dst_projection, shape), maps))
@@ -137,21 +137,21 @@ def calculate_reservoir_state_maps(data_wells, maps, dict_properties,
     dict_maps['initial_oil_saturation'] = maps[type_maps_list.index("initial_oil_saturation")].data
     # Дополнительные свойства и параметры
     map_params = {'size_pixel': default_size_pixel,
-                  'switch_fracture': dict_properties['switches']['switch_fracture']}
-    reservoir_params = {'KIN': dict_properties['coefficients']['KIN'],
-                        'azimuth_sigma_h_min': dict_properties['well_params']['azimuth_sigma_h_min'],
-                        'l_half_fracture': dict_properties['well_params']['l_half_fracture']}
-    fluid_params = {"pho_surf": dict_properties['fluid_params']['rho'],
-                    "mu_o": dict_properties['fluid_params']['mu_o'],
-                    "mu_w": dict_properties['fluid_params']['mu_w'],
-                    "Bo": dict_properties['fluid_params']['Bo'],
-                    "Bw": dict_properties['default_well_params']['Bw']}
-    relative_permeability = {"Sor": dict_properties['default_well_params']['Sor'],
-                             "Swc": dict_properties['default_well_params']['Swc'],
-                             "Fw": dict_properties['default_well_params']['Fw'],
-                             "m1": dict_properties['default_well_params']['m1'],
-                             "Fo": dict_properties['default_well_params']['Fo'],
-                             "m2": dict_properties['default_well_params']['m2']}
+                  'switch_fracture': dict_properties['switches']['switch_frac_inj_well']}
+    reservoir_params = {'KIN': dict_properties['maps']['KIN'],
+                        'azimuth_sigma_h_min': dict_properties['maps']['azimuth_sigma_h_min'],
+                        'l_half_fracture': dict_properties['maps']['l_half_fracture']}
+    fluid_params = {"pho_surf": dict_properties['reservoir_fluid_properties']['rho'],
+                    "mu_o": dict_properties['reservoir_fluid_properties']['mu_o'],
+                    "mu_w": dict_properties['reservoir_fluid_properties']['mu_w'],
+                    "Bo": dict_properties['reservoir_fluid_properties']['Bo'],
+                    "Bw": dict_properties['reservoir_fluid_properties']['Bw']}
+    relative_permeability = {"Sor": dict_properties['reservoir_fluid_properties']['Sor'],
+                             "Swc": dict_properties['reservoir_fluid_properties']['Swc'],
+                             "Fw": dict_properties['reservoir_fluid_properties']['Fw'],
+                             "m1": dict_properties['reservoir_fluid_properties']['m1'],
+                             "Fo": dict_properties['reservoir_fluid_properties']['Fo'],
+                             "m2": dict_properties['reservoir_fluid_properties']['m2']}
 
     result = get_maps(dict_maps, dict_data_wells, map_params, reservoir_params, fluid_params, relative_permeability)
 
@@ -295,8 +295,8 @@ def apply_wells_mask(base_map, data_wells, dict_properties):
     modified_map - карта с вырезанной зоной действующих скважин
     """
     logger.info("Расчет буфера вокруг скважин")
-    default_radius = dict_properties['default_well_params']['default_radius']
-    default_radius_inj = dict_properties['default_well_params']['default_radius_inj']
+    default_radius = dict_properties['well_params']["fact_wells_params"]['default_radius_prod']
+    default_radius_inj = dict_properties['well_params']["fact_wells_params"]['default_radius_inj']
     union_buffer = active_well_outline(data_wells, default_radius, default_radius_inj)
 
     logger.info("Создание маски буфера")
