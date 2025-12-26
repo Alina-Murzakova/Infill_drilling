@@ -26,6 +26,8 @@ icons = [
     "free-icon-dollars-money-bag-50117.png",
     "ep--histogram.png"]
 
+lbl = "lbl.ico"
+
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
@@ -50,6 +52,11 @@ class MainWindow(QtWidgets.QMainWindow):
             icon_path = os.path.join(path_program, "gui", "icons", icons[i])
             icon = QtGui.QIcon(icon_path)
             item.setIcon(icon)
+
+        # Иконка приложения
+        lbl_path = os.path.join(path_program, "gui", "icons", lbl)
+        lbl_app = QtGui.QIcon(lbl_path)
+        self.setWindowIcon(lbl_app)
 
         # Связь меню со страницами
         self.ui.listWidget.currentRowChanged.connect(

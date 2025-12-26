@@ -152,8 +152,10 @@ def calculate_reservoir_state_maps(data_wells, maps, dict_properties,
                              "m1": dict_properties['reservoir_fluid_properties']['m1'],
                              "Fo": dict_properties['reservoir_fluid_properties']['Fo'],
                              "m2": dict_properties['reservoir_fluid_properties']['m2']}
+    options = {'tmp_dir': maps_directory}
 
-    result = get_maps(dict_maps, dict_data_wells, map_params, reservoir_params, fluid_params, relative_permeability)
+    result = get_maps(dict_maps, dict_data_wells, map_params, reservoir_params, fluid_params, relative_permeability,
+                      options)
 
     dst_geo_transform = maps[type_maps_list.index("initial_oil_saturation")].geo_transform
     dst_projection = maps[type_maps_list.index("initial_oil_saturation")].projection
