@@ -74,6 +74,9 @@ QGroupBox::title {
       <height>351</height>
      </rect>
     </property>
+    <property name="frameShape">
+     <enum>QFrame::Box</enum>
+    </property>
    </widget>
   </widget>
  </widget>
