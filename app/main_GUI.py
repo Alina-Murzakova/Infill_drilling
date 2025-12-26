@@ -11,7 +11,7 @@ from PyQt6.QtCore import QThread, QObject, pyqtSignal, Qt
 from loguru import logger
 
 from app.gui.main_window_ui import Ui_MainWindow
-from app.input_output.output import get_save_path
+from app.input_output.output_functions import get_save_path
 from app.main import run_model
 from app.exceptions import CalculationCancelled
 from app.gui.widgets.functions_ui import validate_paths

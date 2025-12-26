@@ -1,6 +1,6 @@
 from PyQt6 import QtWidgets
 from app.gui.widgets.initial_data_ui import Ui_InitialDataPage
-from app.input_output.output import get_save_path
+from app.input_output.output_functions import get_save_path
 
 
 class InitialDataWidget(QtWidgets.QWidget):
