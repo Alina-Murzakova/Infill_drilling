@@ -324,6 +324,8 @@ def create_df_project_wells(list_zones):
 
 def save_picture_voronoi(df_Coordinates, filename, type_coord="geo", default_size_pixel=1):
     """Сохранение картинки с ячейками Вороных"""
+    import matplotlib
+    matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     if type_coord == 'geo':
         LINESTRING = 'LINESTRING_geo'
@@ -392,6 +394,7 @@ def save_picture_voronoi(df_Coordinates, filename, type_coord="geo", default_siz
         if point is not None:  # Проверяем, что линия не пустая
             plt.text(point.x + 30, point.y - 30, name, fontsize=6, ha='left')  # Координаты (x, y)
     plt.savefig(filename + '/.debug/voronoy.png')
+    plt.close(fig)
     pass
 
 
