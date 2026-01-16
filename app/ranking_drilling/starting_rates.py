@@ -107,7 +107,7 @@ def calculate_permeability_fact_wells(row, dict_parameters_coefficients):
                    | local_dict['well_params']["proj_wells_params"])
     coefficients = local_dict['well_params']['general']
 
-    if local_dict['switches']['switch_frac_inj_well']:
+    if local_dict['switches']['switch_fracList_params']:
         well_params['xfr'] = row['xfr']
         well_params['w_f'] = row['w_f']
         well_params['FracCount'] = row['FracCount']

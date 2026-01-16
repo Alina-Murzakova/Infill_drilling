@@ -112,6 +112,11 @@ def maps_load_directory(maps_directory):
         maps.append(read_raster(f'{maps_directory}/porosity.grd'))
     except FileNotFoundError:
         logger.error(f"В папке отсутствует файл с картой пористости: porosity.grd")
+
+    # проверка на наличие пустых карт
+    for array_map in maps:
+        if not (np.any((array_map.data != 0) & ~np.isnan(array_map.data))):
+            logger.error(f"Карта {array_map.type_map} пустая, проверьте формат загрузки и значения")
     return maps, maps_to_calculate
 
 

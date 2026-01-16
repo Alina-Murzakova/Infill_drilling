@@ -35,7 +35,7 @@ def run_model(parameters, total_stages, progress=None, is_cancelled=None):
         if is_cancelled and is_cancelled():
             raise CalculationCancelled()
 
-    log_stage("Инициализация локальных переменных")
+    log_stage("ИНИЦИАЛИЗАЦИЯ ЛОКАЛЬНЫХ ПЕРЕМЕННЫХ")
     # Пути
     paths = parameters['paths']
     # Параметры расчета
@@ -45,7 +45,7 @@ def run_model(parameters, total_stages, progress=None, is_cancelled=None):
         # нижнее ограничение на расстояние до фактических скважин от проектной
         parameters['well_params']['proj_wells_params']['buffer_project_wells'] = 10
 
-    log_stage("Загрузка скважинных данных")
+    log_stage("ЗАГРУЗКА СКВАЖИННЫХ ДАННЫХ")
     data_history, info_object_calculation = load_wells_data(data_well_directory=paths["data_well_directory"])
     name_field, name_object = info_object_calculation.get("field"), info_object_calculation.get("object_value")
     save_directory = f"{paths['save_directory']}\\{name_field}_{name_object.replace('/', '-')}"
@@ -53,34 +53,34 @@ def run_model(parameters, total_stages, progress=None, is_cancelled=None):
     create_new_dir(f"{save_directory}/.debug")
     logger.add(f"{save_directory}/.debug/logs.log", mode='w')
 
-    log_stage(f"Загрузка ГФХ по пласту {name_object.replace('/', '-')} месторождения {name_field}")
+    log_stage(f"ЗАГРУЗКА ГФХ ПО ПЛАСТУ {name_object.replace('/', '-')} МЕСТОРОЖДЕНИЯ {name_field}")
     dict_geo_phys_properties = load_geo_phys_properties(paths["path_geo_phys_properties"], name_field, name_object)
     parameters["reservoir_fluid_properties"].update(dict_geo_phys_properties)
 
-    log_stage("Подготовка скважинных данных")
+    log_stage("ПОДГОТОВКА СКВАЖИННЫХ ДАННЫХ")
     data_history, data_wells = (
         prepare_wells_data(data_history, dict_properties=parameters,
                            first_months=parameters['well_params']['fact_wells_params']['first_months']))
 
     if parameters['switches']['switch_fracList_params']:
-        log_stage(f"Загрузка фрак-листов")
+        log_stage(f"ЗАГРУЗКА ФРАК-ЛИСТОВ")
         data_wells, parameters = load_frac_info(paths["path_frac"], data_wells, name_object, parameters)
 
-    log_stage("Загрузка и обработка карт")
+    log_stage("ЗАГРУЗКА И ОБРАБОТКА КАРТ")
     maps, data_wells, maps_to_calculate = mapping(maps_directory=paths["maps_directory"],
                                                   data_wells=data_wells,
                                                   **{**parameters['maps'], **parameters['switches']})
     default_size_pixel = maps[0].geo_transform[1]  # размер ячейки после загрузки всех карт
 
-    log_stage("Расчет радиусов дренирования и нагнетания для скважин")
+    log_stage("РАСЧЕТ РАДИУСОВ ДРЕНИРОВАНИЯ И НАГНЕТАНИЯ ДЛЯ СКВАЖИН")
     data_wells = calculate_effective_radius(data_wells, dict_properties=parameters)
 
     if parameters['switches']['switch_adaptation_relative_permeability']:
-        log_stage("Авто-адаптация ОФП")
+        log_stage("АВТО-АДАПТАЦИЯ ОФП")
         parameters = get_reservoir_kr(data_history.copy(), data_wells.copy(), parameters)
 
     if any(maps_to_calculate.values()):
-        log_stage("Расчет карт текущего состояния: обводненности и ОИЗ")
+        log_stage("РАСЧЕТ КАРТ ТЕКУЩЕГО СОСТОЯНИЯ: ОБВОДНЕННОСТИ И ОИЗ")
         maps = calculate_reservoir_state_maps(data_wells,
                                               maps,
                                               parameters,
@@ -88,16 +88,16 @@ def run_model(parameters, total_stages, progress=None, is_cancelled=None):
                                               maps_to_calculate,
                                               maps_directory=paths["maps_directory"])
 
-    log_stage(f"Расчет оценочных карт")
+    log_stage(f"РАСЧЕТ ОЦЕНОЧНЫХ КАРТ")
     maps = maps + calculate_score_maps(maps=maps, dict_properties=parameters['reservoir_fluid_properties'])
 
-    log_stage("Расчет проницаемости для фактических скважин через РБ")
+    log_stage("РАСЧЕТ ПРОНИЦАЕМОСТИ ДЛЯ ФАКТИЧЕСКИХ СКВАЖИН ЧЕРЕЗ РБ")
     data_wells, parameters, data_wells_permeability_excel = get_df_permeability_fact_wells(data_wells, parameters)
 
-    log_stage("Оценка темпов падения для текущего фонда")
+    log_stage("ОЦЕНКА ТЕМПОВ ПАДЕНИЯ ДЛЯ ТЕКУЩЕГО ФОНДА")
     data_decline_rate_stat, _, _ = get_decline_rates(data_history, data_wells)
 
-    log_stage("Расчет зон с высоким индексом бурения")
+    log_stage("РАСЧЕТ ЗОН С ВЫСОКИМ ИНДЕКСОМ БУРЕНИЯ")
     # Параметры кластеризации
     epsilon = drill_zones_params["min_radius"] / default_size_pixel
     min_samples = int(drill_zones_params["sensitivity_quality_drill"] / 100 * epsilon ** 2 * math.pi)
@@ -114,10 +114,7 @@ def run_model(parameters, total_stages, progress=None, is_cancelled=None):
     map_rrr = maps[type_map_list.index('residual_recoverable_reserves')]
     map_opportunity_index = maps[type_map_list.index('opportunity_index')]
     polygon_OI = map_opportunity_index.raster_to_polygon()
-    log_stage("Начальное размещение проектных скважин")
-    parameters['well_params']["proj_wells_params"]['buffer_project_wells'] = (
-            parameters['well_params']["proj_wells_params"]['buffer_project_wells'] / default_size_pixel)
-
+    log_stage("НАЧАЛЬНОЕ РАЗМЕЩЕНИЕ ПРОЕКТНЫХ СКВАЖИН")
     # Проектные скважины с других drill_zone, чтобы исключить пересечения
     gdf_project_wells_all = gpd.GeoDataFrame(columns=["LINESTRING_pix", "buffer"], geometry="LINESTRING_pix")
     for drill_zone in list_zones:
@@ -128,11 +125,11 @@ def run_model(parameters, total_stages, progress=None, is_cancelled=None):
                                                                   parameters)
             gdf_project_wells_all = pd.concat([gdf_project_wells_all, gdf_project_wells], ignore_index=True)
 
-    log_stage("Расчет запасов для проектных скважин")
+    log_stage("РАСЧЕТ ЗАПАСОВ ДЛЯ ПРОЕКТНЫХ СКВАЖИН")
     calculate_reserves_by_voronoi(list_zones, data_wells, map_rrr, save_directory)
 
     if parameters['switches']['switch_economy']:
-        log_stage(f"Загрузка исходных данных для расчета экономики")
+        log_stage(f"ЗАГРУЗКА ИСХОДНЫХ ДАННЫХ ДЛЯ РАСЧЕТА ЭКОНОМИКИ")
         FEM, method_taxes, dict_NDD = load_economy_data(paths['path_economy'], name_field,
                                                         parameters['reservoir_fluid_properties']['gor'])
     else:
@@ -142,7 +139,7 @@ def run_model(parameters, total_stages, progress=None, is_cancelled=None):
                            | parameters['well_params']["proj_wells_params"])
     for drill_zone in list_zones:
         if drill_zone.rating != -1:
-            log_stage(f"Расчет запускных параметров, профиля добычи и экономики  проектных скважин зоны:"
+            log_stage(f"РАСЧЕТ ЗАПУСКНЫХ ПАРАМЕТРОВ, ПРОФИЛЯ ДОБЫЧИ И ЭКОНОМИКИ ПРОЕКТНЫХ СКВАЖИН ЗОНЫ:"
                       f" {drill_zone.rating}")
             drill_zone.calculate_starting_rates(maps, parameters)
             drill_zone.calculate_production(data_decline_rate_stat, well_params_economy['period_calculation'] * 12,
@@ -151,7 +148,7 @@ def run_model(parameters, total_stages, progress=None, is_cancelled=None):
             if parameters['switches']['switch_economy']:
                 drill_zone.calculate_economy(FEM, well_params_economy, method_taxes, dict_NDD)
 
-    log_stage(f"Выгрузка данных расчета:")
+    log_stage(f"ВЫГРУЗКА ДАННЫХ РАСЧЕТА:")
     summary_table = upload_data(name_field, name_object, save_directory, data_wells, maps, list_zones,
                                 info_clusterization_zones, FEM, method_taxes, polygon_OI, data_history,
                                 data_wells_permeability_excel, parameters)

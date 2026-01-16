@@ -54,11 +54,11 @@ def summary_table(list_zones):
         df_summary_table['Количество\nскважин'].sum(),
         round(df_summary_table['Средний индекс\nуспешности бурения'].mean(), 2),
         round(df_summary_table['Запасы, тыс т'].sum(), 2),
-        df_summary_table['Средний запускной\nдебит нефти, т/сут'].mean(),
-        df_summary_table['Средний запускной\nдебит жидкости, м3/сут'].mean(),
-        df_summary_table['Средняя\nобводненность, %'].mean(),
-        df_summary_table['Накопленная добыча\nнефти (25 лет), тыс.т'].sum(),
-        df_summary_table['Накопленная добыча\nжидкости (25 лет), тыс.т'].sum()]
+        round(df_summary_table['Средний запускной\nдебит нефти, т/сут'].mean(), 2),
+        round(df_summary_table['Средний запускной\nдебит жидкости, м3/сут'].mean(), 2),
+        round(df_summary_table['Средняя\nобводненность, %'].mean(), 2),
+        round(df_summary_table['Накопленная добыча\nнефти (25 лет), тыс.т'].sum(), 2),
+        round(df_summary_table['Накопленная добыча\nжидкости (25 лет), тыс.т'].sum(), 2)]
     df_summary_table = df_summary_table.fillna('')
     return df_summary_table
 

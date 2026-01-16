@@ -104,7 +104,7 @@ def upload_data(name_field, name_object, save_directory, data_wells, maps, list_
         # Используем pprint для красивого форматирования
         import pprint
 
-        f.write('import datetime\n\n')
+        f.write('from datetime import datetime\n\n')
         f.write('parameters = ')
         pprint.pprint(parameters, f, indent=4, width=100, depth=None)
 

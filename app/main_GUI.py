@@ -141,14 +141,14 @@ class MainWindow(QtWidgets.QMainWindow):
                      "default_radius_prod": gui_data["well_params"]["default_radius_prod"],
                      "default_radius_inj": gui_data["well_params"]["default_radius_inj"]},
 
-            "proj_wells_params":
-                {"L": gui_data["well_params"]["L"],
-                 "min_length": gui_data["well_params"]["min_length"],
-                 "buffer_project_wells": gui_data["well_params"]["buffer_project_wells"],
-                 "fix_P_well_init": gui_data["well_params"]["fix_P_well_init"],
-                 "k": gui_data["well_params"]["k"],
-                 "threshold": gui_data["well_params"]["threshold"],
-                 'period_calculation': gui_data["well_params"]["period_calculation"]}},
+                "proj_wells_params":
+                    {"L": gui_data["well_params"]["L"],
+                     "min_length": gui_data["well_params"]["min_length"],
+                     "buffer_project_wells": gui_data["well_params"]["buffer_project_wells"],
+                     "fix_P_well_init": gui_data["well_params"]["fix_P_well_init"],
+                     "k": gui_data["well_params"]["k"],
+                     "threshold": gui_data["well_params"]["threshold"],
+                     'period_calculation': gui_data["well_params"]["period_calculation"]}},
 
             "reservoir_fluid_properties": {"kv_kh": gui_data["res_fluid_params"]["kv_kh"],
                                            "Swc": gui_data["res_fluid_params"]["Swc"],

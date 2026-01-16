@@ -1,3 +1,4 @@
+from datetime import datetime
 from PyQt6 import QtWidgets, QtGui, QtCore
 from app.gui.widgets.economy_ui import Ui_EconomyPage
 from app.gui.widgets.functions_ui import widgets_switch
@@ -43,7 +44,9 @@ class EconomyWidget(QtWidgets.QWidget):
     def get_data(self):
         return {
             "switch_economy": self.ui.chkCalcEconomy.isChecked(),
-            "start_date": self.ui.leStartDate.date(),
+            "start_date": datetime(self.ui.leStartDate.date().year(),
+                                   self.ui.leStartDate.date().month(),
+                                   self.ui.leStartDate.date().day()),
             "day_in_month": int(self.ui.leNumDays.text()),
             "path_economy": self.ui.leEconomy.text()
         }
