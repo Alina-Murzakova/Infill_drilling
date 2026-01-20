@@ -49,11 +49,11 @@ def load_frac_info(path_frac, data_wells, name_object, dict_parameters_coefficie
                                                                   pd.DateOffset(months=1)).dt.to_period('M')]
 
     if data_frac.empty:
-        error_message = (f"Фрак-лист с ГРП на запуске для рассматриваемого объект {name_object} пуст!\n"
+        error_msg = (f"Фрак-лист с ГРП на запуске для рассматриваемого объект {name_object} пуст!\n"
                          f"Проверьте данные по ГРП или используйте параметры ГРП/МГРП по умолчанию "
                          f"(switch_avg_frac_params = False)")
-        logger.critical(error_message)
-        raise ValueError(error_message)
+        logger.critical(error_msg)
+        raise ValueError(f"{error_msg}")
 
     data_frac['comment'] = data_frac['comment'].astype(str)
     data_frac[["current_frac", "total_Frac"]] = data_frac["comment"].str.extract(pattern)

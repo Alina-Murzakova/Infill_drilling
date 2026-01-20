@@ -132,8 +132,9 @@ class Map:
         mask = raster_data > 0  # Берем только ненулевые пиксели
 
         if not np.any(mask):
-            logger.error("Нет ненулевых пикселей в растровой карте")
-            return None
+            error_msg = "Нет ненулевых пикселей в растровой карте"
+            logger.critical(error_msg)
+            raise ValueError(f"{error_msg}")
 
         # Нейтральная трансформация, которая не изменяет координаты
         transform = Affine(1, 0, 0, 0, 1, 0)
@@ -143,8 +144,9 @@ class Map:
 
         # Если нет полигонов, выводим ошибку
         if not polygons:
-            logger.error("Не удалось создать полигоны из растровых данных")
-            return None
+            error_msg = "Не удалось создать полигоны из растровых данных"
+            logger.critical(error_msg)
+            raise ValueError(f"{error_msg}")
 
         # Объединяем все полигоны в один (если их несколько)
         union_polygon = unary_union(polygons) if len(polygons) > 1 else polygons[0]
@@ -152,7 +154,7 @@ class Map:
         shrunk_polygon = union_polygon.buffer(-buffer)
         # Проверяем, что результат - валидный полигон
         if shrunk_polygon.is_empty:
-            logger.error("Ошибка: отступ слишком большой, полигон исчез")
+            logger.warning("Ошибка: отступ слишком большой, полигон исчез")
         return shrunk_polygon
 
     def save_img(self, filename, data_wells=None, list_zones=None, info_clusterization_zones=None, project_wells=None,
@@ -291,8 +293,10 @@ def read_raster(file_path, no_value=0):
     projection = dataset.GetProjection()
     name_file = os.path.basename(file_path).replace(".grd", "")
     if name_file not in list_names_map:
-        raise logger.critical(f"Неверный тип карты! {name_file}\n"
-                              f"Переименуйте карту в соответствии со списком допустимых названий: {list_names_map}")
+        error_msg = f"Неверный тип карты! {name_file}\n"\
+                    f"Переименуйте карту в соответствии со списком допустимых названий: {list_names_map}"
+        logger.critical(error_msg)
+        raise ValueError(f"{error_msg}")
     return Map(data, geo_transform, projection, type_map=name_file)
 
 
@@ -347,7 +351,9 @@ def read_array(data_wells, name_column_map, type_map, geo_transform, size,
     else:
         data_wells_with_work = pd.DataFrame()
         if type_map not in list_names_map:
-            raise logger.critical(f"Неверный тип карты! {type_map}")
+            error_msg = f"Неверный тип карты! {type_map}"
+            logger.critical(error_msg)
+            raise ValueError(f"{error_msg}")
 
     if accounting_GS:
         # Формирование списка точек для ствола каждой скважины

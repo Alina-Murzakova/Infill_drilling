@@ -10,7 +10,6 @@ from app.decline_rate.residual_reserves import get_reserves_by_characteristic_of
 from app.decline_rate.model_Arps import calculation_model_arps
 
 
-@logger.catch
 def get_decline_rates(data_history, data_wells, maps=None, type_reserves=None):
     logger.info("Подготовка истории работы скважин для расчета темпов падения")
     max_delta = cfg.STOPPING_TIME_LIMIT_OF_WELL

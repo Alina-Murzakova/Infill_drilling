@@ -191,7 +191,6 @@ if __name__ == '__main__':
 
             # Записываем в файл
             log_path.write_text(error_content, encoding='utf-8')
-            print(f"Логи ошибки сохранены в: {log_path}")
+            logger.info(f"Логи ошибки сохранены в: {log_path}")
 
-        print(f"Произошла ошибка: {e}")
         sys.exit(1)

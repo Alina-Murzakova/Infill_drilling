@@ -234,8 +234,9 @@ def check_FracCount(type_frac, length_FracStage=1, L=1):
         else:
             return int(L / length_FracStage)
     else:
-        logger.error(f"Некорректно задан тип ГРП: {type_frac}. Допустимые значения None, ГРМ, МГРП")
-        return None
+        error_msg = f"Некорректно задан тип ГРП: {type_frac}. Допустимые значения None, ГРМ, МГРП"
+        logger.critical(error_msg)
+        raise ValueError(f"{error_msg}")
 
 
 def get_delta_pressure(reservoir_params, fluid_params, well_params):

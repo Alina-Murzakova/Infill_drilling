@@ -7,7 +7,6 @@ from app.input_output.output_functions import summary_table, create_new_dir, sav
     save_ranking_drilling_to_excel, save_picture_clustering_zones, remove_keys, dict_to_df, create_df_project_wells
 
 
-@logger.catch
 def upload_data(name_field, name_object, save_directory, data_wells, maps, list_zones, info_clusterization_zones,
                 FEM, method_taxes, polygon_OI, data_history, data_wells_permeability_excel, parameters):
     """Выгрузка данных после расчета"""

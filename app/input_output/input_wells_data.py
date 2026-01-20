@@ -9,7 +9,6 @@ from app.input_output.functions_wells_data import identification_ZBS_MZS, get_av
     get_avg_first_param, calculate_cumsum, create_shapely_types, range_priority_wells, get_well_type
 
 
-@logger.catch
 def load_wells_data(data_well_directory):
     """
     Функция загрузки истории скважин и определения исследуемого объекта (месторождение, пласт)
@@ -46,9 +45,13 @@ def load_wells_data(data_well_directory):
     field = list(set(data_history.field.values))
     object_value = list(set(data_history.object.values))
     if len(field) != 1:
-        logger.error(f"Выгрузка содержит не одно месторождение: {field}")
+        error_msg = f"Выгрузка содержит не одно месторождение: {field}"
+        logger.critical(error_msg)
+        raise ValueError(f"{error_msg}")
     elif len(object_value) != 1:
-        logger.error(f"Выгрузка содержит не один объект: {object_value}")
+        error_msg = f"Выгрузка содержит не один объект: {object_value}"
+        logger.critical(error_msg)
+        raise ValueError(f"{error_msg}")
     else:
         field = field[0]
         object_value = object_value[0]
@@ -169,8 +172,8 @@ def prepare_wells_data(data_history, dict_properties, min_length_hor_well=150, f
     if len(unknown_work_markers) > 0:
         for work_marker in unknown_work_markers:
             well_numbers = data_wells.loc[data_wells["work_marker"] == work_marker, "well_number"].unique()
-            logger.error(f"В data_wells появился нераспознанный характер работы - {work_marker}. "
-                         f"Скважины {list(well_numbers)} удалены.")
+            logger.warning(f"В data_wells появился нераспознанный характер работы - {work_marker}. "
+                           f"Скважины {list(well_numbers)} удалены.")
 
         # Удаляем строки с нераспознанными значениями
         data_wells = data_wells[~data_wells["work_marker"].isin(unknown_work_markers)]

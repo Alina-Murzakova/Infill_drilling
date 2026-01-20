@@ -10,7 +10,6 @@ from app.decline_rate.model_Corey import calculation_model_corey
 from app.decline_rate.model_Arps import calculation_model_arps
 
 
-@logger.catch
 def get_decline_rate(data_history, data_wells, maps, type_reserves='voronoy'):
     logger.info("Подготовка истории работы скважин для расчета темпов падения")
     max_delta = cfg.STOPPING_TIME_LIMIT_OF_WELL

@@ -54,7 +54,6 @@ class DrillZone:
         self.area = len(self.x_coordinates) * map_rrr.geo_transform[1] ** 2 / 1000000
         pass
 
-    @logger.catch
     def get_init_project_wells(self, map_rrr, data_wells, gdf_project_wells_all, polygon_OI, default_size_pixel,
                                init_profit_cum_oil, dict_parameters):
         """Расчет количества проектных скважин в перспективной зоне"""
@@ -223,7 +222,6 @@ class DrillZone:
         pass
 
 
-@logger.catch
 def calculate_drilling_zones(maps, epsilon, min_samples, percent_low, data_wells, dict_properties):
     """
     Выделение зон для уверенного бурения с высоким индексом возможности OI

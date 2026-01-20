@@ -9,7 +9,6 @@ from app.economy.financial_model import FinancialEconomicModel
 from app.economy.functions import calculation_Kg
 
 
-@logger.catch
 def load_economy_data(economy_path, name_field, gor):
     """ gor - газосодержание для расчета выручки с пнг, м3/т"""
     # Инициализируем необходимые переменные
@@ -25,8 +24,9 @@ def load_economy_data(economy_path, name_field, gor):
         df_opex = pd.read_excel(xls, sheet_name="Удельный OPEX", header=0)
         df_opex = df_opex[df_opex['Месторождение'] == name_field]
         if df_opex.shape[0] < 3:
-            logger.error(f"В исходных данных  ФЭМ нет OPEX по месторождению {name_field}")
-            return None
+            error_msg = f"В исходных данных  ФЭМ нет OPEX по месторождению {name_field}"
+            logger.critical(error_msg)
+            raise ValueError(f"{error_msg}")
         else:
             del df_opex['Месторождение']
 
@@ -44,8 +44,9 @@ def load_economy_data(economy_path, name_field, gor):
         df_ONVSS_cost_ed = pd.read_excel(xls, sheet_name="Уд_ОНВСС_бурение", header=0)
         df_ONVSS_cost_ed = df_ONVSS_cost_ed[df_ONVSS_cost_ed['Месторождение'] == name_field]
         if df_ONVSS_cost_ed.empty:
-            logger.error(f"В исходных данных ФЭМ нет Уд_ОНВСС_бурение по месторождению {name_field}")
-            return None
+            error_msg = f"В исходных данных ФЭМ нет Уд_ОНВСС_бурение по месторождению {name_field}"
+            logger.critical(error_msg)
+            raise ValueError(f"{error_msg}")
         else:
             ONVSS_cost_ed = df_ONVSS_cost_ed.iloc[0, 1]
 
@@ -53,8 +54,9 @@ def load_economy_data(economy_path, name_field, gor):
         df_oil_loss = pd.read_excel(xls, sheet_name="Нормативы потерь нефти", header=0)
         df_oil_loss = df_oil_loss[df_oil_loss['Месторождение'] == name_field]
         if df_oil_loss.empty:
-            logger.error(f"В исходных данных ФЭМ нет потерь нефти по месторождению {name_field}")
-            return None
+            error_msg = f"В исходных данных ФЭМ нет потерь нефти по месторождению {name_field}"
+            logger.critical(error_msg)
+            raise ValueError(f"{error_msg}")
         else:
             del df_oil_loss['Месторождение']
             df_oil_loss = df_oil_loss.set_index([pd.Index(['oil_loss'])])
@@ -63,8 +65,9 @@ def load_economy_data(economy_path, name_field, gor):
         df_workover_wellservice = pd.read_excel(xls, sheet_name="КРС_ПРС", header=0)
         df_workover_wellservice = df_workover_wellservice[df_workover_wellservice['Месторождение'] == name_field]
         if df_workover_wellservice.shape[0] < 5:
-            logger.error(f"В исходных данных ФЭМ нет КРС_ПРС по месторождению {name_field}")
-            return None
+            error_msg = f"В исходных данных ФЭМ нет КРС_ПРС по месторождению {name_field}"
+            logger.critical(error_msg)
+            raise ValueError(f"{error_msg}")
         else:
             del df_workover_wellservice['Месторождение']
 
@@ -72,8 +75,9 @@ def load_economy_data(economy_path, name_field, gor):
         df_APG_CS = pd.read_excel(xls, sheet_name="ПНГ_КС", header=0)
         df_APG_CS = df_APG_CS[df_APG_CS['Месторождение'] == name_field]
         if df_APG_CS.shape[0] < 1:
-            logger.error(f"В исходных данных ФЭМ нет привязки месторождения {name_field} к КС")
-            return None
+            error_msg = f"В исходных данных ФЭМ нет привязки месторождения {name_field} к КС"
+            logger.critical(error_msg)
+            raise ValueError(f"{error_msg}")
         else:
             price_APG = df_APG_CS['Цена ПНГ (макра)'].iloc[0]
 
@@ -81,8 +85,9 @@ def load_economy_data(economy_path, name_field, gor):
         df_apg = pd.read_excel(xls, sheet_name="ПНГ", header=0)
         df_apg = df_apg[df_apg['Месторождение'] == name_field]
         if df_apg.shape[0] < 3:
-            logger.error(f"В исходных данных ФЭМ нет данных ПНГ по месторождению {name_field}")
-            return None
+            error_msg = f"В исходных данных ФЭМ нет данных ПНГ по месторождению {name_field}"
+            logger.critical(error_msg)
+            raise ValueError(f"{error_msg}")
         else:
             del df_apg['Месторождение']
 

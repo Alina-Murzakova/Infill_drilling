@@ -90,7 +90,10 @@ def save_contours(list_zones, map_conv, save_directory_contours, type_calc='buff
                 if isinstance(buffered, Polygon):
                     x_boundary, y_boundary = buffered.exterior.xy
                 else:
-                    raise logger.error("Не удалось построить границу зоны. Проверьте размер buffer или входные данные.")
+
+                    error_msg = "Не удалось построить границу зоны. Проверьте размер buffer или входные данные."
+                    logger.critical(error_msg)
+                    raise ValueError(f"{error_msg}")
             elif type_calc == 'alpha':
                 # Создаем список точек
                 points = np.array(list(zip(x_coordinates, y_coordinates)))
@@ -108,8 +111,9 @@ def save_contours(list_zones, map_conv, save_directory_contours, type_calc='buff
                     for poly in alpha_shape.geoms:
                         logger.info(f"Площадь полигона Мультиполигона {drill_zone.rating}: {poly.area / 1000000} кв.км")
                 else:
-                    raise logger.error(
-                        "Не удалось построить границу зоны. Проверьте параметр alpha или входные данные.")
+                    error_msg = "Не удалось построить границу зоны. Проверьте параметр alpha или входные данные."
+                    logger.critical(error_msg)
+                    raise ValueError(f"{error_msg}")
             elif type_calc == 'convex_hull':
                 mesh = list(map(lambda x, y: Point(x, y), x_coordinates, y_coordinates))
                 ob = Polygon(mesh)
@@ -117,7 +121,9 @@ def save_contours(list_zones, map_conv, save_directory_contours, type_calc='buff
                 boundary_drill_zone = ob.convex_hull
                 x_boundary, y_boundary = boundary_drill_zone.exterior.coords.xy
             else:
-                raise logger.error(f"Проверьте значение параметра type_calc: {type_calc}")
+                error_msg = f"Проверьте значение параметра type_calc: {type_calc}"
+                logger.critical(error_msg)
+                raise ValueError(f"{error_msg}")
             name_txt = f'{save_directory_contours}/{drill_zone.rating}.txt'
             with open(name_txt, "w") as file:
                 file.write(f"/\n")
@@ -154,7 +160,9 @@ def get_save_path(program_name: str = "default") -> str:
             if len(list_drives) >= 1:
                 save_drive = list_drives[0]
             else:
-                logger.error(PermissionError)
+                error_msg = f"У пользователя нет прав доступа на запись на диск {save_drive}"
+                logger.critical(error_msg)
+                raise PermissionError(f"{error_msg}")
 
         current_user = os.getlogin()
         profile_dir = [dir_ for dir_ in os.listdir(save_drive) if dir_.lower() == "profiles"
@@ -332,8 +340,9 @@ def save_picture_voronoi(df_Coordinates, filename, type_coord="geo", default_siz
     elif type_coord == 'pix':
         LINESTRING = 'LINESTRING_pix'
     else:
-        LINESTRING = None
-        logger.error("Неверный тип координат.")
+        error_msg = "Неверный тип координат."
+        logger.critical(error_msg)
+        raise TypeError(f"{error_msg}")
 
     df_MZS = df_Coordinates[df_Coordinates.type_wellbore == "МЗС"].copy()
     df_Coordinates_other = df_Coordinates[df_Coordinates.type_wellbore != "МЗС"].copy()

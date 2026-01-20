@@ -7,7 +7,6 @@ import pandas as pd
 import math
 
 
-@logger.catch
 def get_reservoir_kr(data_history, data_wells, dict_parameters_coefficients, S_or=0.3):
     """Функция для авто-адаптации относительных фазовых проницаемостей объекта на основе history_matching"""
     # Константы
