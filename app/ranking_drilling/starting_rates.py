@@ -106,16 +106,9 @@ def calculate_permeability_fact_wells(row, dict_parameters_coefficients):
     well_params = (local_dict['well_params']['general'] | (local_dict['well_params']["fracturing"])
                    | local_dict['well_params']["proj_wells_params"])
     coefficients = local_dict['well_params']['general']
-
-    if local_dict['switches']['switch_fracList_params']:
-        well_params['xfr'] = row['xfr']
-        well_params['w_f'] = row['w_f']
-        well_params['FracCount'] = row['FracCount']
-    else:
-        well_params['FracCount'] = check_FracCount(well_params['Type_Frac'],
-                                                   well_params['length_FracStage'],
-                                                   row['length_geo'])
-
+    well_params['xfr'] = row['xfr']
+    well_params['w_f'] = row['w_f']
+    well_params['FracCount'] = row['FracCount']
     reservoir_params['f_w'] = row['init_water_cut_TR']
     reservoir_params['Phi'] = row['m']
     reservoir_params['h'] = row['NNT']
@@ -220,23 +213,6 @@ def quantile_filter(data_wells, name_column):
     q1 = np.percentile(column, 25)
     q3 = np.percentile(column, 75)
     return q1, q3
-
-
-def check_FracCount(type_frac, length_FracStage=1, L=1):
-    # определение FracCount
-    if type_frac is None:
-        return 0
-    elif type_frac == 'ГРП':
-        return 1
-    elif type_frac == 'МГРП':
-        if L == 0:
-            return 1
-        else:
-            return int(L / length_FracStage)
-    else:
-        error_msg = f"Некорректно задан тип ГРП: {type_frac}. Допустимые значения None, ГРМ, МГРП"
-        logger.critical(error_msg)
-        raise ValueError(f"{error_msg}")
 
 
 def get_delta_pressure(reservoir_params, fluid_params, well_params):

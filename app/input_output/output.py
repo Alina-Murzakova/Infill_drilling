@@ -8,12 +8,13 @@ from app.input_output.output_functions import summary_table, create_new_dir, sav
 
 
 def upload_data(name_field, name_object, save_directory, data_wells, maps, list_zones, info_clusterization_zones,
-                FEM, method_taxes, polygon_OI, data_history, data_wells_permeability_excel, parameters):
+                FEM, method_taxes, polygon_OI, data_history, data_wells_permeability_excel, parameters,
+                default_size_pixel):
     """Выгрузка данных после расчета"""
     name_field = name_field.replace('/', "_")
     name_object = name_object.replace('/', "_")
     type_map_list = list(map(lambda raster: raster.type_map, maps))
-    df_summary_table = summary_table(list_zones)
+    df_summary_table = summary_table(list_zones, parameters['switches']['switch_economy'])
 
     # Создание дополнительных директорий
     create_new_dir(f"{save_directory}/карты grd")
@@ -52,7 +53,7 @@ def upload_data(name_field, name_object, save_directory, data_wells, maps, list_
     logger.info(f"Сохраняем .png с начальным расположением проектного фонда в кластерах и карту ОИЗ с проектным фондом")
     save_picture_clustering_zones(list_zones, f"{save_directory}/изображения png/начальное расположение ПФ.png",
                                   buffer_project_wells=parameters['well_params']['proj_wells_params']
-                                  ['buffer_project_wells'])
+                                  ['buffer_project_wells']/default_size_pixel)
     map_residual_recoverable_reserves = maps[type_map_list.index('residual_recoverable_reserves')]
     map_residual_recoverable_reserves.save_img(f"{save_directory}/изображения png/карта ОИЗ с ПФ.png", data_wells,
                                                list_zones, info_clusterization_zones, project_wells=True)
@@ -103,7 +104,7 @@ def upload_data(name_field, name_object, save_directory, data_wells, maps, list_
         # Используем pprint для красивого форматирования
         import pprint
 
-        f.write('from datetime import datetime\n\n')
+        f.write('import datetime\n\n')
         f.write('parameters = ')
         pprint.pprint(parameters, f, indent=4, width=100, depth=None)
 

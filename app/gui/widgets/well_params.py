@@ -28,6 +28,7 @@ class WellParamsWidget(QtWidgets.QWidget):
         self.ui.leKUBS.setValidator(float_validator)
         self.ui.leKPPP.setValidator(float_validator)
         self.ui.leSkin.setValidator(skin_validator)
+        self.ui.lePwell.setValidator(float_validator)
 
         # ---------- ГРП ----------
         self.ui.leLenStage.setValidator(int_validator)
@@ -118,7 +119,7 @@ class WellParamsWidget(QtWidgets.QWidget):
             "min_length": int(self.ui.leMinLenHor.text()),
             "buffer_project_wells": int(self.ui.leProjectBuffer.text()),
             "switch_fix_P_well_init": self.ui.chkSetPwell.isChecked(),
-            "fix_P_well_init": self.ui.lePwell.text(),
+            "fix_P_well_init": float(self.ui.lePwell.text()) if self.ui.lePwell.text() else 0.0,
             "switch_wc_from_map": self.get_water_cut_source(),
             "k": int(self.ui.leNumNearWells.text()),
             "threshold": float(self.ui.leThreshold.text()),

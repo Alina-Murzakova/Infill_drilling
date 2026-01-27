@@ -120,7 +120,7 @@ def calculate_mirr(cashflows, finance_rate=0, reinvest_rate=0):
     pv_negatives = abs(sum(negatives))
     fv_positives = sum(positives)
 
-    return (fv_positives / pv_negatives) ** (1 / years) - 1 if pv_negatives > 0 else None
+    return (fv_positives / pv_negatives) ** (1 / years) - 1 if (pv_negatives > 0) and (years > 0) else None
 
 
 def calculation_Kg(Kg_group, production_reserves):

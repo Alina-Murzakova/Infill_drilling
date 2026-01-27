@@ -23,6 +23,9 @@ from app.exceptions import CalculationCancelled
 def run_model(parameters, total_stages, progress=None, is_cancelled=None):
     import logging
     logging.basicConfig(level=logging.INFO, )
+    # Настраиваем библиотеку reservoir_maps
+    my_library_logger = logging.getLogger('reservoir_maps')
+    my_library_logger.setLevel(logging.INFO)
     stage_number = -1
 
     def log_stage(msg):
@@ -62,9 +65,8 @@ def run_model(parameters, total_stages, progress=None, is_cancelled=None):
         prepare_wells_data(data_history, dict_properties=parameters,
                            first_months=parameters['well_params']['fact_wells_params']['first_months']))
 
-    if parameters['switches']['switch_fracList_params']:
-        log_stage(f"ЗАГРУЗКА ФРАК-ЛИСТОВ")
-        data_wells, parameters = load_frac_info(paths["path_frac"], data_wells, name_object, parameters)
+    log_stage(f"ЗАГРУЗКА ФРАК-ПАРАМЕТРОВ")
+    data_wells, parameters = load_frac_info(paths["path_frac"], data_wells, name_object, parameters)
 
     log_stage("ЗАГРУЗКА И ОБРАБОТКА КАРТ")
     maps, data_wells, maps_to_calculate = mapping(maps_directory=paths["maps_directory"],
@@ -75,12 +77,12 @@ def run_model(parameters, total_stages, progress=None, is_cancelled=None):
     log_stage("РАСЧЕТ РАДИУСОВ ДРЕНИРОВАНИЯ И НАГНЕТАНИЯ ДЛЯ СКВАЖИН")
     data_wells = calculate_effective_radius(data_wells, dict_properties=parameters)
 
+    log_stage(f"ЗАГРУЗКА ОФП, {parameters['switches']['switch_adaptation_relative_permeability']}")
     if parameters['switches']['switch_adaptation_relative_permeability']:
-        log_stage("АВТО-АДАПТАЦИЯ ОФП")
         parameters = get_reservoir_kr(data_history.copy(), data_wells.copy(), parameters)
 
+    log_stage(f"РАСЧЕТ КАРТ ТЕКУЩЕГО СОСТОЯНИЯ: ОБВОДНЕННОСТИ И ОИЗ, {any(maps_to_calculate.values())}")
     if any(maps_to_calculate.values()):
-        log_stage("РАСЧЕТ КАРТ ТЕКУЩЕГО СОСТОЯНИЯ: ОБВОДНЕННОСТИ И ОИЗ")
         maps = calculate_reservoir_state_maps(data_wells,
                                               maps,
                                               parameters,
@@ -128,8 +130,8 @@ def run_model(parameters, total_stages, progress=None, is_cancelled=None):
     log_stage("РАСЧЕТ ЗАПАСОВ ДЛЯ ПРОЕКТНЫХ СКВАЖИН")
     calculate_reserves_by_voronoi(list_zones, data_wells, map_rrr, save_directory)
 
+    log_stage(f"ЗАГРУЗКА ИСХОДНЫХ ДАННЫХ ДЛЯ РАСЧЕТА ЭКОНОМИКИ, {parameters['switches']['switch_economy']}")
     if parameters['switches']['switch_economy']:
-        log_stage(f"ЗАГРУЗКА ИСХОДНЫХ ДАННЫХ ДЛЯ РАСЧЕТА ЭКОНОМИКИ")
         FEM, method_taxes, dict_NDD = load_economy_data(paths['path_economy'], name_field,
                                                         parameters['reservoir_fluid_properties']['gor'])
     else:
@@ -137,10 +139,11 @@ def run_model(parameters, total_stages, progress=None, is_cancelled=None):
 
     well_params_economy = (parameters['economy_params'] | parameters['well_params']["fracturing"]
                            | parameters['well_params']["proj_wells_params"])
+
+    log_stage(f"РАСЧЕТ ЗАПУСКНЫХ ПАРАМЕТРОВ, ПРОФИЛЯ ДОБЫЧИ И ЭКОНОМИКИ ПРОЕКТНЫХ СКВАЖИН")
     for drill_zone in list_zones:
         if drill_zone.rating != -1:
-            log_stage(f"РАСЧЕТ ЗАПУСКНЫХ ПАРАМЕТРОВ, ПРОФИЛЯ ДОБЫЧИ И ЭКОНОМИКИ ПРОЕКТНЫХ СКВАЖИН ЗОНЫ:"
-                      f" {drill_zone.rating}")
+            logger.info(f"Зона {drill_zone.rating}: расчет запускных, профиля и оценка экономики")
             drill_zone.calculate_starting_rates(maps, parameters)
             drill_zone.calculate_production(data_decline_rate_stat, well_params_economy['period_calculation'] * 12,
                                             well_params_economy['day_in_month'],
@@ -151,7 +154,8 @@ def run_model(parameters, total_stages, progress=None, is_cancelled=None):
     log_stage(f"ВЫГРУЗКА ДАННЫХ РАСЧЕТА:")
     summary_table = upload_data(name_field, name_object, save_directory, data_wells, maps, list_zones,
                                 info_clusterization_zones, FEM, method_taxes, polygon_OI, data_history,
-                                data_wells_permeability_excel, parameters)
+                                data_wells_permeability_excel, parameters, default_size_pixel)
+    log_stage(f"ЭКСПОРТ ЗАВЕРШЕН")
 
     return summary_table, save_directory
 
@@ -176,7 +180,7 @@ if __name__ == '__main__':
         # ОШИБКА - сохраняем логи
 
         if save_dir:
-            log_path = Path(save_dir) / ".debug" / f"error_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+            log_path = Path(save_dir) / ".debug" / f"error.log"
             log_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Формируем содержимое лога с ошибкой

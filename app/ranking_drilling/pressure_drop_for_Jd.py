@@ -1,5 +1,5 @@
-from math import log, fabs, sqrt, exp, sin, cos, tanh, pi
-from mpmath import invertlaplace, nsum, inf
+from math import log, fabs, sqrt, exp, sin, cos,  pi
+from mpmath import invertlaplace, nsum, inf, tanh
 from scipy.special import k0  # Модифицированная функция Бесселя второго рода
 from scipy.integrate import quad
 
