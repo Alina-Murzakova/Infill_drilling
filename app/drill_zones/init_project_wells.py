@@ -28,9 +28,9 @@ def get_project_wells_from_clusters(name_cluster, polygon_OI, gdf_clusters, data
 
     # GeoDataFrame с фактическими ГС
     gdf_fact_type_wells = gdf_fact_wells[gdf_fact_wells["well_type"] == "horizontal"].reset_index(drop=True)
+    # !!! Проверить логику
     if gdf_fact_type_wells.empty:
-        logger.warning("На объекте нет фактических горизонтальных скважин! \n "
-                       "Все проектные скважины вертикальные.")
+        logger.warning("В зоне нет фактических горизонтальных скважин!")  # Азимут 0
         # GeoDataFrame с фактическими ННС
         gdf_fact_type_wells = gdf_fact_wells[gdf_fact_wells["well_type"] == "vertical"].reset_index(drop=True)
 

@@ -168,7 +168,7 @@ QGroupBox::title {
      </font>
     </property>
     <property name="text">
-     <string>Учёт АГРП на нагнетательных скважин</string>
+     <string>Учёт АГРП на нагнетательных скважинах на карте ОИЗ</string>
     </property>
    </widget>
    <widget class="QWidget" name="horizontalLayoutWidget_42">

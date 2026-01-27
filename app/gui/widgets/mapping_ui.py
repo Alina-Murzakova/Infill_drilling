@@ -161,7 +161,7 @@ class Ui_MappingPage(object):
         self.lblRadiusInterpolate.setText(_translate("MappingPage", "Радиус интерполяции для дискретных карт, м"))
         self.leRadiusInterpolate.setText(_translate("MappingPage", "1000"))
         self.chkManageHorWells.setText(_translate("MappingPage", "Учёт траекторий ГС"))
-        self.chkManageAutoFrac.setText(_translate("MappingPage", "Учёт АГРП на нагнетательных скважин"))
+        self.chkManageAutoFrac.setText(_translate("MappingPage", "Учёт АГРП на нагнетательных скважинах на карте ОИЗ"))
         self.lblFracHalfLength.setText(_translate("MappingPage", "Полудлина трещины АГРП, м"))
         self.leFracHalfLength.setText(_translate("MappingPage", "150"))
         self.lblMinHorStress.setText(_translate("MappingPage", "Азимут минимального горизонтального напряжения, град."))

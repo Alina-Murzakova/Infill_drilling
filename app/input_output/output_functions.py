@@ -299,7 +299,7 @@ def save_map_permeability_fact_wells(data_wells, map_pressure, filename, account
                                                 map_permeability_fact_wells.data)
     map_permeability_fact_wells.save_img(filename, data_wells)
     map_permeability_fact_wells.save_grd_file(
-        f"{filename.replace('.png', '').replace("/изображения png", "/карты grd")}.grd")
+        f"{filename.replace('.png', '').replace('/изображения png', '/карты grd')}.grd")
     pass
 
 

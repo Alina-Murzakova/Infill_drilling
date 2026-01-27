@@ -258,7 +258,7 @@ def clusterization_zones(map_opportunity_index, epsilon, min_samples, percent_lo
     # Фильтрация карты индекса вероятности по процентилю
     nan_opportunity_index = np.where(data_opportunity_index == 0, np.nan, data_opportunity_index)
     threshold_value = np.nanpercentile(nan_opportunity_index, percent_low)
-    data_opportunity_index_threshold = np.where(data_opportunity_index > threshold_value, data_opportunity_index, 0)
+    data_opportunity_index_threshold = np.where(data_opportunity_index >= threshold_value, data_opportunity_index, 0)
 
     # Массив для кластеризации
     drilling_index_map = data_opportunity_index_threshold.copy()
