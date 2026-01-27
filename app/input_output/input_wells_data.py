@@ -91,7 +91,8 @@ def prepare_wells_data(data_history, dict_properties, min_length_hor_well=150, f
     data_history = identification_ZBS_MZS(data_history)
     logger.info(f"Количество МЗС - {data_history[data_history.type_wellbore == 'МЗС'].well_number_digit.nunique()}")
     logger.info(f"Количество ЗБС - {data_history[data_history.type_wellbore == 'ЗБС'].well_number.nunique()}")
-    logger.info(f"МЗС - {data_history[data_history.type_wellbore == 'МЗС'].well_number.unique()}")
+    logger.debug(f"МЗС - {data_history[data_history.type_wellbore == 'МЗС'].well_number.unique()}")
+    logger.debug(f"ЗБС - {data_history[data_history.type_wellbore == 'ЗБС'].well_number.unique()}")
 
     # 5. Расчет объемной обводненности и плотности нефти для ТР
     data_history['water_cut_V'] = (((data_history['Ql_rate'] - data_history['Qo_rate']) / pho_water) * 100 /
