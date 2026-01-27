@@ -10,7 +10,8 @@ from app.well_active_zones import get_parameters_voronoi_cells
 
 from app.decline_rate.functions import production_model
 from app.well_active_zones import get_value_map
-from app.ranking_drilling.starting_rates import calculate_starting_rate, check_FracCount
+from app.ranking_drilling.starting_rates import calculate_starting_rate
+from app.input_output.input_frac_info import check_FracCount
 from app.decline_rate.residual_reserves import prepare_mesh_map_rrr
 
 
@@ -61,7 +62,7 @@ class ProjectWell:
         self.PI = None
         self.year_economic_limit = None
 
-    def get_nearest_wells(self, df_wells, k=5):
+    def get_nearest_wells(self, df_wells, threshold, k=5):
         """
         Получаем ближайшее окружение скважины
         Parameters
@@ -72,6 +73,7 @@ class ProjectWell:
                                                 из ближайших скважин, пиксели
         """
         gdf_fact_wells = gpd.GeoDataFrame(df_wells, geometry="LINESTRING_pix")
+
         # Если требуется GeoDataFrame со скважинами ближайшего окружения того же типа
         # gdf_fact_wells = gdf_fact_wells[gdf_fact_wells["well_type"] == self.well_type].reset_index(drop=True)
         # if gdf_fact_wells.empty:
@@ -82,8 +84,16 @@ class ProjectWell:
         distances = self.LINESTRING_pix.distance(gdf_fact_wells["LINESTRING_pix"])
         gdf_fact_wells['distances'] = distances
         sorted_distances = distances.nsmallest(k)
+
+        nearest_hor_wells_index = [sorted_distances.index[0]]  # Ближайшая скважина всегда включается
+
+        for i in range(1, len(sorted_distances)):
+            # Проверяем разницу с первой добавленной ближайшей скважиной
+            if sorted_distances.iloc[i] - sorted_distances.iloc[0] < threshold:
+                nearest_hor_wells_index.append(sorted_distances.index[i])
+
         # Извлечение строк GeoDataFrame по индексам
-        self.gdf_nearest_wells = gdf_fact_wells.loc[sorted_distances.index]
+        self.gdf_nearest_wells = gdf_fact_wells.loc[nearest_hor_wells_index]
         pass
 
     def get_params_nearest_wells(self, dict_parameters_coefficients):
@@ -117,13 +127,19 @@ class ProjectWell:
             self.m = np.average(self.gdf_nearest_wells.loc[mask, 'm'],
                                 weights=1 / np.square(self.gdf_nearest_wells.loc[mask, 'distances']))
 
-        # Если установлен flag water_cut_map = False (расчет обв-ти с окружения)
+        # Если установлен switch_wc_from_map = False (расчет обв-ти с окружения)
         if not dict_parameters_coefficients['switches']['switch_wc_from_map']:
             # Обводненность - Выбираем только те скважины, которые остановлены не более 10 лет назад
-            mask = (self.gdf_nearest_wells['no_work_time'] <= 12 * 10 & self.gdf_nearest_wells['Ql_rate'] > 0)
+            mask = (self.gdf_nearest_wells['no_work_time'] <= 12 * 10) & (self.gdf_nearest_wells['Ql_rate'] > 0)
             if not sum(mask) == 0:
                 self.water_cut = np.average(self.gdf_nearest_wells.loc[mask, 'water_cut_V'],
                                             weights=1 / np.square(self.gdf_nearest_wells.loc[mask, 'distances']))
+            else:
+                self.water_cut = 100
+                logger.error(f"У скважины {self.well_number}, отсутствует окружение для актуального расчета "
+                             f"обводненности!"
+                             f"\nЗаданное значение обводненности 100%,"
+                             f" скважины окружения:{self.gdf_nearest_wells.well_number.to_list()}")
         pass
 
     def get_params_maps(self, maps):
@@ -175,7 +191,8 @@ class ProjectWell:
         well_params['r_e'] = self.r_eff
         well_params['FracCount'] = check_FracCount(well_params['Type_Frac'],
                                                    well_params['length_FracStage'],
-                                                   well_params['L'])
+                                                   well_params['L'],
+                                                   self.well_type)
         self.init_Ql_rate_V, self.init_Qo_rate, self.So = calculate_starting_rate(reservoir_params, fluid_params,
                                                                                   well_params, coefficients,
                                                                                   kv_kh, Swc, Sor, Fw, m1, Fo, m2, Bw)

@@ -21,7 +21,7 @@
   </property>
   <property name="windowIcon">
    <iconset>
-    <normalon>../../../../../../111.png</normalon>
+    <normalon>../../../../../111.png</normalon>
    </iconset>
   </property>
   <property name="windowOpacity">
@@ -431,12 +431,18 @@ QMenuBar::item {
      <string>Файл</string>
     </property>
     <addaction name="action"/>
+    <addaction name="action_manual"/>
    </widget>
    <addaction name="menu"/>
   </widget>
   <action name="action">
    <property name="text">
     <string>О программе</string>
+   </property>
+  </action>
+  <action name="action_manual">
+   <property name="text">
+    <string>Руководство пользователя</string>
    </property>
   </action>
  </widget>

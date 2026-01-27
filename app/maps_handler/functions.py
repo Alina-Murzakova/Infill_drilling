@@ -10,7 +10,6 @@ from ..well_active_zones import get_value_map
 from reservoir_maps import get_maps
 
 
-@logger.catch
 def mapping(maps_directory, data_wells, **kwargs):
     """Загрузка, подготовка и расчет всех необходимых карт"""
     # Инициализация параметров загрузки
@@ -23,7 +22,9 @@ def mapping(maps_directory, data_wells, **kwargs):
     if content:
         logger.info(f"count of maps: {len(content)}")
     else:
-        raise logger.critical("no maps!")
+        error_msg = "no maps!"
+        logger.critical(error_msg)
+        raise FileExistsError(f"{error_msg}")
 
     logger.info(f"Загрузка карт из папки: {maps_directory}")
     maps, maps_to_calculate = maps_load_directory(maps_directory)
@@ -71,13 +72,17 @@ def maps_load_directory(maps_directory):
     try:
         maps.append(read_raster(f'{maps_directory}/NNT.grd'))
     except FileNotFoundError:
-        logger.error(f"В папке отсутствует файл с картой ННТ: NNT.grd")
+        error_msg = f"В папке отсутствует файл с картой ННТ: NNT.grd"
+        logger.critical(error_msg)
+        raise FileNotFoundError(f"{error_msg}")
 
     logger.info(f"Загрузка карты проницаемости")
     try:
         maps.append(read_raster(f'{maps_directory}/permeability.grd'))
     except FileNotFoundError:
-        logger.error(f"В папке отсутствует файл с картой проницаемости: permeability.grd")
+        error_msg = f"В папке отсутствует файл с картой проницаемости: permeability.grd"
+        logger.critical(error_msg)
+        raise FileNotFoundError(f"{error_msg}")
 
     logger.info(f"Загрузка карты ОИЗ")
     try:
@@ -99,19 +104,32 @@ def maps_load_directory(maps_directory):
     try:
         maps.append(read_raster(f'{maps_directory}/pressure.grd'))
     except FileNotFoundError:
-        logger.error(f"В папке отсутствует файл с картой изобар: pressure.grd")
+        error_msg = f"В папке отсутствует файл с картой изобар: pressure.grd"
+        logger.critical(error_msg)
+        raise FileNotFoundError(f"{error_msg}")
 
     logger.info(f"Загрузка карты начальной нефтенасыщенности")
     try:
         maps.append(read_raster(f'{maps_directory}/initial_oil_saturation.grd'))
     except FileNotFoundError:
-        logger.error(f"В папке отсутствует файл с картой начальной нефтенасыщенности: initial_oil_saturation.grd")
+        error_msg = f"В папке отсутствует файл с картой начальной нефтенасыщенности: initial_oil_saturation.grd"
+        logger.critical(error_msg)
+        raise FileNotFoundError(f"{error_msg}")
 
     logger.info(f"Загрузка карты пористости")
     try:
         maps.append(read_raster(f'{maps_directory}/porosity.grd'))
     except FileNotFoundError:
-        logger.error(f"В папке отсутствует файл с картой пористости: porosity.grd")
+        error_msg = f"В папке отсутствует файл с картой пористости: porosity.grd"
+        logger.critical(error_msg)
+        raise FileNotFoundError(f"{error_msg}")
+
+    # проверка на наличие пустых карт
+    for array_map in maps:
+        if not (np.any((array_map.data != 0) & ~np.isnan(array_map.data))):
+            error_msg = f"Карта {array_map.type_map} пустая, проверьте формат загрузки и значения"
+            logger.critical(error_msg)
+            raise ValueError(f"{error_msg}")
     return maps, maps_to_calculate
 
 

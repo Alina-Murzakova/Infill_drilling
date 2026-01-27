@@ -16,7 +16,7 @@ from app.well_active_zones import combine_to_linestring
 from longsgis import voronoiDiagram4plg
 
 
-def summary_table(list_zones):
+def summary_table(list_zones, switch_economy):
     """Подготовка краткой сводки по расчету"""
 
     def round_if_numeric(value, decimal=2):
@@ -48,17 +48,47 @@ def summary_table(list_zones):
              [round(drill_zone.Ql / 1000, 2) if isinstance(drill_zone.Ql, float)
               else drill_zone.Ql for drill_zone in list_zones],
          })
+
+    if switch_economy:
+        df_summary_table_economy = pd.DataFrame(
+            {'Зона': [int(drill_zone.rating) if isinstance(drill_zone.rating, float)
+                  else drill_zone.rating for drill_zone in list_zones],
+             'Средний PI зоны': [round(drill_zone.PI, 2) if isinstance(drill_zone.PI, float)
+              else drill_zone.PI for drill_zone in list_zones],
+             'Суммарный NPV за\nрент. период, тыс.руб.': [round(np.sum(drill_zone.NPV), 2)
+                                                          if isinstance(np.sum(drill_zone.NPV), float)
+              else drill_zone.NPV for drill_zone in list_zones],
+             'Кол-во скважин\nс ГЭП>1': [sum(np.count_nonzero(well.year_economic_limit > 0)
+                                             for well in drill_zone.list_project_wells) for drill_zone in list_zones],
+             })
+        df_summary_table = df_summary_table.merge(df_summary_table_economy, left_on='Зона', right_on='Зона')
+
     df_summary_table = df_summary_table[df_summary_table['Зона'] != -1]
-    df_summary_table.loc['Всего'] = [
-        'Всего',
-        df_summary_table['Количество\nскважин'].sum(),
-        round(df_summary_table['Средний индекс\nуспешности бурения'].mean(), 2),
-        round(df_summary_table['Запасы, тыс т'].sum(), 2),
-        df_summary_table['Средний запускной\nдебит нефти, т/сут'].mean(),
-        df_summary_table['Средний запускной\nдебит жидкости, м3/сут'].mean(),
-        df_summary_table['Средняя\nобводненность, %'].mean(),
-        df_summary_table['Накопленная добыча\nнефти (25 лет), тыс.т'].sum(),
-        df_summary_table['Накопленная добыча\nжидкости (25 лет), тыс.т'].sum()]
+    if switch_economy:
+        df_summary_table.loc['Всего'] = [
+            'Всего',
+            df_summary_table['Количество\nскважин'].sum(),
+            round(df_summary_table['Средний индекс\nуспешности бурения'].mean(), 2),
+            round(df_summary_table['Запасы, тыс т'].sum(), 2),
+            round(df_summary_table['Средний запускной\nдебит нефти, т/сут'].mean(), 2),
+            round(df_summary_table['Средний запускной\nдебит жидкости, м3/сут'].mean(), 2),
+            round(df_summary_table['Средняя\nобводненность, %'].mean(), 2),
+            round(df_summary_table['Накопленная добыча\nнефти (25 лет), тыс.т'].sum(), 2),
+            round(df_summary_table['Накопленная добыча\nжидкости (25 лет), тыс.т'].sum(), 2),
+            round(df_summary_table['Средний PI зоны'].mean(), 2),
+            round(df_summary_table['Суммарный NPV за\nрент. период, тыс.руб.'].sum(), 2),
+            round(df_summary_table['Кол-во скважин\nс ГЭП>1'].sum(), 2)]
+    else:
+        df_summary_table.loc['Всего'] = [
+            'Всего',
+            df_summary_table['Количество\nскважин'].sum(),
+            round(df_summary_table['Средний индекс\nуспешности бурения'].mean(), 2),
+            round(df_summary_table['Запасы, тыс т'].sum(), 2),
+            round(df_summary_table['Средний запускной\nдебит нефти, т/сут'].mean(), 2),
+            round(df_summary_table['Средний запускной\nдебит жидкости, м3/сут'].mean(), 2),
+            round(df_summary_table['Средняя\nобводненность, %'].mean(), 2),
+            round(df_summary_table['Накопленная добыча\nнефти (25 лет), тыс.т'].sum(), 2),
+            round(df_summary_table['Накопленная добыча\nжидкости (25 лет), тыс.т'].sum(), 2)]
     df_summary_table = df_summary_table.fillna('')
     return df_summary_table
 
@@ -90,7 +120,10 @@ def save_contours(list_zones, map_conv, save_directory_contours, type_calc='buff
                 if isinstance(buffered, Polygon):
                     x_boundary, y_boundary = buffered.exterior.xy
                 else:
-                    raise logger.error("Не удалось построить границу зоны. Проверьте размер buffer или входные данные.")
+
+                    error_msg = "Не удалось построить границу зоны. Проверьте размер buffer или входные данные."
+                    logger.critical(error_msg)
+                    raise ValueError(f"{error_msg}")
             elif type_calc == 'alpha':
                 # Создаем список точек
                 points = np.array(list(zip(x_coordinates, y_coordinates)))
@@ -108,8 +141,9 @@ def save_contours(list_zones, map_conv, save_directory_contours, type_calc='buff
                     for poly in alpha_shape.geoms:
                         logger.info(f"Площадь полигона Мультиполигона {drill_zone.rating}: {poly.area / 1000000} кв.км")
                 else:
-                    raise logger.error(
-                        "Не удалось построить границу зоны. Проверьте параметр alpha или входные данные.")
+                    error_msg = "Не удалось построить границу зоны. Проверьте параметр alpha или входные данные."
+                    logger.critical(error_msg)
+                    raise ValueError(f"{error_msg}")
             elif type_calc == 'convex_hull':
                 mesh = list(map(lambda x, y: Point(x, y), x_coordinates, y_coordinates))
                 ob = Polygon(mesh)
@@ -117,7 +151,9 @@ def save_contours(list_zones, map_conv, save_directory_contours, type_calc='buff
                 boundary_drill_zone = ob.convex_hull
                 x_boundary, y_boundary = boundary_drill_zone.exterior.coords.xy
             else:
-                raise logger.error(f"Проверьте значение параметра type_calc: {type_calc}")
+                error_msg = f"Проверьте значение параметра type_calc: {type_calc}"
+                logger.critical(error_msg)
+                raise ValueError(f"{error_msg}")
             name_txt = f'{save_directory_contours}/{drill_zone.rating}.txt'
             with open(name_txt, "w") as file:
                 file.write(f"/\n")
@@ -154,7 +190,9 @@ def get_save_path(program_name: str = "default") -> str:
             if len(list_drives) >= 1:
                 save_drive = list_drives[0]
             else:
-                logger.error(PermissionError)
+                error_msg = f"У пользователя нет прав доступа на запись на диск {save_drive}"
+                logger.critical(error_msg)
+                raise PermissionError(f"{error_msg}")
 
         current_user = os.getlogin()
         profile_dir = [dir_ for dir_ in os.listdir(save_drive) if dir_.lower() == "profiles"
@@ -332,8 +370,9 @@ def save_picture_voronoi(df_Coordinates, filename, type_coord="geo", default_siz
     elif type_coord == 'pix':
         LINESTRING = 'LINESTRING_pix'
     else:
-        LINESTRING = None
-        logger.error("Неверный тип координат.")
+        error_msg = "Неверный тип координат."
+        logger.critical(error_msg)
+        raise TypeError(f"{error_msg}")
 
     df_MZS = df_Coordinates[df_Coordinates.type_wellbore == "МЗС"].copy()
     df_Coordinates_other = df_Coordinates[df_Coordinates.type_wellbore != "МЗС"].copy()

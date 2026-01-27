@@ -49,14 +49,16 @@ def load_geo_phys_properties(path_geo_phys_properties, name_field, name_object):
                                                                & (df_geo_phys_properties.object ==
                                                                   "default_properties")]
     if df_geo_phys_properties_field_mean.empty:
-        logger.error(f"В файле ГФХ нет данных по месторождению {name_field}")
-        return None
+        error_msg = f"В файле ГФХ нет данных по месторождению {name_field}"
+        logger.critical(error_msg)
+        raise ValueError(f"{error_msg}")
 
     df_geo_phys_properties_field = df_geo_phys_properties[(df_geo_phys_properties.field == name_field)
                                                           & (df_geo_phys_properties.object == name_object)]
     if df_geo_phys_properties_field.shape[0] > 1:
-        logger.error(f"В файле ГФХ больше одной строчки для объекта {name_field} месторождения {name_field}")
-        return None
+        error_msg = f"В файле ГФХ больше одной строчки для объекта {name_field} месторождения {name_field}"
+        logger.critical(error_msg)
+        raise ValueError(f"{error_msg}")
     else:
         if df_geo_phys_properties_field.empty:
             logger.info(f"В файле ГФХ не найден объект {name_field} месторождения {name_field}. "
@@ -79,7 +81,9 @@ def load_geo_phys_properties(path_geo_phys_properties, name_field, name_object):
                 if value_mean > 0:
                     dict_geo_phys_properties_field[prop] = value_mean
                 else:
-                    logger.error(f"Свойство {prop} задано некорректно: {value}")
+                    error_msg = f"Свойство {prop} задано некорректно: {value}"
+                    logger.critical(error_msg)
+                    raise ValueError(f"{error_msg}")
         return formatting_dict_geo_phys_properties(dict_geo_phys_properties_field)
 
 

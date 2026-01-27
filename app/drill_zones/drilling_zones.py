@@ -1,3 +1,5 @@
+import copy
+
 import numpy as np
 import geopandas as gpd
 import pandas as pd
@@ -54,13 +56,13 @@ class DrillZone:
         self.area = len(self.x_coordinates) * map_rrr.geo_transform[1] ** 2 / 1000000
         pass
 
-    @logger.catch
     def get_init_project_wells(self, map_rrr, data_wells, gdf_project_wells_all, polygon_OI, default_size_pixel,
                                init_profit_cum_oil, dict_parameters):
         """Расчет количества проектных скважин в перспективной зоне"""
         # Инициализация параметров
         gdf_project_wells = gpd.GeoDataFrame(geometry=[])
-        buffer_project_wells = dict_parameters['well_params']['proj_wells_params']['buffer_project_wells']
+        buffer_project_wells = (dict_parameters['well_params']["proj_wells_params"]['buffer_project_wells']
+                                / default_size_pixel)
         threshold = dict_parameters['well_params']['proj_wells_params']['threshold']
         k_wells = dict_parameters['well_params']['proj_wells_params']['k']
         min_length = dict_parameters['well_params']['proj_wells_params']['min_length']
@@ -112,7 +114,7 @@ class DrillZone:
                     project_well.LINESTRING_geo = LineString([project_well.POINT_T1_geo, project_well.POINT_T3_geo])
                 project_well.length_geo = project_well.LINESTRING_geo.length
                 # Определение ближайшего окружения и параметров с него
-                project_well.get_nearest_wells(df_fact_wells, k=k_wells)
+                project_well.get_nearest_wells(df_fact_wells, threshold, k=k_wells)
                 project_well.get_params_nearest_wells(dict_parameters)
                 self.list_project_wells.append(project_well)
             # Количество проектных скважин в перспективной зоне
@@ -163,7 +165,7 @@ class DrillZone:
         for project_well in self.list_project_wells:
             Qo_rate.append(project_well.init_Qo_rate)
             Ql_rate.append(project_well.init_Ql_rate_V)
-            water_cut.append(project_well.water_cut.copy())
+            water_cut.append(copy.deepcopy(project_well.water_cut))
             if self.Qo is None:
                 self.Qo = project_well.Qo.copy()
             else:
@@ -222,7 +224,6 @@ class DrillZone:
         pass
 
 
-@logger.catch
 def calculate_drilling_zones(maps, epsilon, min_samples, percent_low, data_wells, dict_properties):
     """
     Выделение зон для уверенного бурения с высоким индексом возможности OI

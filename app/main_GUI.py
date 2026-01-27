@@ -6,9 +6,11 @@ import pandas as pd
 
 from app.gui.widgets.result import ResultWidget
 from PyQt6 import QtWidgets, QtGui, QtCore
-from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import QThread, QObject, pyqtSignal, Qt
+from PyQt6.QtCore import QThread, QObject, pyqtSignal
 from loguru import logger
+from PyQt6.QtWidgets import QApplication, QMessageBox
+from PyQt6.QtCore import QUrl
+from PyQt6.QtGui import QDesktopServices
 
 from app.gui.main_window_ui import Ui_MainWindow
 from app.input_output.output_functions import get_save_path
@@ -44,7 +46,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Создаем виджет результатов и добавляем его в stackedWidget
         self.result_widget = ResultWidget()
-        # Находим индекс страницы результатов (предположим, что это 7-я страница)
+        # Находим индекс страницы результатов (7-я страница)
         self.ui.stackedWidget.insertWidget(7, self.result_widget)
 
         # Находим иконки по правильным путям
@@ -68,6 +70,9 @@ class MainWindow(QtWidgets.QMainWindow):
         # "О программе"
         self.ui.action.triggered.connect(self.go_to_start_page)
 
+        # "Руководство пользователя"
+        self.ui.action_manual.triggered.connect(self.open_user_manual)
+
         # Запуск расчета
         self.ui.btnCalc.clicked.connect(self.run_calculation)
 
@@ -79,6 +84,31 @@ class MainWindow(QtWidgets.QMainWindow):
         START_PAGE_INDEX = 0
         self.ui.stackedWidget.setCurrentIndex(START_PAGE_INDEX)
         self.ui.listWidget.setCurrentRow(-1)
+
+    def open_user_manual(self):
+        """Открытие файла руководства"""
+        try:
+            # Определяем базовый путь
+            if getattr(sys, 'frozen', False):
+                base_path = sys._MEIPASS
+            else:
+                base_path = os.path.dirname(os.path.abspath(__file__))
+
+            # Путь к файлу
+            manual_path = os.path.join(base_path, "gui/resources", "manual.docx")
+
+            # Проверяем существование
+            if not os.path.exists(manual_path):
+                QMessageBox.critical(self, "Ошибка", "Файл руководства не найден!")
+                return
+
+            # Просто открываем файл
+            # Word автоматически откроет его как обычный документ
+            # Пользователь не сможет сохранить изменения в исходный файл
+            QDesktopServices.openUrl(QUrl.fromLocalFile(manual_path))
+
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при открытии файла: {str(e)}")
 
     def collect_all_gui_data(self) -> dict:
         """Сбор данных с интерфейса"""
@@ -141,14 +171,14 @@ class MainWindow(QtWidgets.QMainWindow):
                      "default_radius_prod": gui_data["well_params"]["default_radius_prod"],
                      "default_radius_inj": gui_data["well_params"]["default_radius_inj"]},
 
-            "proj_wells_params":
-                {"L": gui_data["well_params"]["L"],
-                 "min_length": gui_data["well_params"]["min_length"],
-                 "buffer_project_wells": gui_data["well_params"]["buffer_project_wells"],
-                 "fix_P_well_init": gui_data["well_params"]["fix_P_well_init"],
-                 "k": gui_data["well_params"]["k"],
-                 "threshold": gui_data["well_params"]["threshold"],
-                 'period_calculation': gui_data["well_params"]["period_calculation"]}},
+                "proj_wells_params":
+                    {"L": gui_data["well_params"]["L"],
+                     "min_length": gui_data["well_params"]["min_length"],
+                     "buffer_project_wells": gui_data["well_params"]["buffer_project_wells"],
+                     "fix_P_well_init": gui_data["well_params"]["fix_P_well_init"],
+                     "k": gui_data["well_params"]["k"],
+                     "threshold": gui_data["well_params"]["threshold"],
+                     'period_calculation': gui_data["well_params"]["period_calculation"]}},
 
             "reservoir_fluid_properties": {"kv_kh": gui_data["res_fluid_params"]["kv_kh"],
                                            "Swc": gui_data["res_fluid_params"]["Swc"],

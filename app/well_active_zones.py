@@ -112,9 +112,9 @@ def get_parameters_voronoi_cells(df_Coordinates, type_coord="geo", default_size_
         LINESTRING = 'LINESTRING_pix'
         length_well = 'length_pix'
     else:
-        LINESTRING = None
-        length_well = None
-        logger.error("Неверный тип координат.")
+        error_msg = "Неверный тип координат."
+        logger.critical(error_msg)
+        raise TypeError(f"{error_msg}")
 
     df_MZS = df_Coordinates[df_Coordinates.type_wellbore == "МЗС"].copy()
     df_Coordinates_other = df_Coordinates[df_Coordinates.type_wellbore != "МЗС"].copy()

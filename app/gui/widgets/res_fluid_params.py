@@ -1,4 +1,6 @@
 from PyQt6 import QtWidgets, QtGui, QtCore
+
+from app.gui.widgets.functions_ui import widgets_switch
 from app.gui.widgets.res_fluid_params_ui import Ui_ResFluidPage
 
 
@@ -9,6 +11,28 @@ class ResFluidWidget(QtWidgets.QWidget):
         self.ui.setupUi(self)
 
         self.setup_validators()
+
+        # Группируем связанные элементы
+        self.resfluid_elements = [
+            # (поле_ввода, подпись)
+            (self.ui.leSor, self.ui.lblSor),
+            (self.ui.leSwc, self.ui.lblSwc),
+            (self.ui.leFo, self.ui.lblFo),
+            (self.ui.leFw, self.ui.lblFw),
+            (self.ui.leCoreyOil, self.ui.lblCoreyOil),
+            (self.ui.leCoreyWater, self.ui.lblCoreyWater)
+        ]
+
+        # Подключаем сигнал
+        self.ui.chkRelativePerm.toggled.connect(self.toggle_economy_fields)
+
+        # Устанавливаем начальное состояние
+        self.toggle_economy_fields(self.ui.chkRelativePerm.isChecked())
+
+    def toggle_economy_fields(self, is_checked):
+        """Включает/выключает поля экономических параметров"""
+        for widgets in self.resfluid_elements:
+            widgets_switch(is_checked, widgets, type_switch='not_same')
 
     def setup_validators(self):
         """Проверка полей"""

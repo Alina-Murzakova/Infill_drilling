@@ -5,7 +5,7 @@ import numpy as np
 from app.economy.functions import bring_arrays_to_one_date, calculate_depreciation_base, linear_depreciation, \
     calculate_irr_root_scalar, calculate_mirr, calculate_production_by_years, calculate_performance_indicators, \
     calculation_Kg
-from app.ranking_drilling.starting_rates import check_FracCount
+from app.input_output.input_frac_info import check_FracCount
 
 
 class FinancialEconomicModel:
@@ -187,7 +187,8 @@ class FinancialEconomicModel:
         cost_production_drilling = self.cost_production_drilling_vertical
         if well_type == 'horizontal':
             cost_production_drilling = self.cost_production_drilling_horizontal
-        FracCount = check_FracCount(well_params['Type_Frac'], well_params['length_FracStage'], well_params['L'])
+        FracCount = check_FracCount(well_params['Type_Frac'], well_params['length_FracStage'],
+                                    well_params['L'], well_type)
         cost_production_drilling += FracCount * self.cost_stage_GRP
         cost_production_drilling += self.cost_secondary_material_resources + self.cost_pilot_drill
 

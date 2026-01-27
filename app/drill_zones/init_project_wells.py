@@ -185,7 +185,7 @@ def convert_multipolygon(row, gdf_clusters, coef_area=0.4):
                 intersecting_polygon_zones = [surround_poly]
             else:
                 intersecting_polygon_zones = []
-                logger.error(f"Кластер скважины не Polygon/MultiPolygon")
+                logger.warning(f"Кластер скважины не Polygon/MultiPolygon")
 
             # Проверяем пересечение и размер зон
             for nearest_zone in intersecting_polygon_zones:

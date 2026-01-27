@@ -316,7 +316,7 @@ def extract_well_number(well_name):
     if match:
         return int(match.group(1))
     else:
-        logger.error(f"Не удалось извлечь численную часть номера скважины - {well_name}")
+        logger.warning(f"Не удалось извлечь численную часть номера скважины - {well_name}")
         return None
 
 
