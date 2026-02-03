@@ -4,7 +4,7 @@ import pandas as pd
 
 from app.config import translation_dict_local_parameters
 from app.input_output.output_functions import summary_table, create_new_dir, save_map_permeability_fact_wells, \
-    save_ranking_drilling_to_excel, save_picture_clustering_zones, remove_keys, dict_to_df, create_df_project_wells
+    save_ranking_drilling_to_excel, save_picture_clustering_zones, dict_to_df, create_df_project_wells, save_local_parameters
 
 
 def upload_data(name_field, name_object, save_directory, data_wells, maps, list_zones, info_clusterization_zones,
@@ -94,19 +94,7 @@ def upload_data(name_field, name_object, save_directory, data_wells, maps, list_
     #               buffer_size=40)
 
     logger.info("Сохранение local_parameters")
-    # Удаляем параметры, которые были рассчитаны
-    list_keys = ['Bo', 'P_init', 'Pb', 'c_o', 'c_r', 'c_w', 'gor', 'k_h', 'mu_o', 'mu_w', 'rho',
-                 'save_directory', 'all_P_wells_init']
-    parameters = remove_keys(parameters, list_keys)
-    # Сохранение local_parameters
-    save_path = f"{save_directory}/.debug/local_parameters.py"
-    with open(save_path, 'w', encoding='utf-8') as f:
-        # Используем pprint для красивого форматирования
-        import pprint
-
-        f.write('import datetime\n\n')
-        f.write('parameters = ')
-        pprint.pprint(parameters, f, indent=4, width=100, depth=None)
+    save_local_parameters(parameters, f"{save_directory}/.debug/local_parameters.py")
 
     logger.info("Сохранение .xlsx с основными параметрами расчета и сводной таблицей")
     # Переводим parameters в df

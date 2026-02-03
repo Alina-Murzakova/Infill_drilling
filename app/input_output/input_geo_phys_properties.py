@@ -10,16 +10,27 @@ def load_geo_phys_properties(path_geo_phys_properties, name_field, name_object):
     """Создание словаря ГФХ для пласта"""
     # Загрузка файла
     df_geo_phys_properties = pd.read_excel(os.path.join(os.path.dirname(__file__), path_geo_phys_properties))
-    # Переименование колонок
-    df_geo_phys_properties = df_geo_phys_properties[list(gpch_column_name.keys())]
-    df_geo_phys_properties.columns = list(map(lambda x: list(x.keys())[0], gpch_column_name.values()))
+    # Находим пересечение ключей словаря и колонок датафрейма
+    common_keys = set(df_geo_phys_properties.columns) & set(gpch_column_name.keys())
+
+    # Фильтруем датафрейм
+    df_geo_phys_properties = df_geo_phys_properties[list(common_keys)]
+
+    # Переименовываем колонки
+    df_geo_phys_properties.columns = [list(gpch_column_name[col].keys())[0] for col in df_geo_phys_properties.columns]
+
     # Подготовка файла
     df_geo_phys_properties = df_geo_phys_properties.fillna(0)
     df_geo_phys_properties.drop([0], inplace=True)  # Удаление строки с ед. изм.
 
-    list_dict = gpch_column_name.values()
-    df_geo_phys_properties = df_geo_phys_properties.astype(
-        {k: v for list_item in list_dict for (k, v) in list_item.items()})
+    type_dict = {
+        list(gpch_column_name[old_col].keys())[0]:  # новое имя
+            list(gpch_column_name[old_col].values())[0]  # dtype
+        for old_col in common_keys
+    }
+
+    # Применяем преобразование типов
+    df_geo_phys_properties = df_geo_phys_properties.astype(type_dict)
 
     # Удаление лишних столбцов
     list_columns = []
@@ -63,15 +74,23 @@ def load_geo_phys_properties(path_geo_phys_properties, name_field, name_object):
         if df_geo_phys_properties_field.empty:
             logger.info(f"В файле ГФХ не найден объект {name_field} месторождения {name_field}. "
                         f"Используются средние значения по месторождению для объекта.")
-            dict_geo_phys_properties_field = df_geo_phys_properties_field_mean.iloc[0][5:].to_dict()
+            dict_geo_phys_properties_field = df_geo_phys_properties_field_mean.iloc[0].to_dict()
         else:
-            dict_geo_phys_properties_field = df_geo_phys_properties_field.iloc[0][5:].to_dict()
+            dict_geo_phys_properties_field = df_geo_phys_properties_field.iloc[0].to_dict()
 
         # Проверка наличия требуемых свойств
-        list_properties = ['formation_compressibility', 'water_viscosity_in_situ',
-                           'oil_viscosity_in_situ', 'oil_compressibility',
+        list_properties = ['formation_compressibility', 'init_pressure', 'permeability',
+                           'water_viscosity_in_situ', 'oil_viscosity_in_situ', 'oil_compressibility',
                            'water_compressibility', 'Bo', 'bubble_point_pressure',
                            'oil_density_at_surf', 'gas_oil_ratio']
+
+        missing_keys = [prop for prop in list_properties if prop not in dict_geo_phys_properties_field]
+
+        if missing_keys:
+            error_msg = f"Отсутствуют обязательные свойства в данных: {missing_keys}"
+            logger.critical(error_msg)
+            raise KeyError(error_msg)
+
         # для 'init_pressure' есть проверка при построении карты рисков, если оно 0,
         # то используется максимальное значение с карты
         for prop in list_properties:

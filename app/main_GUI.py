@@ -13,7 +13,7 @@ from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QDesktopServices
 
 from app.gui.main_window_ui import Ui_MainWindow
-from app.input_output.output_functions import get_save_path
+from app.input_output.output_functions import get_save_path, save_local_parameters
 from app.main import run_model
 from app.exceptions import CalculationCancelled
 from app.gui.widgets.functions_ui import validate_paths
@@ -288,7 +288,7 @@ class Worker(QObject):
         # Храним результаты здесь
         self.summary_table = None
         # Получаем предварительную save_directory из параметров до запуска
-        self.save_directory = get_save_path("Infill_drilling")
+        self.save_directory = get_save_path("АВНС")
 
         # Перехват loguru-логов
         self.qt_logger = QtLogger()
@@ -336,7 +336,7 @@ class Worker(QObject):
             message = f"⚠ Ошибка расчёта:\n{str(e)}"
             logger.error(message)
             # Сохраняем логи при ошибке
-            self._save_error_to_file(e)
+            self._save_error_to_file(e, self.parameters)
 
             self.finished.emit(False, message)
 
@@ -344,7 +344,7 @@ class Worker(QObject):
             if self._sink_id is not None:
                 logger.remove(self._sink_id)
 
-    def _save_error_to_file(self, error):
+    def _save_error_to_file(self, error, parameters):
         """Сохраняет информацию об ошибке в файл"""
         try:
             if self.save_directory:
@@ -366,6 +366,7 @@ class Worker(QObject):
                     f.write(content)
                     f.write("=" * 60 + "\n\n")
 
+                save_local_parameters(parameters, f"{self.save_directory}/.debug/local_parameters.py")
                 logger.info(f"Информация об ошибке сохранена в: {log_path}")
 
         except Exception as log_error:

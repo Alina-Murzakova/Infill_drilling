@@ -44,7 +44,7 @@ class EconomyWidget(QtWidgets.QWidget):
     def get_data(self):
         return {
             "switch_economy": self.ui.chkCalcEconomy.isChecked(),
-            "start_date": datetime(self.ui.leStartDate.date().year(),
+            "start_date": datetime(self.ui.leStartDate.date().year()+1,
                                    self.ui.leStartDate.date().month(),
                                    self.ui.leStartDate.date().day()),
             "day_in_month": int(self.ui.leNumDays.text()),

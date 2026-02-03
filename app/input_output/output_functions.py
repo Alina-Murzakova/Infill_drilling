@@ -1,5 +1,4 @@
 import os
-import pickle
 import alphashape
 import win32api
 from decimal import Decimal
@@ -52,12 +51,12 @@ def summary_table(list_zones, switch_economy):
     if switch_economy:
         df_summary_table_economy = pd.DataFrame(
             {'Зона': [int(drill_zone.rating) if isinstance(drill_zone.rating, float)
-                  else drill_zone.rating for drill_zone in list_zones],
+                      else drill_zone.rating for drill_zone in list_zones],
              'Средний PI зоны': [round(drill_zone.PI, 2) if isinstance(drill_zone.PI, float)
-              else drill_zone.PI for drill_zone in list_zones],
+                                 else drill_zone.PI for drill_zone in list_zones],
              'Суммарный NPV за\nрент. период, тыс.руб.': [round(np.sum(drill_zone.NPV), 2)
                                                           if isinstance(np.sum(drill_zone.NPV), float)
-              else drill_zone.NPV for drill_zone in list_zones],
+                                                          else drill_zone.NPV for drill_zone in list_zones],
              'Кол-во скважин\nс ГЭП>1': [sum(np.count_nonzero(well.year_economic_limit > 0)
                                              for well in drill_zone.list_project_wells) for drill_zone in list_zones],
              })
@@ -209,9 +208,14 @@ def get_save_path(program_name: str = "default") -> str:
 
 
 def create_new_dir(path: str) -> None:
-    if not os.path.isdir(path):
-        os.makedirs(path)
-    pass
+    """
+    Создает директорию.
+
+    Args:
+        path: Путь к директории
+    """
+    # Создаем директорию (не вызовет ошибку если уже существует)
+    os.makedirs(path, exist_ok=True)
 
 
 def save_ranking_drilling_to_excel(name_field, name_object, list_zones, filename, switch_economy):
@@ -556,3 +560,19 @@ def dict_to_df(data: Dict[str, Any], translation_dict: Dict[str, str] = None) ->
     df = pd.DataFrame(flat_data, columns=column_names)
 
     return df
+
+
+def save_local_parameters(parameters, save_path):
+    """Сохранение файла local_parameters.py"""
+    # Удаляем параметры, которые были рассчитаны
+    list_keys = ['Bo', 'P_init', 'Pb', 'c_o', 'c_r', 'c_w', 'gor', 'k_h', 'mu_o', 'mu_w', 'rho',
+                 'save_directory', 'all_P_wells_init']
+    parameters = remove_keys(parameters, list_keys)
+    with open(save_path, 'w', encoding='utf-8') as f:
+        # Используем pprint для красивого форматирования
+        import pprint
+
+        f.write('import datetime\n\n')
+        f.write('parameters = ')
+        pprint.pprint(parameters, f, indent=4, width=100, depth=None)
+    pass

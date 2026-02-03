@@ -8,7 +8,7 @@ class InitialDataWidget(QtWidgets.QWidget):
         super().__init__()
         self.ui = Ui_InitialDataPage()
         self.ui.setupUi(self)
-        self.ui.leSave.setText(get_save_path('Infill_drilling'))
+        self.ui.leSave.setText(get_save_path('АВНС'))
 
         self.setup_file_buttons()
 

@@ -9,10 +9,11 @@ from loguru import logger
 from shapely import Point, LineString
 
 from app.drill_zones.init_project_wells import get_project_wells_from_clusters
-from app.maps_handler.functions import apply_wells_mask
+from app.maps_handler.functions import apply_wells_mask, calculate_reservoir_state_maps, calculate_score_maps
 from app.maps_handler.maps import Map
 from app.project_wells import ProjectWell
 from app.drill_zones.init_project_wells import create_gdf_with_polygons, clusterize_drill_zone
+from app.reservoir_kr_optimizer import get_reservoir_kr
 
 
 class DrillZone:
@@ -308,12 +309,12 @@ def clusterization_zones(map_opportunity_index, epsilon, min_samples, percent_lo
 if __name__ == '__main__':
     # Скрипт для перебора гиперпараметров DBSCAN по карте cut_map_opportunity_index.grd
     import matplotlib.pyplot as plt
-    from app.input_output.input_wells_data import load_wells_data
+    from app.input_output.input_wells_data import load_wells_data, prepare_wells_data
     from app.input_output.input_geo_phys_properties import load_geo_phys_properties
-    from app.input_output.output import get_save_path
-    from app.local_parameters import main_parameters, constants
+    from app.local_parameters import parameters
     from app.well_active_zones import calculate_effective_radius
     from app.maps_handler.functions import mapping
+    from app.input_output.output_functions import get_save_path, create_new_dir
     import math
     import itertools
 
@@ -322,49 +323,61 @@ if __name__ == '__main__':
     # Генерация всех возможных сочетаний по два
     combinations = list(itertools.product(min_radius, sensitivity_quality_drill))
 
+    save_dir = get_save_path("Infill_drilling")
+    parameters['paths']['save_directory'] = save_dir
     # Пути
-    paths = main_parameters['paths']
+    paths = parameters['paths']
     # Параметры расчета
-    parameters_calculation = main_parameters['parameters_calculation']
-    # Параметры для скважин проектного фонда РБ
-    well_params = main_parameters['well_params']
+    drill_zones_params = parameters['drill_zones']
 
     # Константы расчета
-    load_data_param = constants['load_data_param']
-    default_coefficients = constants['default_coefficients']
-    default_well_params = constants['default_well_params']
-    if constants['default_project_well_params']['buffer_project_wells'] <= 0:
+    if parameters['well_params']['proj_wells_params']['buffer_project_wells'] <= 0:
         # нижнее ограничение на расстояние до фактических скважин от проектной
-        constants['default_project_well_params']['buffer_project_wells'] = 10
-    well_params.update(constants['default_project_well_params'])
+        parameters['well_params']['proj_wells_params']['buffer_project_wells'] = 10
 
     logger.info("Загрузка скважинных данных")
-    (data_history, data_wells,
-     info_object_calculation) = load_wells_data(data_well_directory=paths["data_well_directory"],
-                                                first_months=load_data_param['first_months'])
+    data_history, info_object_calculation = load_wells_data(data_well_directory=paths["data_well_directory"])
     name_field, name_object = info_object_calculation.get("field"), info_object_calculation.get("object_value")
-    save_directory = get_save_path("Infill_drilling", name_field, name_object.replace('/', '-'))
+    save_directory = paths['save_directory']
+    create_new_dir(f"{save_directory}/.debug")
 
     logger.info(f"Загрузка ГФХ по пласту {name_object.replace('/', '-')} месторождения {name_field}")
-    dict_parameters_coefficients = load_geo_phys_properties(paths["path_geo_phys_properties"], name_field, name_object)
-    dict_parameters_coefficients.update({'well_params': well_params,
-                                         'default_well_params': default_well_params,
-                                         'coefficients': default_coefficients})
+    dict_geo_phys_properties = load_geo_phys_properties(paths["path_geo_phys_properties"], name_field, name_object)
+    parameters["reservoir_fluid_properties"].update(dict_geo_phys_properties)
+
+    logger.info("подготовка скважинных данных")
+    data_history, data_wells = (
+        prepare_wells_data(data_history, dict_properties=parameters,
+                           first_months=parameters['well_params']['fact_wells_params']['first_months']))
 
     logger.info("Загрузка и обработка карт")
     maps, data_wells, maps_to_calculate = mapping(maps_directory=paths["maps_directory"],
                                                   data_wells=data_wells,
-                                                  dict_properties=dict_parameters_coefficients['reservoir_params'],
-                                                  **load_data_param)
+                                                  **{**parameters['maps'], **parameters['switches']})
     default_size_pixel = maps[0].geo_transform[1]  # размер ячейки после загрузки всех карт
+
+    logger.info("Расчет радиусов дренирования и нагнетания для скважин")
+    data_wells = calculate_effective_radius(data_wells, dict_properties=parameters)
+
+    logger.info(f"загрузка офп, {parameters['switches']['switch_adaptation_relative_permeability']}")
+    if parameters['switches']['switch_adaptation_relative_permeability']:
+        parameters = get_reservoir_kr(data_history.copy(), data_wells.copy(), parameters)
+
+    logger.info(f"расчет карт текущего состояния: обводненности и оиз, {any(maps_to_calculate.values())}")
+    if any(maps_to_calculate.values()):
+        maps = calculate_reservoir_state_maps(data_wells,
+                                              maps,
+                                              parameters,
+                                              default_size_pixel,
+                                              maps_to_calculate,
+                                              maps_directory=paths["maps_directory"])
+    logger.info(f"расчет оценочных карт")
+    maps = maps + calculate_score_maps(maps=maps, dict_properties=parameters['reservoir_fluid_properties'])
     type_map_list = list(map(lambda raster: raster.type_map, maps))
 
     # инициализация всех необходимых карт из списка
     map_opportunity_index = maps[type_map_list.index("opportunity_index")]
-    logger.info("Расчет радиусов дренирования и нагнетания для скважин")
-    data_wells = calculate_effective_radius(data_wells, dict_properties=dict_parameters_coefficients)
-    percent_low = 100 - parameters_calculation["percent_top"]
-
+    percent_low = 100 - drill_zones_params["percent_top"]
     total_plots = len(combinations)
 
     # Вычисление количества строк и столбцов
@@ -386,7 +399,8 @@ if __name__ == '__main__':
                                                  epsilon=epsilon,
                                                  min_samples=min_samples,
                                                  percent_low=percent_low,
-                                                 data_wells=data_wells)
+                                                 data_wells=data_wells,
+                                                 dict_properties=parameters)
 
         ax_ = fig.add_subplot(rows, cols, i + 1)
 
@@ -454,10 +468,10 @@ if __name__ == '__main__':
             x_middle = x_zone[int(len(x_zone) / 2)]
             y_middle = y_zone[int(len(y_zone) / 2)]
 
-            if lab != -1:
-                # Отображение номера кластера
-                plt.text(x_zone[int(len(x_zone) / 2)], y_zone[int(len(x_zone) / 2)], lab, fontsize=font_size,
-                         color='red')
+            # if lab != -1:
+            #     # Отображение номера кластера
+            #     plt.text(x_zone[int(len(x_zone) / 2)], y_zone[int(len(x_zone) / 2)], lab, fontsize=font_size,
+            #              color='red')
 
         plt.xlim(0, map_opportunity_index.data.shape[1])
         plt.ylim(0, map_opportunity_index.data.shape[0])
@@ -470,6 +484,6 @@ if __name__ == '__main__':
         plt.title(f"min_radius = {s[0]}\n quality = {s[1]} \n with {n_clusters} clusters")
 
     fig.tight_layout()
-    plt.savefig(f"{save_directory}/drilling_index_map", dpi=300)
+    plt.savefig(f"{save_directory}/.debug/drilling_index_map", dpi=300)
     plt.close()
     pass

@@ -14,7 +14,7 @@ from app.maps_handler.functions import mapping, calculate_reservoir_state_maps, 
 from app.well_active_zones import calculate_effective_radius
 from app.drill_zones.drilling_zones import calculate_drilling_zones
 from app.project_wells import calculate_reserves_by_voronoi
-from app.input_output.output_functions import get_save_path, create_new_dir
+from app.input_output.output_functions import get_save_path, create_new_dir, save_local_parameters
 from app.input_output.output import upload_data
 from app.reservoir_kr_optimizer import get_reservoir_kr
 from app.exceptions import CalculationCancelled
@@ -51,10 +51,12 @@ def run_model(parameters, total_stages, progress=None, is_cancelled=None):
     log_stage("ЗАГРУЗКА СКВАЖИННЫХ ДАННЫХ")
     data_history, info_object_calculation = load_wells_data(data_well_directory=paths["data_well_directory"])
     name_field, name_object = info_object_calculation.get("field"), info_object_calculation.get("object_value")
-    save_directory = f"{paths['save_directory']}\\{name_field}_{name_object.replace('/', '-')}"
+    save_directory = paths['save_directory']
+    # Создание локальной папки Месторождение_Объект
+    # save_directory = f"{paths['save_directory']}\\{name_field}_{name_object.replace('/', '-')}"
     # создание пути под системные файлы
     create_new_dir(f"{save_directory}/.debug")
-    logger.add(f"{save_directory}/.debug/logs.log", mode='w')
+    logger.add(f"{save_directory}/.debug/logs.log", mode='w', encoding='utf-8')
 
     log_stage(f"ЗАГРУЗКА ГФХ ПО ПЛАСТУ {name_object.replace('/', '-')} МЕСТОРОЖДЕНИЯ {name_field}")
     dict_geo_phys_properties = load_geo_phys_properties(paths["path_geo_phys_properties"], name_field, name_object)
@@ -193,8 +195,13 @@ if __name__ == '__main__':
             error_content += traceback.format_exc()
             error_content += f"\n\nВремя выполнения до ошибки: {time.time() - start_time:.2f} секунд"
 
-            # Записываем в файл
-            log_path.write_text(error_content, encoding='utf-8')
+            # Записываем в файл с режимом 'w'
+            with open(log_path, 'a', encoding='utf-8') as f:
+                f.write(error_content)
+
+            logger.info("Сохранение local_parameters")
+            save_local_parameters(parameters, f"{save_dir}/.debug/local_parameters.py")
+
             logger.info(f"Логи ошибки сохранены в: {log_path}")
 
         sys.exit(1)

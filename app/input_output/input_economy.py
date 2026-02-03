@@ -75,20 +75,24 @@ def load_economy_data(economy_path, name_field, gor):
         df_APG_CS = pd.read_excel(xls, sheet_name="ПНГ_КС", header=0)
         df_APG_CS = df_APG_CS[df_APG_CS['Месторождение'] == name_field]
         if df_APG_CS.shape[0] < 1:
-            error_msg = f"В исходных данных ФЭМ нет привязки месторождения {name_field} к КС"
-            logger.critical(error_msg)
-            raise ValueError(f"{error_msg}")
+            logger.warning(f"В исходных данных ФЭМ нет привязки месторождения {name_field} к КС. ПНГ не монетизируется.")
+            price_APG = 0
         else:
             price_APG = df_APG_CS['Цена ПНГ (макра)'].iloc[0]
 
         # ПНГ
         df_apg = pd.read_excel(xls, sheet_name="ПНГ", header=0)
-        df_apg = df_apg[df_apg['Месторождение'] == name_field]
-        if df_apg.shape[0] < 3:
-            error_msg = f"В исходных данных ФЭМ нет данных ПНГ по месторождению {name_field}"
-            logger.critical(error_msg)
-            raise ValueError(f"{error_msg}")
+        if df_apg[df_apg['Месторождение'] == name_field].shape[0] < 3:
+            if price_APG == 0:
+                df_apg = df_apg[df_apg['Месторождение'] == df_apg['Месторождение'].iloc[0]]
+                del df_apg['Месторождение']
+                df_apg[:] = 0
+            else:
+                error_msg = f"В исходных данных ФЭМ нет данных ПНГ по месторождению {name_field}"
+                logger.critical(error_msg)
+                raise ValueError(f"{error_msg}")
         else:
+            df_apg = df_apg[df_apg['Месторождение'] == name_field]
             del df_apg['Месторождение']
 
         # Схема расчета налогов

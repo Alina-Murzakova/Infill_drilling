@@ -169,16 +169,23 @@ def get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients):
     data_wells = data_wells.merge(data_wells_for_perm[['well_number', 'permeability_fact']],
                                   how='left', on='well_number')
     data_wells['permeability_fact'] = data_wells['permeability_fact'].fillna(0)
+    data_wells['permeability_fact'] = 0
+    if not data_wells[data_wells['permeability_fact'] != 0].empty:
+        if dict_parameters_coefficients['switches']['switch_filtration_perm_fact']:
+            # Верхняя граница для фильтрации выбросов (персентиль q3)
+            permeability_lower_bound, permeability_upper_bound = quantile_filter(data_wells,
+                                                                                 name_column='permeability_fact')
+            data_wells['permeability_fact'] = np.where(data_wells['permeability_fact'] > permeability_upper_bound,
+                                                       permeability_upper_bound,
+                                                       data_wells['permeability_fact'])  # 0 / permeability_upper_bound
+        avg_permeability = data_wells[data_wells['permeability_fact'] != 0]['permeability_fact'].mean()
+        # Перезапись значения проницаемости по объекту из ГФХ на среднюю по фактическому фонду
+        dict_parameters_coefficients['reservoir_fluid_properties']['k_h'] = avg_permeability
+    else:
+        logger.warning("Фактическая проницаемость не рассчитана ни для одной фактической скважины.")
 
-    if dict_parameters_coefficients['switches']['switch_filtration_perm_fact']:
-        # Верхняя граница для фильтрации выбросов (персентиль q3)
-        permeability_lower_bound, permeability_upper_bound = quantile_filter(data_wells,
-                                                                             name_column='permeability_fact')
-        data_wells['permeability_fact'] = np.where(data_wells['permeability_fact'] > permeability_upper_bound,
-                                                   permeability_upper_bound,
-                                                   data_wells['permeability_fact'])  # 0 или permeability_upper_bound
-    avg_permeability = data_wells[data_wells['permeability_fact'] != 0]['permeability_fact'].mean()
-
+    dict_parameters_coefficients['well_params']['proj_wells_params']['all_P_wells_init'] = (
+        data_wells[data_wells['init_P_well_prod'] != 0]['init_P_well_prod'].mean())
     data_wells_permeability_excel = data_wells[["well_number", "work_marker", "well_status", "well_type", "date",
                                                 "r_eff_voronoy",
                                                 "length_geo", "FracCount",
@@ -186,11 +193,6 @@ def get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients):
                                                 "init_Ql_rate_TR", "init_water_cut_TR",
                                                 "init_P_well_prod", "init_P_reservoir_prod",
                                                 "NNT", "m", "permeability", "permeability_fact"]]
-
-    # Перезапись значения проницаемости по объекту из ГФХ на среднюю по фактическому фонду
-    dict_parameters_coefficients['reservoir_fluid_properties']['k_h'] = avg_permeability
-    dict_parameters_coefficients['well_params']['proj_wells_params']['all_P_wells_init'] = (
-        data_wells[data_wells['init_P_well_prod'] != 0]['init_P_well_prod'].mean())
     return data_wells, dict_parameters_coefficients, data_wells_permeability_excel
 
 
