@@ -310,7 +310,7 @@ class Worker(QObject):
         # Храним результаты здесь
         self.summary_table = None
         # Получаем предварительную save_directory из параметров до запуска
-        self.save_directory = get_save_path("АВНС")
+        self.save_directory = get_save_path(APP_NAME)
 
         # Перехват loguru-логов
         self.qt_logger = QtLogger()

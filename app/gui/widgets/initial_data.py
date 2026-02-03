@@ -1,6 +1,7 @@
 from PyQt6 import QtWidgets
 from app.gui.widgets.initial_data_ui import Ui_InitialDataPage
 from app.input_output.output_functions import get_save_path
+from app.version import APP_NAME
 
 
 class InitialDataWidget(QtWidgets.QWidget):
@@ -8,7 +9,7 @@ class InitialDataWidget(QtWidgets.QWidget):
         super().__init__()
         self.ui = Ui_InitialDataPage()
         self.ui.setupUi(self)
-        self.ui.leSave.setText(get_save_path('АВНС'))
+        self.ui.leSave.setText(get_save_path(APP_NAME))
 
         self.setup_file_buttons()
 
