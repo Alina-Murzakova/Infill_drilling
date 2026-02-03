@@ -526,7 +526,7 @@ def get_map_opportunity_index(map_reservoir_score, map_potential_score, map_risk
 
 def trajectory_break_points(well_type, T1_x, T1_y, T3_x, T3_y, length_of_well, default_size):
     """Формирование списка точек для ствола ГС"""
-    if well_type == 'vertical':
+    if well_type == 'vertical' or (T1_x == T3_x and T1_y == T3_y):
         return [T1_x], [T1_y]
     elif well_type == 'horizontal':
         # Количество точек вдоль ствола

@@ -13,22 +13,20 @@ class WellParamsWidget(QtWidgets.QWidget):
 
     def setup_validators(self):
         """Проверка полей"""
-        int_validator = QtGui.QRegularExpressionValidator(QtCore.QRegularExpression(r"^(0|[1-9]\d{0,5})$"))  # 0-999999
-        float_validator = QtGui.QRegularExpressionValidator(
+        int_validator = QtGui.QRegularExpressionValidator(QtCore.QRegularExpression(r"^([1-9]\d{0,5})$"))  # 1-999999
+        int_validator_zero = QtGui.QRegularExpressionValidator(QtCore.QRegularExpression(r"^(0|[1-9]\d{0,5})$"))  # 0-999999
+        decimal_fraction_validator = QtGui.QRegularExpressionValidator(
             QtCore.QRegularExpression(r"^(0(\.\d{0,3})?|1(\.0{0,3})?)$"))  # 0.000-1.000
-        pressure_validator = QtGui.QRegularExpressionValidator(
-            QtCore.QRegularExpression(r"^(1000(\.0{0,3})?|[1-9]\d{0,2}(\.\d{1,3})?)$"))  # 1.0-1000.0
         skin_validator = QtGui.QRegularExpressionValidator(
-            QtCore.QRegularExpression(r"^(-?(100(\.0{0,3})?|[0-9]?\d(\.\d{0,3})?))$"))  # -100.000-(+100.000)
+            QtCore.QRegularExpression(r"^-?(0|[1-9]\d{0,1})(\.\d{0,3})?$"))  # -99.000-(+99.000)
 
         # ---------- Общие ----------
-        self.ui.leWellRadius.setValidator(float_validator)
+        self.ui.leWellRadius.setValidator(decimal_fraction_validator)
         self.ui.leRampUpTime.setValidator(int_validator)
-        self.ui.leWellEfficiency.setValidator(float_validator)
-        self.ui.leKUBS.setValidator(float_validator)
-        self.ui.leKPPP.setValidator(float_validator)
+        self.ui.leWellEfficiency.setValidator(decimal_fraction_validator)
+        self.ui.leKUBS.setValidator(decimal_fraction_validator)
+        self.ui.leKPPP.setValidator(decimal_fraction_validator)
         self.ui.leSkin.setValidator(skin_validator)
-        self.ui.lePwell.setValidator(float_validator)
 
         # ---------- ГРП ----------
         self.ui.leLenStage.setValidator(int_validator)
@@ -39,17 +37,17 @@ class WellParamsWidget(QtWidgets.QWidget):
         # ---------- Фактический фонд ----------
         self.ui.leFirstMonths.setValidator(int_validator)
         self.ui.leLastMonths.setValidator(int_validator)
-        self.ui.leMinBufferProd.setValidator(int_validator)
-        self.ui.leMiBufferInj.setValidator(int_validator)
+        self.ui.leMinBufferProd.setValidator(int_validator_zero)
+        self.ui.leMiBufferInj.setValidator(int_validator_zero)
 
         # ---------- Проектный фонд ----------
-        self.ui.leMaxLenWell.setValidator(int_validator)
-        self.ui.leMinLenHor.setValidator(int_validator)
-        self.ui.leProjectBuffer.setValidator(int_validator)
-        self.ui.lePwell.setValidator(pressure_validator)
+        self.ui.leMaxLenWell.setValidator(int_validator_zero)
+        self.ui.leMinLenHor.setValidator(int_validator_zero)
+        self.ui.leProjectBuffer.setValidator(int_validator_zero)
+        self.ui.lePwell.setValidator(int_validator)
         self.ui.leNumNearWells.setValidator(int_validator)
-        self.ui.leThreshold.setValidator(int_validator)
-        self.ui.leForecastPeriod.setValidator(int_validator)
+        self.ui.leThreshold.setValidator(int_validator_zero)
+        self.ui.leForecastPeriod.setValidator(int_validator_zero)
         # Кнопка → (line_edit, диалог: "file" или "directory", фильтр для файлов)
         self.ui.btnFrac.clicked.connect(
             lambda checked, le=self.ui.leFrac, t="file", f="Excel Files (*.xlsx *.xls *.xlsm);;All Files (*)":
@@ -125,6 +123,41 @@ class WellParamsWidget(QtWidgets.QWidget):
             "threshold": float(self.ui.leThreshold.text()),
             "period_calculation": int(self.ui.leForecastPeriod.text()),
         }
+
+    def check_special_fields(self):
+        dict_fields = {self.ui.lblWellRadius.text(): self.ui.leWellRadius,
+                       self.ui.lblKUBS.text(): self.ui.leKUBS,
+                       self.ui.lblKPPP.text(): self.ui.leKPPP,
+                       self.ui.lblSkin.text(): self.ui.leSkin}
+
+        for name, field in dict_fields.items():
+            param = float(field.text().strip())
+
+            if field and field.isEnabled():
+                if name == "Доп. сопротивление притоку":
+                    if self.get_frac_type() is None and int(self.ui.leMaxLenWell.text()) == 0:
+                        if param < -3:
+                            field.setStyleSheet("border: 1px solid red;")
+                            QtWidgets.QMessageBox.warning(self, "Ошибка",
+                                                          f"Значение параметра '{name}' должно быть >= -3!")
+                            return False
+                    else:
+                        if param < 0:
+                            field.setStyleSheet("border: 1px solid red;")
+                            QtWidgets.QMessageBox.warning(self, "Ошибка",
+                                                          f"Значение параметра '{name}' должно быть >= 0!")
+                            return False
+                else:
+                    if param < 0.001:
+                        field.setStyleSheet("border: 1px solid red;")
+                        QtWidgets.QMessageBox.warning(self, "Ошибка",
+                                                      f"Значение параметра '{name}' должно быть выше 0.000!")
+                        return False
+                field.setStyleSheet("")  # сброс оформления
+                field.style().unpolish(field)
+                field.style().polish(field)
+                field.update()
+        return True
 
     def choose_path(self, line_edit, dlg_type, file_filter=""):
         if dlg_type == "file":

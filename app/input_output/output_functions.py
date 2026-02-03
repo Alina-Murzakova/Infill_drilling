@@ -27,10 +27,7 @@ def summary_table(list_zones, switch_economy):
     df_summary_table = pd.DataFrame(
         {'Зона': [int(drill_zone.rating) if isinstance(drill_zone.rating, float)
                   else drill_zone.rating for drill_zone in list_zones],
-         'Количество\nскважин': [int(drill_zone.num_project_wells) if
-                                 isinstance(drill_zone.num_project_wells,
-                                            (int, float, np.integer, np.floating, Decimal))
-                                 else drill_zone.num_project_wells for drill_zone in list_zones],
+         'Количество\nскважин': [drill_zone.num_project_wells for drill_zone in list_zones],
          'Средний индекс\nуспешности бурения': [round_if_numeric(np.mean(drill_zone.opportunity_index_values)) for
                                                 drill_zone in list_zones],
          'Запасы, тыс т': [round_if_numeric(drill_zone.reserves) for drill_zone in list_zones],

@@ -178,6 +178,7 @@ class ProjectWell:
         if (self.P_reservoir - self.P_well_init) < 0 or local_dict['switches']['switch_fix_P_well_init']:
             self.P_well_init = well_params['fix_P_well_init']
             if (self.P_reservoir - self.P_well_init) < 0:
+                logger.info(f"Рзаб проектной скважин {self.well_number} выше Рпл -> принято Рзаб = 0.4*Рпл")
                 self.P_well_init = 0.4 * self.P_reservoir
 
         reservoir_params['f_w'] = self.water_cut

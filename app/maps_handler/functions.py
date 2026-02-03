@@ -17,7 +17,6 @@ def mapping(maps_directory, data_wells, **kwargs):
     radius_interpolate = kwargs['radius_interpolate']
     accounting_horwell = kwargs['switch_accounting_horwell']
 
-    logger.info(f"path: {maps_directory}")
     content = os.listdir(path=maps_directory)
     if content:
         logger.info(f"count of maps: {len(content)}")
@@ -175,6 +174,14 @@ def calculate_reservoir_state_maps(data_wells, maps, dict_properties,
     result = get_maps(dict_maps, dict_data_wells, map_params, reservoir_params, fluid_params, relative_permeability,
                       options)
 
+    logger.info(f"Относительная ошибка между запасами и НДН: {result.rel_error_RRR:.3f}%")
+
+    if abs(result.rel_error_RRR) > 1:
+        logger.warning("Относительная ошибка между запасами и НДН превышает допустимое отклонение (1%), проверьте: \n"
+                       "- ОФП \n"
+                       "- текущую обводненность на скважинах \n"
+                       "- карту начальной нефтенасыщенности")
+
     dst_geo_transform = maps[type_maps_list.index("initial_oil_saturation")].geo_transform
     dst_projection = maps[type_maps_list.index("initial_oil_saturation")].projection
 
@@ -204,12 +211,12 @@ def maps_load_df(data_wells, dst_geo_transform, shape, accounting_GS, radius_int
     maps = []
     #  Загрузка карт из "МЭР"
 
-    logger.info(f"Загрузка карты последних дебитов нефти на основе выгрузки МЭР")
+    logger.info(f"Построение карты последних дебитов нефти на основе выгрузки МЭР")
     maps.append(read_array(data_wells, name_column_map="Qo_rate", type_map="last_rate_oil",
                            geo_transform=dst_geo_transform, size=shape,
                            accounting_GS=accounting_GS, radius=radius_interpolate))
 
-    logger.info(f"Загрузка карты стартовых дебитов нефти на основе выгрузки МЭР")
+    logger.info(f"Построение карты стартовых дебитов нефти на основе выгрузки МЭР")
     maps.append(read_array(data_wells, name_column_map="init_Qo_rate", type_map="init_rate_oil",
                            geo_transform=dst_geo_transform, size=shape,
                            accounting_GS=accounting_GS, radius=radius_interpolate))
@@ -243,6 +250,11 @@ def get_final_resolution(list_rasters, pixel_sizes):
     cols = int((max_x - min_x) / pixel_sizes)
     rows = int((max_y - min_y) / pixel_sizes)
     shape = (rows, cols)
+
+    if (cols == 0) or (rows == 0):
+        error_msg = "Размер ячейки слишком большой! Не выделяется ни одной ячейки сетки."
+        logger.critical(error_msg)
+        raise ValueError(f"{error_msg}")
 
     dst_geo_transform = (min_x, pixel_sizes, 0, max_y, 0, -pixel_sizes)
     dst_projection = max(set(projection_list), key=projection_list.count)

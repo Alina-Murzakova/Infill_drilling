@@ -1,5 +1,6 @@
 from PyQt6 import QtWidgets, QtGui
 from app.gui.widgets.start_ui import Ui_StartPage
+from app.version import APP_VERSION
 
 import os
 
@@ -15,3 +16,8 @@ class StartPageWidget(QtWidgets.QWidget):
 
         logo_path = os.path.abspath(os.path.join(path_program,  "gui", "icons", logo))
         self.ui.lbl_img.setPixmap(QtGui.QPixmap(logo_path))
+
+        # Подстановка версии
+        html = self.ui.txt_description.toHtml()
+        html = html.replace("{VERSION}", f"v{APP_VERSION}")
+        self.ui.txt_description.setHtml(html)

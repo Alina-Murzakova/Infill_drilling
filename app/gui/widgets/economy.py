@@ -47,7 +47,7 @@ class EconomyWidget(QtWidgets.QWidget):
             "start_date": datetime(self.ui.leStartDate.date().year()+1,
                                    self.ui.leStartDate.date().month(),
                                    self.ui.leStartDate.date().day()),
-            "day_in_month": int(self.ui.leNumDays.text()),
+            "day_in_month": float(self.ui.leNumDays.text()),
             "path_economy": self.ui.leEconomy.text()
         }
 

@@ -26,7 +26,7 @@ class DrillZone:
         self.reserves = None
         self.area = None
         self.list_project_wells = []
-        self.num_project_wells = None
+        self.num_project_wells = 0
 
         # Средние атрибуты с фонда
         self.init_avr_Qo_rate = None
