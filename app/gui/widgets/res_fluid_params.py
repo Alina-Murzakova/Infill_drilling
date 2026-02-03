@@ -36,17 +36,17 @@ class ResFluidWidget(QtWidgets.QWidget):
 
     def setup_validators(self):
         """Проверка полей"""
-        float_validator = QtGui.QRegularExpressionValidator(
+        decimal_fraction_validator = QtGui.QRegularExpressionValidator(
             QtCore.QRegularExpression(r"^(0(\.\d{0,3})?|1(\.0{0,3})?)$"))  # 0.000-1.000
         power_validator = QtGui.QRegularExpressionValidator(
             QtCore.QRegularExpression(r"^(10(\.0{0,3})?|[0-9](\.\d{0,3})?)$"))  # 0.000-10.000
         specific_validator = QtGui.QRegularExpressionValidator(
             QtCore.QRegularExpression(r"^(1(\.([0-4]\d{0,2}|5(\.0{0,2})?)?)?|0(\.\d{0,3})?)$"))  # 0.000-1.500
 
-        self.ui.leSor.setValidator(float_validator)
-        self.ui.leSwc.setValidator(float_validator)
-        self.ui.leFo.setValidator(float_validator)
-        self.ui.leFw.setValidator(float_validator)
+        self.ui.leSor.setValidator(decimal_fraction_validator)
+        self.ui.leSwc.setValidator(decimal_fraction_validator)
+        self.ui.leFo.setValidator(decimal_fraction_validator)
+        self.ui.leFw.setValidator(decimal_fraction_validator)
         self.ui.leCoreyOil.setValidator(power_validator)
         self.ui.leCoreyWater.setValidator(power_validator)
         self.ui.leBw.setValidator(specific_validator)
@@ -64,3 +64,24 @@ class ResFluidWidget(QtWidgets.QWidget):
             "Bw": float(self.ui.leBw.text()),
             "kv_kh": float(self.ui.leAnisotropy.text()),
         }
+
+    def check_special_fields(self):
+        dict_fields = {self.ui.lblFo.text(): self.ui.leFo,
+                       self.ui.lblFw.text(): self.ui.leFw,
+                       self.ui.lblAnisotropy.text(): self.ui.leAnisotropy}
+
+        for name, field in dict_fields.items():
+            param = float(field.text().strip())
+
+            if field and field.isEnabled():
+                if param < 0.001:
+                    field.setStyleSheet("border: 1px solid red;")
+                    QtWidgets.QMessageBox.warning(self, "Ошибка",
+                                                  f"Значение параметра '{name}' должно быть выше 0.000!")
+                    return False
+                else:
+                    field.setStyleSheet("")  # сброс оформления
+                    field.style().unpolish(field)
+                    field.style().polish(field)
+                    field.update()
+        return True

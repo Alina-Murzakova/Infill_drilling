@@ -6,7 +6,7 @@ from loguru import logger
 from app.config import gpch_column_name
 
 
-def load_geo_phys_properties(path_geo_phys_properties, name_field, name_object):
+def load_geo_phys_properties(path_geo_phys_properties, name_field, name_object, default_formation_compressibility=4.0):
     """Создание словаря ГФХ для пласта"""
     # Загрузка файла
     df_geo_phys_properties = pd.read_excel(os.path.join(os.path.dirname(__file__), path_geo_phys_properties))
@@ -81,9 +81,14 @@ def load_geo_phys_properties(path_geo_phys_properties, name_field, name_object):
                 if value_mean > 0:
                     dict_geo_phys_properties_field[prop] = value_mean
                 else:
-                    error_msg = f"Свойство {prop} задано некорректно: {value}"
-                    logger.critical(error_msg)
-                    raise ValueError(f"{error_msg}")
+                    if prop == 'formation_compressibility':
+                        dict_geo_phys_properties_field[prop] = default_formation_compressibility
+                        logger.warning(f"Сжимаемость породы не определена. Задано значение по умолчанию: "
+                                       f"{default_formation_compressibility} [1/МПа×10-4]")
+                    else:
+                        error_msg = f"Свойство {prop} задано некорректно: {value}"
+                        logger.critical(error_msg)
+                        raise ValueError(f"{error_msg}")
         return formatting_dict_geo_phys_properties(dict_geo_phys_properties_field)
 
 

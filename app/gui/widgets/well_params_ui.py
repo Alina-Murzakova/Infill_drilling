@@ -622,7 +622,7 @@ class Ui_WellParamsPage(object):
         self.leKUBS.setText(_translate("WellParamsPage", "1"))
         self.lblKPPP.setText(_translate("WellParamsPage", "Коэффициент для ГС, д.ед."))
         self.leKPPP.setText(_translate("WellParamsPage", "0.9"))
-        self.lblSkin.setText(_translate("WellParamsPage", "Скин кольматации"))
+        self.lblSkin.setText(_translate("WellParamsPage", "Доп. сопротивление притоку"))
         self.leSkin.setText(_translate("WellParamsPage", "0"))
         self.tabWellParams.setTabText(self.tabWellParams.indexOf(self.tabGeneral), _translate("WellParamsPage", "Общие"))
         self.rbtnNoFrac.setText(_translate("WellParamsPage", "Без ГРП"))

@@ -183,6 +183,5 @@ def prepare_wells_data(data_history, dict_properties, min_length_hor_well=150, f
 
     # 15. Приоритизация скважин в пределах радиуса
     data_wells = range_priority_wells(data_wells, priority_radius)
-    logger.info(f"Сумма дебит нефти {data_history.Qo_rate.sum()}")
     logger.info(f"Сумма НДН {data_wells.Qo_cumsum.sum()}")
     return data_history, data_wells

@@ -310,7 +310,7 @@ QTabBar::tab:last {
           </font>
          </property>
          <property name="text">
-          <string>Скин кольматации</string>
+          <string>Доп. сопротивление притоку</string>
          </property>
         </widget>
        </item>

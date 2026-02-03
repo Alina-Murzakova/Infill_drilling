@@ -17,6 +17,7 @@ from app.input_output.output_functions import get_save_path
 from app.main import run_model
 from app.exceptions import CalculationCancelled
 from app.gui.widgets.functions_ui import validate_paths
+from app.version import APP_NAME, APP_VERSION
 
 path_program = os.getcwd()
 icons = [
@@ -36,6 +37,8 @@ class MainWindow(QtWidgets.QMainWindow):
         super().__init__()
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
+        # Устанавливаем название программы и версию
+        self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}")
 
         # Параметры расчета в формате local_parameters
         self.parameters = None
@@ -121,6 +124,17 @@ class MainWindow(QtWidgets.QMainWindow):
             "economy": self.ui.economy_page.get_data(),
         }
 
+    def collect_all_gui(self) -> dict:
+        """Создание словаря с виджетами"""
+        return {
+            "paths": self.ui.initial_data_page,
+            "mapping_params": self.ui.mapping_page,
+            "drill_zone_params": self.ui.map_zone_page,
+            "well_params": self.ui.well_params_page,
+            "res_fluid_params": self.ui.res_fluid_page,
+            "economy": self.ui.economy_page,
+        }
+
     @staticmethod
     def convert_to_backend_format(gui_data: dict):
         """Переформирование данных в формат local_parameters"""
@@ -201,6 +215,14 @@ class MainWindow(QtWidgets.QMainWindow):
             return
 
         gui_data = self.collect_all_gui_data()
+
+        gui_widgets = self.collect_all_gui()
+        # дополнительная проверка ряда полей
+        for name, widget in gui_widgets.items():
+            if hasattr(widget, "check_special_fields"):
+                if not widget.check_special_fields():
+                    return
+
         self.parameters = self.convert_to_backend_format(gui_data)
         if not validate_paths(self.parameters["paths"], parent=self):
             return
@@ -401,6 +423,10 @@ def format_time(seconds):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)  # Настройки компьютера
+
+    app.setApplicationName(APP_NAME)
+    app.setApplicationVersion(APP_VERSION)
+
     app.setStyle("Fusion")  # Изменяет системный стиль
     window = MainWindow()
     window.show()

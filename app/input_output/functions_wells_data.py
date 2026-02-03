@@ -112,8 +112,8 @@ def identification_ZBS_MZS(data_history):
                                                0, data_history['number_wellbore'])
     data_history = data_history.sort_values(by=['well_number', 'date'], ascending=[True, False]).reset_index(drop=True)
     Ql_rate_after_mzs = data_history.Ql_rate.sum()
-    logger.info(f"Сумма дебит жидкости до МЗС: {Ql_rate_before_mzs},\n"
-                f"Сумма дебит жидкости после МЗС: {Ql_rate_after_mzs} ")
+    logger.debug(f"Сумма дебит жидкости до МЗС: {Ql_rate_before_mzs},\n"
+                 f"Сумма дебит жидкости после МЗС: {Ql_rate_after_mzs} ")
     return data_history
 
 
