@@ -1,8 +1,9 @@
 import math
-
+import sys
 import geopandas as gpd
 import pandas as pd
 from loguru import logger
+from tqdm import tqdm
 
 from app.input_output.input_economy import load_economy_data
 from app.input_output.input_frac_info import load_frac_info
@@ -43,6 +44,7 @@ def run_model(parameters, total_stages, progress=None, is_cancelled=None):
     paths = parameters['paths']
     # Параметры расчета
     drill_zones_params = parameters['drill_zones']
+    is_exe = getattr(sys, 'frozen', False) or hasattr(sys, '_MEIPASS')
 
     if parameters['well_params']['proj_wells_params']['buffer_project_wells'] <= 0:
         # нижнее ограничение на расстояние до фактических скважин от проектной
@@ -77,7 +79,7 @@ def run_model(parameters, total_stages, progress=None, is_cancelled=None):
     default_size_pixel = maps[0].geo_transform[1]  # размер ячейки после загрузки всех карт
 
     log_stage("РАСЧЕТ РАДИУСОВ ДРЕНИРОВАНИЯ И НАГНЕТАНИЯ ДЛЯ СКВАЖИН")
-    data_wells = calculate_effective_radius(data_wells, dict_properties=parameters)
+    data_wells = calculate_effective_radius(data_wells, dict_properties=parameters, is_exe=is_exe)
 
     log_stage(f"ЗАГРУЗКА ОФП, {parameters['switches']['switch_adaptation_relative_permeability']}")
     if parameters['switches']['switch_adaptation_relative_permeability']:
@@ -99,7 +101,7 @@ def run_model(parameters, total_stages, progress=None, is_cancelled=None):
     data_wells, parameters, data_wells_permeability_excel = get_df_permeability_fact_wells(data_wells, parameters)
 
     log_stage("ОЦЕНКА ТЕМПОВ ПАДЕНИЯ ДЛЯ ТЕКУЩЕГО ФОНДА")
-    data_decline_rate_stat, _, _ = get_decline_rates(data_history, data_wells)
+    data_decline_rate_stat, _, _ = get_decline_rates(data_history, data_wells, is_exe=is_exe)
 
     log_stage("РАСЧЕТ ЗОН С ВЫСОКИМ ИНДЕКСОМ БУРЕНИЯ")
     # Параметры кластеризации

@@ -14,7 +14,7 @@ from sklearn.linear_model import LinearRegression
 pd.options.mode.chained_assignment = None
 
 
-def get_reserves_by_characteristic_of_desaturation(df, min_reserves, r_max, year_min, year_max):
+def get_reserves_by_characteristic_of_desaturation(df, min_reserves, r_max, year_min, year_max, is_exe):
     """
     Расчет ОИЗ через характеристики вытеснения (история + карта)
     :param df: DataFrame исходных данных: {"well_number", "date", "Qo", "Ql", "T1_x", "T1_y", "T3_x", "T3_y"}
@@ -22,6 +22,7 @@ def get_reserves_by_characteristic_of_desaturation(df, min_reserves, r_max, year
     :param r_max: максимальный радиус удаления для скважин, рассчитываемых по карте
     :param year_min: минимальное время работы скважины (лет)
     :param year_max: максимальное время работы скважины (лет)
+    :param is_exe: режим для tqdm
 
     :return: DataFrame: {"№ скв.","ОИЗ"}
     """
@@ -30,7 +31,7 @@ def get_reserves_by_characteristic_of_desaturation(df, min_reserves, r_max, year
     df_reserves = pd.DataFrame()
     well_error = []
 
-    for well in tqdm(set_well, desc='Расчет ОИЗ для скважин по характеристикам вытеснения'):
+    for well in tqdm(set_well, disable=is_exe, desc='Расчет ОИЗ для скважин по характеристикам вытеснения'):
         df_well = df.loc[df.well_number == well].reset_index(drop=True)
         df_result = calculate_reserves_statistics(df_well, well, marker="all_period")[0]
         if df_result.empty:
@@ -71,7 +72,7 @@ def get_reserves_by_characteristic_of_desaturation(df, min_reserves, r_max, year
     # списки для заполнения
     marker, list_residual_reserves, list_initial_reserves = [], [], []
 
-    for well in tqdm(well_error, desc='Расчет ОИЗ для скважин с ошибкой по карте'):
+    for well in tqdm(well_error, disable=is_exe, desc='Расчет ОИЗ для скважин с ошибкой по карте'):
         # Информация по скважине
         df_well = df.loc[df.well_number == well].reset_index(drop=True)
         x_well, y_well = df_errors['T3_x_geo'][well], df_errors['T3_y_geo'][well]

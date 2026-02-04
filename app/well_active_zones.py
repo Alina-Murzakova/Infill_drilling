@@ -252,7 +252,7 @@ def combine_to_linestring(group):
     return LineString(coords) if coords else None
 
 
-def calculate_effective_radius(data_wells, dict_properties):
+def calculate_effective_radius(data_wells, dict_properties, is_exe=False):
     """
     Дополнение фрейма data_wells колонкой 'r_eff'
     Parameters
@@ -274,7 +274,7 @@ def calculate_effective_radius(data_wells, dict_properties):
     df_parameters_voronoi = get_parameters_voronoi_cells(data_wells_work)
 
     # Оценка объемов полезной закачки для нагнетательных скважин
-    data_wells = calculate_useful_injection(data_wells)
+    data_wells = calculate_useful_injection(data_wells, is_exe=is_exe)
 
     # расчет радиусов по физическим параметрам
     default_radius = dict_properties['well_params']['fact_wells_params']['default_radius_prod']
@@ -294,7 +294,7 @@ def calculate_effective_radius(data_wells, dict_properties):
     return data_wells
 
 
-def calculate_useful_injection(data_wells, max_distance_inj_prod=1000):
+def calculate_useful_injection(data_wells, max_distance_inj_prod=1000, is_exe=False):
     """Расчет объема полезной закачки для нагнетательных скважин через коэффициенты влияния
     max_distance_inj_prod - расстояние для поиска соседних скважин
     """
@@ -313,7 +313,7 @@ def calculate_useful_injection(data_wells, max_distance_inj_prod=1000):
     # Векторизованный расчет расстояний между всеми парами скважин
     distance_matrix = np.zeros((len(all_prod_wells), len(all_inj_wells)))
 
-    for i, prod_well in tqdm(enumerate(all_prod_wells), desc='Расчет матрицы расстояний'):
+    for i, prod_well in tqdm(enumerate(all_prod_wells), desc='Расчет матрицы расстояний', disable=is_exe):
         prod_point = gdf_prod[gdf_prod.well_number == prod_well].geometry.iloc[0]
         distances = gdf_inj.geometry.distance(prod_point)
         distance_matrix[i, :] = distances
@@ -337,7 +337,7 @@ def calculate_useful_injection(data_wells, max_distance_inj_prod=1000):
     Qo_cumsum_values = prod_wells.set_index('well_number')['Qo_cumsum']
     useful_injection = np.zeros(len(all_inj_wells))
 
-    for j in tqdm(range(len(all_inj_wells)), desc='Расчет полезной закачки'):
+    for j in tqdm(range(len(all_inj_wells)), desc='Расчет полезной закачки', disable=is_exe):
         mask = lambda_ij[:, j] > 0
         useful_injection[j] = np.sum(lambda_ij[mask, j] * Qo_cumsum_values.iloc[mask].values)
 

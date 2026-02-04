@@ -10,7 +10,7 @@ from app.decline_rate.residual_reserves import get_reserves_by_characteristic_of
 from app.decline_rate.model_Arps import calculation_model_arps
 
 
-def get_decline_rates(data_history, data_wells, maps=None, type_reserves=None):
+def get_decline_rates(data_history, data_wells, maps=None, type_reserves=None, is_exe=False):
     logger.info("Подготовка истории работы скважин для расчета темпов падения")
     max_delta = cfg.STOPPING_TIME_LIMIT_OF_WELL
     df_initial = history_processing(data_history, max_delta=max_delta)
@@ -33,7 +33,7 @@ def get_decline_rates(data_history, data_wells, maps=None, type_reserves=None):
     elif type_reserves == 'statistic':
         logger.info(f"Расчет ОИЗ, тип: {type_reserves}")
         well_reserves = get_reserves_by_characteristic_of_desaturation(df_initial,
-                                                                       min_reserves, r_max, year_min, year_max)
+                                                                       min_reserves, r_max, year_min, year_max, is_exe)
         data_wells = pd.merge(data_wells.set_index('well_number'), well_reserves, left_index=True, right_index=True)
         data_wells['well_reserves'] = data_wells['well_reserves'].fillna(min_reserves)
         data_wells = data_wells.reset_index()
@@ -46,7 +46,8 @@ def get_decline_rates(data_history, data_wells, maps=None, type_reserves=None):
     df_wells_decline_rates = pd.DataFrame(columns=["well_number", 'coefficients_Ql_rate', 'coefficients_Qo_rate',
                                                    "cumulative_oil_production"])
     avg_coefficients_Ql_rate, avg_coefficients_Qo_rate, avg_init_Ql_rate, avg_init_Qo_rate = [], [], [], []
-    for well in tqdm(df_initial.well_number.unique(), desc='Расчет коэффициентов для темпа падения по истории работы'):
+    for well in tqdm(df_initial.well_number.unique(), disable=is_exe,
+                     desc='Расчет коэффициентов для темпа падения по истории работы'):
         # Выделение исходных данных для аппроксимации скважины
         df_well = df_initial.loc[df_initial.well_number == well].reset_index(drop=True)
         cumulative_oil_production = df_well.Qo.sum() / 1000
