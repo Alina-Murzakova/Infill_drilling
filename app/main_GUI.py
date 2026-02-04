@@ -20,6 +20,7 @@ from app.gui.widgets.functions_ui import validate_paths
 from app.version import APP_NAME, APP_VERSION
 
 path_program = os.getcwd()
+is_exe = getattr(sys, 'frozen', False) or hasattr(sys, '_MEIPASS')
 icons = [
     "bi--folder-plus.png",
     "bi--layers-half.png",
@@ -53,13 +54,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.stackedWidget.insertWidget(7, self.result_widget)
 
         # Находим иконки по правильным путям
+        if is_exe:
+            base_path_icon = os.path.join(path_program, "_internal", "icons")
+        else:
+            base_path_icon = os.path.join(path_program, "gui", "icons")
         for i, item in enumerate(self.ui.listWidget.findItems("*", QtCore.Qt.MatchFlag.MatchWildcard)):
-            icon_path = os.path.join(path_program, "gui", "icons", icons[i])
+            icon_path = os.path.join(base_path_icon, icons[i])
             icon = QtGui.QIcon(icon_path)
             item.setIcon(icon)
 
         # Иконка приложения
-        lbl_path = os.path.join(path_program, "gui", "icons", lbl)
+        lbl_path = os.path.join(base_path_icon, lbl)
         lbl_app = QtGui.QIcon(lbl_path)
         self.setWindowIcon(lbl_app)
 
@@ -93,12 +98,19 @@ class MainWindow(QtWidgets.QMainWindow):
         try:
             # Определяем базовый путь
             if getattr(sys, 'frozen', False):
-                base_path = sys._MEIPASS
+                # Режим exe
+                base_path = os.path.dirname(sys.executable)
+
+                # Проверяем папку _internal
+                internal_path = os.path.join(base_path, "_internal")
+                if os.path.exists(internal_path):
+                    base_path = internal_path
             else:
-                base_path = os.path.dirname(os.path.abspath(__file__))
+                # Режим разработки
+                base_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gui")
 
             # Путь к файлу
-            manual_path = os.path.join(base_path, "gui/resources", "manual.docx")
+            manual_path = os.path.join(base_path, "resources", "manual.docx")
 
             # Проверяем существование
             if not os.path.exists(manual_path):

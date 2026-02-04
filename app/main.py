@@ -1,9 +1,7 @@
 import math
-import sys
 import geopandas as gpd
 import pandas as pd
 from loguru import logger
-from tqdm import tqdm
 
 from app.input_output.input_economy import load_economy_data
 from app.input_output.input_frac_info import load_frac_info
