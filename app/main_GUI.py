@@ -271,7 +271,7 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.information(self, "Готово", message)
         else:
             self.ui.progressBar.setValue(0)
-            QtWidgets.QMessageBox.warning(self, "Прервано", message)
+            QtWidgets.QMessageBox.warning(self, "Расчёт остановлен", message)
 
     def cancel_calculation(self):
         if self.worker:

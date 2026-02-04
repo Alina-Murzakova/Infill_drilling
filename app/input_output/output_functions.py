@@ -37,10 +37,10 @@ def summary_table(list_zones, switch_economy):
              [round_if_numeric(drill_zone.init_avr_Ql_rate, 2) for drill_zone in list_zones],
          'Средняя\nобводненность, %':
              [round_if_numeric(drill_zone.init_avr_water_cut, 2) for drill_zone in list_zones],
-         'Накопленная добыча\nнефти (25 лет), тыс.т':
+         'Накопленная добыча\nнефти, тыс.т':
              [round(drill_zone.Qo / 1000, 2) if isinstance(drill_zone.Qo, float)
               else drill_zone.Qo for drill_zone in list_zones],
-         'Накопленная добыча\nжидкости (25 лет), тыс.т':
+         'Накопленная добыча\nжидкости, тыс.т':
              [round(drill_zone.Ql / 1000, 2) if isinstance(drill_zone.Ql, float)
               else drill_zone.Ql for drill_zone in list_zones],
          })
@@ -69,8 +69,8 @@ def summary_table(list_zones, switch_economy):
             round(df_summary_table['Средний запускной\nдебит нефти, т/сут'].mean(), 2),
             round(df_summary_table['Средний запускной\nдебит жидкости, м3/сут'].mean(), 2),
             round(df_summary_table['Средняя\nобводненность, %'].mean(), 2),
-            round(df_summary_table['Накопленная добыча\nнефти (25 лет), тыс.т'].sum(), 2),
-            round(df_summary_table['Накопленная добыча\nжидкости (25 лет), тыс.т'].sum(), 2),
+            round(df_summary_table['Накопленная добыча\nнефти, тыс.т'].sum(), 2),
+            round(df_summary_table['Накопленная добыча\nжидкости, тыс.т'].sum(), 2),
             round(df_summary_table['Средний PI зоны'].mean(), 2),
             round(df_summary_table['Суммарный NPV за\nрент. период, тыс.руб.'].sum(), 2),
             round(df_summary_table['Кол-во скважин\nс ГЭП>1'].sum(), 2)]
@@ -83,8 +83,8 @@ def summary_table(list_zones, switch_economy):
             round(df_summary_table['Средний запускной\nдебит нефти, т/сут'].mean(), 2),
             round(df_summary_table['Средний запускной\nдебит жидкости, м3/сут'].mean(), 2),
             round(df_summary_table['Средняя\nобводненность, %'].mean(), 2),
-            round(df_summary_table['Накопленная добыча\nнефти (25 лет), тыс.т'].sum(), 2),
-            round(df_summary_table['Накопленная добыча\nжидкости (25 лет), тыс.т'].sum(), 2)]
+            round(df_summary_table['Накопленная добыча\nнефти, тыс.т'].sum(), 2),
+            round(df_summary_table['Накопленная добыча\nжидкости, тыс.т'].sum(), 2)]
     df_summary_table = df_summary_table.fillna('')
     return df_summary_table
 
@@ -252,9 +252,9 @@ def save_ranking_drilling_to_excel(name_field, name_object, list_zones, filename
                  'Проницаемость, мД': [round(well.permeability, 3) for well in drill_zone.list_project_wells],
                  'Эффективный радиус, м': [round(well.r_eff, 1) for well in drill_zone.list_project_wells],
                  'Запасы, тыс т': [round(well.reserves, 1) for well in drill_zone.list_project_wells],
-                 'Накопленная добыча нефти (25 лет), тыс.т': [round(np.sum(well.Qo) / 1000, 1) for well in
+                 'Накопленная добыча нефти, тыс.т': [round(np.sum(well.Qo) / 1000, 1) for well in
                                                               drill_zone.list_project_wells],
-                 'Накопленная добыча жидкости (25 лет), тыс.т': [round(np.sum(well.Ql) / 1000, 1) for well in
+                 'Накопленная добыча жидкости, тыс.т': [round(np.sum(well.Ql) / 1000, 1) for well in
                                                                  drill_zone.list_project_wells],
                  'Соседние скважины': [well.gdf_nearest_wells.well_number.unique() for
                                        well in drill_zone.list_project_wells]
