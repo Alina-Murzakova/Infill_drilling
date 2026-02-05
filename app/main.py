@@ -1,6 +1,7 @@
 import math
-import geopandas as gpd
+import sys
 import pandas as pd
+import geopandas as gpd
 from loguru import logger
 
 from app.input_output.input_economy import load_economy_data

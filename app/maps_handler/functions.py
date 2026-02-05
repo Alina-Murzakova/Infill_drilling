@@ -140,12 +140,15 @@ def calculate_reservoir_state_maps(data_wells, maps, dict_properties,
     -------
     Дополненный список карт
     """
-    data_wells = data_wells[["well_number", "work_marker", "no_work_time", "Qo_cumsum", "Winj_cumsum", "water_cut_V",
-                             "r_eff_not_norm", "NNT", "permeability", "T1_x_pix", "T1_y_pix", "T3_x_pix", "T3_y_pix"]]
-    data_wells = data_wells.rename(columns={'r_eff_not_norm': 'r_eff', 'water_cut_V': 'water_cut'})
-    keys_data_wells = list(data_wells.columns)
+    data_wells_for_res = data_wells[["well_number", "work_marker", "no_work_time", "Qo_cumsum", "Winj_cumsum",
+                                     "water_cut_V", "r_eff_not_norm", "NNT", "So", "permeability", "T1_x_pix",
+                                     "T1_y_pix", "T3_x_pix", "T3_y_pix"]].copy()
+    data_wells_for_res = data_wells_for_res[data_wells_for_res['So'] > 0]
+    data_wells_for_res.drop(columns=['So'], inplace=True)
+    data_wells_for_res = data_wells_for_res.rename(columns={'r_eff_not_norm': 'r_eff', 'water_cut_V': 'water_cut'})
+    keys_data_wells = list(data_wells_for_res.columns)
     # Подготовка словаря из data_wells
-    dict_data_wells = {key: np.asarray(data_wells[key]) for key in keys_data_wells}
+    dict_data_wells = {key: np.asarray(data_wells_for_res[key]) for key in keys_data_wells}
     # Подготовка словаря с необходимыми картами
     dict_maps = {}
     type_maps_list = list(map(lambda raster: raster.type_map, maps))
