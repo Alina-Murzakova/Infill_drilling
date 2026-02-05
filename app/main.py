@@ -168,7 +168,6 @@ if __name__ == '__main__':
     from pathlib import Path
     from datetime import datetime
     import traceback
-    import sys
     import time
 
     save_dir = get_save_path("Infill_drilling")

@@ -13,8 +13,7 @@ class StartPageWidget(QtWidgets.QWidget):
         super().__init__()
         self.ui = Ui_StartPage()
         self.ui.setupUi(self)
-
-        logo_path = os.path.abspath(os.path.join(path_program,  "gui", "icons", logo))
+        logo_path = os.path.abspath(os.path.join(path_program,  "_internal", "icons", logo))
         self.ui.lbl_img.setPixmap(QtGui.QPixmap(logo_path))
 
         # Подстановка версии
