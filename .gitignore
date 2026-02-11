@@ -24,3 +24,6 @@ So_current + interference_all_points+fractures.ipynb
 /app/gui/*.txt
 /app/gui/icons/архив
 /app/gui/архив
+/*.spec
+/build
+/dist

@@ -1,10 +1,10 @@
 from PyQt6 import QtWidgets, QtGui
 from app.gui.widgets.start_ui import Ui_StartPage
 from app.version import APP_VERSION
+from app.main_GUI import resource_path
 
 import os
 
-path_program = os.getcwd()
 logo = "АВНС_v.2.png"
 
 
@@ -13,7 +13,7 @@ class StartPageWidget(QtWidgets.QWidget):
         super().__init__()
         self.ui = Ui_StartPage()
         self.ui.setupUi(self)
-        logo_path = os.path.abspath(os.path.join(path_program,  "_internal", "icons", logo))
+        logo_path = resource_path(f"app/_internal/icons/{logo}")
         self.ui.lbl_img.setPixmap(QtGui.QPixmap(logo_path))
 
         # Подстановка версии
