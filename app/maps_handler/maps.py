@@ -57,22 +57,25 @@ class Map:
         plt.show()
 
     def save_grd_file(self, filename):
-        filename_copy = filename.replace(".grd", "") + "_copy.grd"
+        filename_copy = filename.replace(".grd", "") + "_copy.tif"
+        # Создаем и записываем GeoTIFF
         driver = gdal.GetDriverByName('GTiff')
         dataset = driver.Create(filename_copy, self.data.shape[1], self.data.shape[0], 1, gdal.GDT_Float32)
         dataset.SetGeoTransform(self.geo_transform)
         dataset.SetProjection(self.projection)
         dataset.GetRasterBand(1).WriteArray(self.data)
         dataset.FlushCache()
+        dataset = None
         src_dataset = gdal.Open(filename_copy, gdal.GA_ReadOnly)
         # driver = gdal.GetDriverByName('XYZ') можно использовать для формата .dat
         driver = gdal.GetDriverByName('GSAG')
         driver.CreateCopy(filename, src_dataset, 0, options=['TFW=NO'])
         # Удаляем временный файл
         src_dataset = None
-        dataset = None
         os.remove(filename_copy)
-        os.remove(filename.replace(".grd", "") + ".grd.aux.xml")
+        aux_file = filename + ".aux.xml"
+        if os.path.exists(aux_file):
+            os.remove(aux_file)
 
     def convert_coord_to_pix(self, array):
         """Преобразование координат массива в пиксельные координаты в соответствии с geo_transform карты"""

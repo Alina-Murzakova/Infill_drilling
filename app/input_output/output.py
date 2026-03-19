@@ -4,7 +4,8 @@ import pandas as pd
 
 from app.config import translation_dict_local_parameters
 from app.input_output.output_functions import summary_table, create_new_dir, save_map_permeability_fact_wells, \
-    save_ranking_drilling_to_excel, save_picture_clustering_zones, dict_to_df, create_df_project_wells, save_local_parameters
+    save_ranking_drilling_to_excel, save_picture_clustering_zones, dict_to_df, create_df_project_wells, \
+    save_local_parameters
 
 
 def upload_data(name_field, name_object, save_directory, data_wells, maps, list_zones, info_clusterization_zones,
@@ -45,15 +46,17 @@ def upload_data(name_field, name_object, save_directory, data_wells, maps, list_
 
     logger.info("Сохранение карты фактической проницаемости через РБ в форматах .png и .grd")
     map_pressure = maps[type_map_list.index('pressure')]
-    save_map_permeability_fact_wells(data_all_wells, map_pressure,
-                                     f"{save_directory}/изображения png/фактическая проницаемость через РБ.png",
-                                     radius_interpolate=parameters['maps']['radius_interpolate'],
-                                     accounting_GS=parameters['switches']['switch_accounting_horwell'])
+
+    if not data_all_wells[data_all_wells['permeability_fact'] != 0].empty:
+        save_map_permeability_fact_wells(data_all_wells, map_pressure,
+                                         f"{save_directory}/изображения png/фактическая проницаемость через РБ.png",
+                                         radius_interpolate=parameters['maps']['radius_interpolate'],
+                                         accounting_GS=parameters['switches']['switch_accounting_horwell'])
 
     logger.info(f"Сохраняем .png с начальным расположением проектного фонда в кластерах и карту ОИЗ с проектным фондом")
     save_picture_clustering_zones(list_zones, f"{save_directory}/изображения png/начальное расположение ПФ.png",
                                   buffer_project_wells=parameters['well_params']['proj_wells_params']
-                                  ['buffer_project_wells']/default_size_pixel)
+                                                       ['buffer_project_wells'] / default_size_pixel)
     map_residual_recoverable_reserves = maps[type_map_list.index('residual_recoverable_reserves')]
     map_residual_recoverable_reserves.save_img(f"{save_directory}/изображения png/карта ОИЗ с ПФ.png", data_wells,
                                                list_zones, info_clusterization_zones, project_wells=True)
@@ -105,4 +108,3 @@ def upload_data(name_field, name_object, save_directory, data_wells, maps, list_
         df_parameters.to_excel(writer, sheet_name='Параметры расчета', index=False)
 
     return df_summary_table
-

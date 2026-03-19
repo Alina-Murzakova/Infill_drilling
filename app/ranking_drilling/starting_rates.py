@@ -170,7 +170,6 @@ def get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients):
     data_wells = data_wells.merge(data_wells_for_perm[['well_number', 'permeability_fact']],
                                   how='left', on='well_number')
     data_wells['permeability_fact'] = data_wells['permeability_fact'].fillna(0)
-    data_wells['permeability_fact'] = 0
     if not data_wells[data_wells['permeability_fact'] != 0].empty:
         if dict_parameters_coefficients['switches']['switch_filtration_perm_fact']:
             # Верхняя граница для фильтрации выбросов (персентиль q3)
