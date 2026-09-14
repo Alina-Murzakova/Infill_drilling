@@ -1,7 +1,6 @@
 import streamlit as st
 import base64
 import re
-import markdown
 import mimetypes
 from pathlib import Path
 
