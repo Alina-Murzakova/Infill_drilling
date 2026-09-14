@@ -1,6 +1,6 @@
 import os
 import alphashape
-import win32api
+import platform
 from decimal import Decimal
 from datetime import datetime
 from loguru import logger
@@ -161,45 +161,80 @@ def save_contours(list_zones, map_conv, save_directory_contours, type_calc='buff
 
 def get_save_path(program_name: str = "default") -> str:
     """
-    Получение пути на запись
-    :return:
+    Получение пути для сохранения результатов.
     """
     path_program = os.getcwd()
     current_datetime = datetime.now().strftime("%d.%m.%Y")
-    # Проверка возможности записи в директорию программы
-    if "\\app" in path_program:
+
+    # Определяем корень проекта
+    if os.name == "nt":
         path_program = path_program.replace("\\app", "")
-    if "\\drill_zones" in path_program:
         path_program = path_program.replace("\\drill_zones", "")
-    save_path = f"{path_program}\\output\\{current_datetime}"
-    try:
-        create_new_dir(save_path)
-    except PermissionError:
-        # Поиск другого диска с возможностью записи: D: если он есть и C:, если он один
-        # В будущем можно исправить с запросом на сохранение
-        drives = win32api.GetLogicalDriveStrings()  # получение списка дисков
-        save_drive = []
-        list_drives = [drive for drive in drives.split('\\\000')[:-1] if 'D:' in drive]
-        if list_drives:
-            save_drive = list_drives[0]
-        else:
-            list_drives = [drive for drive in drives.split('\\\000')[:-1] if 'C:' in drive]
-            if list_drives:
-                save_drive = list_drives[0]
-            else:
-                error_msg = f"У пользователя нет прав доступа на запись на диск {save_drive}"
+        save_path = os.path.join(
+            path_program,
+            "output",
+            current_datetime
+        )
+
+        try:
+            create_new_dir(save_path)
+        except PermissionError:
+            # Резервная логика для Windows
+            import win32api
+
+            drives = win32api.GetLogicalDriveStrings()
+            drives = drives.split('\000')
+
+            list_drives = [
+                drive for drive in drives
+                if drive and "D:" in drive
+            ]
+
+            if not list_drives:
+                list_drives = [
+                    drive for drive in drives
+                    if drive and "C:" in drive
+                ]
+
+            if not list_drives:
+                error_msg = "У пользователя нет прав доступа на запись"
                 logger.critical(error_msg)
-                raise PermissionError(f"{error_msg}")
+                raise PermissionError(error_msg)
 
-        current_user = os.getlogin()
-        profile_dir = [dir_ for dir_ in os.listdir(save_drive) if dir_.lower() == "profiles"
-                       or dir_.upper() == "PROFILES"]
+            save_drive = list_drives[0]
 
-        if len(profile_dir) < 1:
-            save_path = f"{save_drive}\\{program_name}_output\\{current_datetime}"
-        else:
-            save_path = (f"{save_drive}\\{profile_dir[0]}\\{current_user}\\"
-                         f"{program_name}_output\\{current_datetime}")
+            current_user = os.getlogin()
+
+            profile_dir = [
+                dir_
+                for dir_ in os.listdir(save_drive)
+                if dir_.lower() == "profiles"
+            ]
+
+            if not profile_dir:
+                save_path = os.path.join(
+                    save_drive,
+                    f"{program_name}_output",
+                    current_datetime
+                )
+            else:
+                save_path = os.path.join(
+                    save_drive,
+                    profile_dir[0],
+                    current_user,
+                    f"{program_name}_output",
+                    current_datetime
+                )
+
+            create_new_dir(save_path)
+
+    else:
+        # Linux / Streamlit Cloud
+        save_path = os.path.join(
+            path_program,
+            "output",
+            current_datetime
+        )
         create_new_dir(save_path)
     return save_path
 
