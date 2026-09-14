@@ -1,4 +1,5 @@
-GDAL~=3.8.4
+##GDAL~=3.8.4
+./wheels/GDAL-3.8.5-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
 matplotlib~=3.9.1
 numpy~=1.26.4
 scipy~=1.14.0
