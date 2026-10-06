@@ -307,183 +307,385 @@ def clusterization_zones(map_opportunity_index, epsilon, min_samples, percent_lo
 
 
 if __name__ == '__main__':
-    # Скрипт для перебора гиперпараметров DBSCAN по карте cut_map_opportunity_index.grd
+    import math
+    import itertools
+    import numpy as np
     import matplotlib.pyplot as plt
+    from tqdm import tqdm
+
     from app.input_output.input_wells_data import load_wells_data, prepare_wells_data
     from app.input_output.input_geo_phys_properties import load_geo_phys_properties
     from app.local_parameters import parameters
     from app.well_active_zones import calculate_effective_radius
     from app.maps_handler.functions import mapping
     from app.input_output.output_functions import get_save_path, create_new_dir
-    import math
-    import itertools
 
-    min_radius = range(100, 600, 100)
-    sensitivity_quality_drill = range(60, 100, 5)
-    # Генерация всех возможных сочетаний по два
-    combinations = list(itertools.product(min_radius, sensitivity_quality_drill))
+    # ---------------------------
+    # Параметры перебора
+    # ---------------------------
+    # min_radius = list(range(50, 501, 50))
+    # sensitivity_quality_drill = list(range(0, 101, 10))
+    min_radius = [100]
+    sensitivity_quality_drill = [20]
+
+    # None — брать percent_top из parameters['drill_zones']
+    # или задай диапазон, например:
+    # percent_top_range = list(range(10, 51, 10))
+    percent_top_range = list(range(10, 101, 10))
+
+    cols = 3
+    rows = 4
+    plots_per_page = cols * rows
 
     save_dir = get_save_path("Infill_drilling")
     parameters['paths']['save_directory'] = save_dir
-    # Пути
     paths = parameters['paths']
-    # Параметры расчета
     drill_zones_params = parameters['drill_zones']
 
-    # Константы расчета
+    if percent_top_range is None:
+        percent_top_values = [drill_zones_params["percent_top"]]
+    else:
+        percent_top_values = percent_top_range
+
+    combinations = list(itertools.product(
+        min_radius,
+        sensitivity_quality_drill,
+        percent_top_values
+    ))
+
     if parameters['well_params']['proj_wells_params']['buffer_project_wells'] <= 0:
-        # нижнее ограничение на расстояние до фактических скважин от проектной
         parameters['well_params']['proj_wells_params']['buffer_project_wells'] = 10
 
     logger.info("Загрузка скважинных данных")
-    data_history, info_object_calculation = load_wells_data(data_well_directory=paths["data_well_directory"])
-    name_field, name_object = info_object_calculation.get("field"), info_object_calculation.get("object_value")
+    data_history, info_object_calculation = load_wells_data(
+        data_well_directory=paths["data_well_directory"]
+    )
+
+    name_field = info_object_calculation.get("field")
+    name_object = info_object_calculation.get("object_value")
+
     save_directory = paths['save_directory']
     create_new_dir(f"{save_directory}/.debug")
 
-    logger.info(f"Загрузка ГФХ по пласту {name_object.replace('/', '-')} месторождения {name_field}")
-    dict_geo_phys_properties = load_geo_phys_properties(paths["path_geo_phys_properties"], name_field, name_object)
+    logger.info(
+        f"Загрузка ГФХ по пласту {name_object.replace('/', '-')} "
+        f"месторождения {name_field}"
+    )
+    dict_geo_phys_properties = load_geo_phys_properties(
+        paths["path_geo_phys_properties"],
+        name_field,
+        name_object
+    )
     parameters["reservoir_fluid_properties"].update(dict_geo_phys_properties)
 
-    logger.info("подготовка скважинных данных")
-    data_history, data_wells = (
-        prepare_wells_data(data_history, dict_properties=parameters,
-                           first_months=parameters['well_params']['fact_wells_params']['first_months']))
+    logger.info("Подготовка скважинных данных")
+    data_history, data_wells = prepare_wells_data(
+        data_history,
+        dict_properties=parameters,
+        first_months=parameters['well_params']['fact_wells_params']['first_months']
+    )
 
     logger.info("Загрузка и обработка карт")
-    maps, data_wells, maps_to_calculate = mapping(maps_directory=paths["maps_directory"],
-                                                  data_wells=data_wells,
-                                                  **{**parameters['maps'], **parameters['switches']})
-    default_size_pixel = maps[0].geo_transform[1]  # размер ячейки после загрузки всех карт
+    maps, data_wells, maps_to_calculate = mapping(
+        maps_directory=paths["maps_directory"],
+        data_wells=data_wells,
+        **{**parameters['maps'], **parameters['switches']}
+    )
+
+    default_size_pixel = maps[0].geo_transform[1]
 
     logger.info("Расчет радиусов дренирования и нагнетания для скважин")
-    data_wells = calculate_effective_radius(data_wells, dict_properties=parameters)
+    data_wells = calculate_effective_radius(
+        data_wells,
+        dict_properties=parameters
+    )
 
-    logger.info(f"загрузка офп, {parameters['switches']['switch_adaptation_relative_permeability']}")
+    logger.info(
+        f"Загрузка ОФП, "
+        f"{parameters['switches']['switch_adaptation_relative_permeability']}"
+    )
     if parameters['switches']['switch_adaptation_relative_permeability']:
-        parameters = get_reservoir_kr(data_history.copy(), data_wells.copy(), parameters)
+        parameters = get_reservoir_kr(
+            data_history.copy(),
+            data_wells.copy(),
+            parameters
+        )
 
-    logger.info(f"расчет карт текущего состояния: обводненности и оиз, {any(maps_to_calculate.values())}")
+    logger.info(f"Расчет карт текущего состояния: {any(maps_to_calculate.values())}")
     if any(maps_to_calculate.values()):
-        maps = calculate_reservoir_state_maps(data_wells,
-                                              maps,
-                                              parameters,
-                                              default_size_pixel,
-                                              maps_to_calculate,
-                                              maps_directory=paths["maps_directory"])
-    logger.info(f"расчет оценочных карт")
-    maps = maps + calculate_score_maps(maps=maps, dict_properties=parameters['reservoir_fluid_properties'])
-    type_map_list = list(map(lambda raster: raster.type_map, maps))
+        maps = calculate_reservoir_state_maps(
+            data_wells,
+            maps,
+            parameters,
+            default_size_pixel,
+            maps_to_calculate,
+            maps_directory=paths["maps_directory"]
+        )
 
-    # инициализация всех необходимых карт из списка
+    logger.info("Расчет оценочных карт")
+    maps = maps + calculate_score_maps(
+        maps=maps,
+        dict_properties=parameters['reservoir_fluid_properties']
+    )
+
+    type_map_list = [raster.type_map for raster in maps]
     map_opportunity_index = maps[type_map_list.index("opportunity_index")]
-    percent_low = 100 - drill_zones_params["percent_top"]
-    total_plots = len(combinations)
 
-    # Вычисление количества строк и столбцов
-    rows = math.ceil(math.sqrt(total_plots))  # Округляем вверх
-    cols = math.ceil(total_plots / rows)  # Вычисляем количество столбцов
+    # ---------------------------
+    # Границы карты
+    # ---------------------------
+    x_geo = (
+        map_opportunity_index.geo_transform[0],
+        map_opportunity_index.geo_transform[0]
+        + map_opportunity_index.geo_transform[1]
+        * map_opportunity_index.data.shape[1]
+    )
 
-    # Создание фигуры и сабплота
-    # fig = plt.figure(figsize=(cols * 4, rows * 3))  # Размер фигуры (можно настроить)
-    fig = plt.figure()
-    fig.set_size_inches(20, 50)
+    y_geo = (
+        map_opportunity_index.geo_transform[3]
+        + map_opportunity_index.geo_transform[5]
+        * map_opportunity_index.data.shape[0],
+        map_opportunity_index.geo_transform[3]
+    )
 
-    # Перебор параметров DBSCAN c сеткой графиков 5 х 3
-    for i, s in enumerate(combinations):
+    # ---------------------------
+    # Общая цветовая шкала
+    # ---------------------------
+    vmin = np.nanmin(map_opportunity_index.data)
+    vmax = np.nanmax(map_opportunity_index.data)
 
-        epsilon = s[0] / default_size_pixel
-        min_samples = int(s[1] / 100 * epsilon ** 2 * math.pi)
+    pages = [
+        combinations[i:i + plots_per_page]
+        for i in range(0, len(combinations), plots_per_page)
+    ]
 
-        list_zones, _ = calculate_drilling_zones(maps=maps,
-                                                 epsilon=epsilon,
-                                                 min_samples=min_samples,
-                                                 percent_low=percent_low,
-                                                 data_wells=data_wells,
-                                                 dict_properties=parameters)
+    logger.info(
+        f"Всего комбинаций: {len(combinations)}. "
+        f"Картинок будет сохранено: {len(pages)}"
+    )
 
-        ax_ = fig.add_subplot(rows, cols, i + 1)
+    progress = tqdm(
+        total=len(combinations),
+        desc="Расчет карт зон бурения",
+        unit="map"
+    )
 
-        # Определение размера осей
-        x = (map_opportunity_index.geo_transform[0], map_opportunity_index.geo_transform[0] +
-             map_opportunity_index.geo_transform[1] * map_opportunity_index.data.shape[1])
-        y = (map_opportunity_index.geo_transform[3] + map_opportunity_index.geo_transform[5] *
-             map_opportunity_index.data.shape[0], map_opportunity_index.geo_transform[3])
+    try:
+        for page_idx, page_combinations in enumerate(pages, start=1):
+            fig, axes = plt.subplots(
+                rows,
+                cols,
+                figsize=(5.5 * cols, 4.8 * rows),
+                sharex=True,
+                sharey=True,
+                constrained_layout=True
+            )
 
-        d_x = x[1] - x[0]
-        d_y = y[1] - y[0]
+            axes = np.atleast_1d(axes).ravel()
+            im_for_cbar = None
 
-        element_size = min(d_x, d_y) / 10 ** 5
-        font_size = min(d_x, d_y) / 10 ** 3
+            for i, (radius, quality, percent_top) in enumerate(page_combinations):
+                ax = axes[i]
 
-        plt.imshow(map_opportunity_index.data, cmap='viridis')
-        cbar = plt.colorbar()
-        cbar.ax.tick_params(labelsize=font_size)
+                percent_low = 100 - percent_top
+                epsilon = radius / default_size_pixel
 
-        if data_wells is not None:
-            # Отображение списка скважин на карте
-            column_lim_x = ['T1_x_geo', 'T3_x_geo']
-            for column in column_lim_x:
-                data_wells = data_wells.loc[((data_wells[column] <= x[1]) & (data_wells[column] >= x[0]))]
-            column_lim_y = ['T1_y_geo', 'T3_y_geo']
-            for column in column_lim_y:
-                data_wells = data_wells.loc[((data_wells[column] <= y[1]) & (data_wells[column] >= y[0]))]
+                # DBSCAN требует eps > 0
+                if epsilon <= 0:
+                    ax.set_title(
+                        f"R={radius}, Q={quality}, top={percent_top}, skipped",
+                        fontsize=8
+                    )
+                    ax.axis('off')
+                    progress.update(1)
+                    continue
 
-            # Преобразование координат скважин в пиксельные координаты
-            x_t1, y_t1 = map_opportunity_index.convert_coord_to_pix((data_wells.T1_x_geo, data_wells.T1_y_geo))
-            x_t3, y_t3 = map_opportunity_index.convert_coord_to_pix((data_wells.T3_x_geo, data_wells.T3_y_geo))
+                # DBSCAN требует min_samples >= 1
+                min_samples = max(
+                    1,
+                    int(quality / 100 * epsilon**2 * math.pi)
+                )
 
-            # Отображение скважин на карте
-            plt.plot([x_t1, x_t3], [y_t1, y_t3], c='black', linewidth=element_size)
-            plt.scatter(x_t1, y_t1, s=element_size, c='black', marker="o")
+                list_zones, _ = calculate_drilling_zones(
+                    maps=maps,
+                    epsilon=epsilon,
+                    min_samples=min_samples,
+                    percent_low=percent_low,
+                    data_wells=data_wells,
+                    dict_properties=parameters
+                )
 
-            # Отображение имен скважин рядом с точками T1
-            for x, y, name in zip(x_t1, y_t1, data_wells.well_number):
-                plt.text(x + 3, y - 3, name, fontsize=font_size / 10, ha='left')
+                im = ax.imshow(
+                    map_opportunity_index.data,
+                    cmap='viridis',
+                    vmin=vmin,
+                    vmax=vmax,
+                    origin='upper'
+                )
 
-        plt.title(map_opportunity_index.type_map, fontsize=font_size * 1.2)
-        plt.tick_params(axis='both', which='major', labelsize=font_size)
-        plt.contour(map_opportunity_index.data, levels=8, colors='black', origin='lower', linewidths=font_size / 100)
+                if im_for_cbar is None:
+                    im_for_cbar = im
 
-        labels = list(map(lambda zone: zone.rating, list_zones))
-        # Выбираем теплую цветовую карту
-        cmap = plt.get_cmap('Wistia', len(set(labels)))
-        # Генерируем список цветов
-        colors = [cmap(i) for i in range(len(set(labels)))]
+                ax.contour(
+                    map_opportunity_index.data,
+                    levels=8,
+                    colors='black',
+                    origin='lower',
+                    linewidths=0.25
+                )
 
-        if len(labels) == 1 and labels[0] == -1:
-            colors = {0: "gray"}
-        else:
-            colors = dict(zip(labels, colors))
-            colors.update({-1: "gray"})
+                # ---------------------------
+                # Скважины
+                # ---------------------------
+                if data_wells is not None and not data_wells.empty:
+                    wells_plot = data_wells.copy()
 
-        for lab, c in zip(labels, colors.values()):
-            zone = list_zones[labels.index(lab)]
-            x_zone = zone.x_coordinates
-            y_zone = zone.y_coordinates
-            mean_index = np.mean(zone.opportunity_index_values)
-            max_index = np.max(zone.opportunity_index_values)
-            plt.scatter(x_zone, y_zone, color=c, alpha=0.6, s=1)
+                    for column in ['T1_x_geo', 'T3_x_geo']:
+                        wells_plot = wells_plot.loc[
+                            (wells_plot[column] >= x_geo[0])
+                            & (wells_plot[column] <= x_geo[1])
+                        ]
 
-            x_middle = x_zone[int(len(x_zone) / 2)]
-            y_middle = y_zone[int(len(y_zone) / 2)]
+                    for column in ['T1_y_geo', 'T3_y_geo']:
+                        wells_plot = wells_plot.loc[
+                            (wells_plot[column] >= y_geo[0])
+                            & (wells_plot[column] <= y_geo[1])
+                        ]
 
-            # if lab != -1:
-            #     # Отображение номера кластера
-            #     plt.text(x_zone[int(len(x_zone) / 2)], y_zone[int(len(x_zone) / 2)], lab, fontsize=font_size,
-            #              color='red')
+                    if not wells_plot.empty:
+                        x_t1, y_t1 = map_opportunity_index.convert_coord_to_pix(
+                            (wells_plot.T1_x_geo, wells_plot.T1_y_geo)
+                        )
+                        x_t3, y_t3 = map_opportunity_index.convert_coord_to_pix(
+                            (wells_plot.T3_x_geo, wells_plot.T3_y_geo)
+                        )
 
-        plt.xlim(0, map_opportunity_index.data.shape[1])
-        plt.ylim(0, map_opportunity_index.data.shape[0])
-        plt.xlabel("x")
-        plt.ylabel("y")
-        plt.gca().invert_yaxis()
+                        ax.plot(
+                            [x_t1, x_t3],
+                            [y_t1, y_t3],
+                            c='black',
+                            linewidth=0.4
+                        )
+                        ax.scatter(
+                            x_t1,
+                            y_t1,
+                            s=5,
+                            c='black',
+                            marker='o'
+                        )
 
-        n_clusters = len(labels) - 1
+                        if len(wells_plot) <= 20:
+                            for xx, yy, name in zip(
+                                x_t1,
+                                y_t1,
+                                wells_plot.well_number
+                            ):
+                                ax.text(
+                                    xx + 2,
+                                    yy - 2,
+                                    name,
+                                    fontsize=5,
+                                    ha='left',
+                                    color='black'
+                                )
 
-        plt.title(f"min_radius = {s[0]}\n quality = {s[1]} \n with {n_clusters} clusters")
+                # ---------------------------
+                # Кластеры
+                # ---------------------------
+                labels = [zone.rating for zone in list_zones]
+                unique_labels = sorted(set(labels))
 
-    fig.tight_layout()
-    plt.savefig(f"{save_directory}/.debug/drilling_index_map", dpi=300)
-    plt.close()
-    pass
+                if unique_labels == [-1]:
+                    color_map = {-1: "gray"}
+                else:
+                    cluster_labels = [
+                        lab for lab in unique_labels
+                        if lab != -1
+                    ]
+
+                    cmap_clusters = plt.get_cmap(
+                        'Wistia',
+                        max(len(cluster_labels), 1)
+                    )
+
+                    color_map = {
+                        lab: cmap_clusters(j)
+                        for j, lab in enumerate(cluster_labels)
+                    }
+                    color_map[-1] = "gray"
+
+                for zone in list_zones:
+                    ax.scatter(
+                        zone.x_coordinates,
+                        zone.y_coordinates,
+                        color=color_map[zone.rating],
+                        alpha=0.65,
+                        s=1,
+                        rasterized=True
+                    )
+
+                n_clusters = len({
+                    lab for lab in labels
+                    if lab != -1
+                })
+
+                ax.set_title(
+                    f"R={radius}, Q={quality}, top={percent_top}, clusters={n_clusters}",
+                    fontsize=8
+                )
+
+                ax.set_xlim(0, map_opportunity_index.data.shape[1])
+                ax.set_ylim(0, map_opportunity_index.data.shape[0])
+                ax.invert_yaxis()
+
+                if i % cols == 0:
+                    ax.set_ylabel("y", fontsize=8)
+                else:
+                    ax.set_ylabel("")
+
+                if i >= len(page_combinations) - cols:
+                    ax.set_xlabel("x", fontsize=8)
+                else:
+                    ax.set_xlabel("")
+
+                ax.tick_params(
+                    axis='both',
+                    which='major',
+                    labelsize=7
+                )
+
+                progress.update(1)
+
+            # Скрываем пустые ячейки на последней странице
+            for j in range(len(page_combinations), len(axes)):
+                axes[j].axis('off')
+
+            if im_for_cbar is not None:
+                cbar = fig.colorbar(
+                    im_for_cbar,
+                    ax=axes[:len(page_combinations)],
+                    location='right',
+                    shrink=0.98,
+                    pad=0.02
+                )
+                cbar.set_label("opportunity_index", fontsize=10)
+                cbar.ax.tick_params(labelsize=8)
+
+            fig.suptitle(
+                f"Сравнение параметров кластеризации зон бурения — "
+                f"страница {page_idx}/{len(pages)}",
+                fontsize=14
+            )
+
+            out_path = (
+                f"{save_directory}/.debug/"
+                f"drilling_index_map_grid_page_{page_idx:03d}.png"
+            )
+
+            plt.savefig(out_path, dpi=300, bbox_inches='tight')
+            plt.close(fig)
+
+            logger.info(f"Сетка карт сохранена: {out_path}")
+
+    finally:
+        progress.close()

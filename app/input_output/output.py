@@ -5,7 +5,7 @@ import pandas as pd
 from app.config import translation_dict_local_parameters
 from app.input_output.output_functions import summary_table, create_new_dir, save_map_permeability_fact_wells, \
     save_ranking_drilling_to_excel, save_picture_clustering_zones, dict_to_df, create_df_project_wells, \
-    save_local_parameters
+    save_local_parameters, save_contours, save_excel_permeability_fact_wells, save_excel_inj_wells
 
 
 def upload_data(name_field, name_object, save_directory, data_wells, maps, list_zones, info_clusterization_zones,
@@ -62,7 +62,7 @@ def upload_data(name_field, name_object, save_directory, data_wells, maps, list_
                                                list_zones, info_clusterization_zones, project_wells=True)
     logger.info("Сохранение рейтинга бурения проектных скважин в формате .xlsx")
     save_ranking_drilling_to_excel(name_field, name_object, list_zones,
-                                   f"{save_directory}/рейтинг_бурения_{name_field}_{name_object}.xlsx",
+                                   f"{save_directory}/Рейтинг_бурения_{name_field}_{name_object}.xlsx",
                                    parameters['switches']['switch_economy'])
 
     logger.info("Сохранение pickle файлов")
@@ -76,25 +76,28 @@ def upload_data(name_field, name_object, save_directory, data_wells, maps, list_
         pickle.dump(data_history, file, protocol=pickle.HIGHEST_PROTOCOL)
 
     logger.info("Сохранение фактической проницаемости по факт фонду")
-    data_wells_permeability_excel = data_wells_permeability_excel[data_wells_permeability_excel['permeability_fact']
-                                                                  != 0]
-    data_wells_permeability_excel.columns = ['Номер скважины', 'характер', 'состояние', 'тип', 'дата',
-                                             'эффективный радиус через площадь ячейки вороного, м',
-                                             'длина ствола скважины T1-T3, м', 'количество стадий ГРП, шт',
-                                             'полудлина трещины ГРП, м', 'раскрытие трещины ГРП, мм',
-                                             'запускной Qж ТР, т/сут', 'стартовая обводненность ТР (объем), д.ед.',
-                                             'запускное забойное давление добывающей скважины, атм',
-                                             'стартовое пластовое давление ТР, атм',
-                                             'нефтенасыщенная толщина, м', 'пористость, д.ед',
-                                             'проницаемость c карты, мД', 'проницаемость обратным счетом через РБ, мД']
-    with pd.ExcelWriter(f"{save_directory}/Фактическая_проницаемость_скважин.xlsx") as writer:
-        data_wells_permeability_excel.to_excel(writer)
+    save_excel_permeability_fact_wells(data_wells_permeability_excel, save_directory)
 
-    # logger.info("Сохранение контуров зон в формате .txt для загрузки в NGT")
-    # save_directory_contours = f"{save_directory}/контуры зон"
-    # create_new_dir(save_directory_contours)
-    # save_contours(list_zones, map_residual_recoverable_reserves, save_directory_contours, type_calc='alpha',
-    #               buffer_size=40)
+    logger.info("Сохранение полезной закачки")
+    save_excel_inj_wells(data_wells, save_directory)
+
+    logger.info("Сохранение контуров зон в формате .txt для загрузки в NGT")
+    save_directory_contours = f"{save_directory}/контуры зон"
+    create_new_dir(save_directory_contours)
+
+    saved_zones, failed_zones = save_contours(
+        list_zones,
+        map_residual_recoverable_reserves,
+        save_directory_contours,
+        type_calc='alpha',
+        buffer_size=40,
+        alpha=0.01
+    )
+
+    logger.info(f"Сохранено контуров: {len(saved_zones)}")
+
+    if failed_zones:
+        logger.warning(f"Контуры не построены для зон: {failed_zones}")
 
     logger.info("Сохранение local_parameters")
     save_local_parameters(parameters, f"{save_directory}/.debug/local_parameters.py")

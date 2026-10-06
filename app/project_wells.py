@@ -258,7 +258,8 @@ def calculate_reserves_by_voronoi(list_zones, df_fact_wells, map_rrr, save_direc
                                                                                                 'length_geo',
                                                                                                 'POINT_T1_geo',
                                                                                                 'well_number_digit',
-                                                                                                'type_wellbore']]
+                                                                                                'type_wellbore',
+                                                                                                'r_eff']]
     gdf_project_wells = gpd.GeoDataFrame()
     for drill_zone in list_zones:
         if drill_zone.rating != -1:
@@ -279,7 +280,13 @@ def calculate_reserves_by_voronoi(list_zones, df_fact_wells, map_rrr, save_direc
     gdf_all_wells = pd.merge(gdf_all_wells, df_parameters_voronoi, on='well_number', how='left')
     # сохранение картинки Вороных
     if save_directory:
-        save_picture_voronoi(gdf_all_wells, f"{save_directory}", type_coord="geo", default_size_pixel=1)
+        save_picture_voronoi(df_Coordinates=gdf_all_wells,
+                             filename=save_directory + "/.debug/voronoy_map.png",
+                             type_coord="geo",
+                             default_size_pixel=1,
+                             label_mode="all",
+                             labels_count=4
+                             )
     # оставляем только проектные скважины
     gdf_project_wells = gdf_all_wells[gdf_all_wells['work_marker'].isna()].reset_index(drop=True)
     # Подготовка сетки точек к расчету запасов

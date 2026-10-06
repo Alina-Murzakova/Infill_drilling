@@ -187,7 +187,7 @@ def get_df_permeability_fact_wells(data_wells, dict_parameters_coefficients):
     dict_parameters_coefficients['well_params']['proj_wells_params']['all_P_wells_init'] = (
         data_wells[data_wells['init_P_well_prod'] != 0]['init_P_well_prod'].mean())
     data_wells_permeability_excel = data_wells[["well_number", "work_marker", "well_status", "well_type", "date",
-                                                "r_eff_voronoy",
+                                                "r_eff_not_norm", "r_eff_voronoy", "r_eff",
                                                 "length_geo", "FracCount",
                                                 "xfr", "w_f",
                                                 "init_Ql_rate_TR", "init_water_cut_TR",

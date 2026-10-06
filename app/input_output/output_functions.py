@@ -11,7 +11,7 @@ from shapely import Point, Polygon, MultiPolygon, MultiPoint
 from typing import Dict, Any, List
 
 from app.maps_handler.maps import read_array
-from app.well_active_zones import combine_to_linestring
+from app.well_active_zones import combine_mzs_to_polygon
 from longsgis import voronoiDiagram4plg
 
 
@@ -89,74 +89,183 @@ def summary_table(list_zones, switch_economy):
     return df_summary_table
 
 
-def save_contours(list_zones, map_conv, save_directory_contours, type_calc='buffer', buffer_size=60, alpha=0.01):
+def save_contours(
+        list_zones,
+        map_conv,
+        save_directory_contours,
+        type_calc='buffer',
+        buffer_size=60,
+        alpha=0.01
+):
     """
-    Сохранение контуров зон в формате .txt для загрузки в NGT в отдельную папку
-    Parameters
-    ----------
-    list_zones - список объектов DrillZone
-    map_conv - карта для конвертирования пиксельных координат зон в географические
-    save_directory_contours -  путь для сохранения файлов в отдельную папку
-    type_calc - формат расчета (buffer - буфферезация точек,
-                                alpha - через библиотеку alphashape,
-                                convex_hull - выпуклая оболочка зоны)
-    buffer_size - размер буффера точек
-    alpha - параметр для объединения точек alphashape
+    Сохранение контуров зон в формате .txt для загрузки в NGT в отдельную папку.
+
+    Если stop_on_error=False, ошибки по отдельным зонам не останавливают расчет.
+    Функция возвращает два списка:
+    - saved_zones: успешно сохраненные зоны
+    - failed_zones: зоны, которые не удалось сохранить
     """
+
+    saved_zones = []
+    failed_zones = []
+
     for drill_zone in list_zones:
-        if drill_zone.rating != -1:
-            x_coordinates, y_coordinates = drill_zone.x_coordinates, drill_zone.y_coordinates
-            x_coordinates, y_coordinates = map_conv.convert_coord_to_geo((x_coordinates, y_coordinates))
+        if drill_zone.rating == -1:
+            continue
+
+        try:
+            logger.info(f"Сохранение контура зоны {drill_zone.rating}")
+
+            x_coordinates = drill_zone.x_coordinates
+            y_coordinates = drill_zone.y_coordinates
+
+            # Проверка входных координат
+            if x_coordinates is None or y_coordinates is None:
+                raise ValueError("Координаты зоны отсутствуют")
+
+            if len(x_coordinates) == 0 or len(y_coordinates) == 0:
+                raise ValueError("Пустой массив координат зоны")
+
+            if len(x_coordinates) != len(y_coordinates):
+                raise ValueError(
+                    f"Разная длина массивов координат: "
+                    f"x={len(x_coordinates)}, y={len(y_coordinates)}"
+                )
+
+            x_coordinates, y_coordinates = map_conv.convert_coord_to_geo(
+                (x_coordinates, y_coordinates)
+            )
+
             if type_calc == 'buffer':
-                # Создаем список точек
                 points = MultiPoint(list(zip(x_coordinates, y_coordinates)))
-                # Строим буфер вокруг точек
+
+                if points.is_empty:
+                    raise ValueError("MultiPoint пустой после конвертации координат")
+
                 buffered = points.buffer(buffer_size).simplify(0.01)
-                # Проверяем, что результат — полигон
+
                 if isinstance(buffered, Polygon):
                     x_boundary, y_boundary = buffered.exterior.xy
-                else:
+                elif isinstance(buffered, MultiPolygon):
+                    largest_polygon = max(buffered.geoms, key=lambda p: p.area)
+                    x_boundary, y_boundary = largest_polygon.exterior.xy
 
-                    error_msg = "Не удалось построить границу зоны. Проверьте размер buffer или входные данные."
-                    logger.critical(error_msg)
-                    raise ValueError(f"{error_msg}")
+                    logger.warning(
+                        f"Зона {drill_zone.rating}: buffer вернул MultiPolygon. "
+                        f"Выбран самый большой полигон площадью "
+                        f"{largest_polygon.area / 1000000:.3f} кв.км"
+                    )
+                else:
+                    raise ValueError(
+                        "Не удалось построить границу зоны через buffer. "
+                        "Проверьте buffer_size или входные данные."
+                    )
+
             elif type_calc == 'alpha':
-                # Создаем список точек
                 points = np.array(list(zip(x_coordinates, y_coordinates)))
-                # Строим alpha shape
+
+                if len(points) < 3:
+                    raise ValueError(
+                        f"Недостаточно точек для построения полигона: {len(points)}"
+                    )
+
                 alpha_shape = alphashape.alphashape(points, alpha)
-                # Проверяем, что результат — полигон
+
                 if isinstance(alpha_shape, Polygon):
                     x_boundary, y_boundary = alpha_shape.exterior.xy
+
                 elif isinstance(alpha_shape, MultiPolygon):
-                    # Выбираем самый большой полигон
                     largest_polygon = max(alpha_shape.geoms, key=lambda p: p.area)
                     x_boundary, y_boundary = largest_polygon.exterior.xy
 
-                    # Выводим площади всех полигонов, чтобы не потерять случайно большой полигон
                     for poly in alpha_shape.geoms:
-                        logger.info(f"Площадь полигона Мультиполигона {drill_zone.rating}: {poly.area / 1000000} кв.км")
+                        logger.info(
+                            f"Площадь полигона MultiPolygon зоны "
+                            f"{drill_zone.rating}: {poly.area / 1000000:.3f} кв.км"
+                        )
+
+                    logger.warning(
+                        f"Зона {drill_zone.rating}: alpha_shape вернул MultiPolygon. "
+                        f"Выбран самый большой полигон."
+                    )
+
                 else:
-                    error_msg = "Не удалось построить границу зоны. Проверьте параметр alpha или входные данные."
-                    logger.critical(error_msg)
-                    raise ValueError(f"{error_msg}")
+                    raise ValueError(
+                        f"Не удалось построить границу зоны через alpha_shape. "
+                        f"Тип результата: {type(alpha_shape)}. "
+                        f"Проверьте alpha или входные данные."
+                    )
+
             elif type_calc == 'convex_hull':
-                mesh = list(map(lambda x, y: Point(x, y), x_coordinates, y_coordinates))
+                if len(x_coordinates) < 3:
+                    raise ValueError(
+                        f"Недостаточно точек для convex_hull: {len(x_coordinates)}"
+                    )
+
+                mesh = [
+                    Point(x, y)
+                    for x, y in zip(x_coordinates, y_coordinates)
+                ]
+
                 ob = Polygon(mesh)
-                # определяем границу зоны
                 boundary_drill_zone = ob.convex_hull
+
+                if not isinstance(boundary_drill_zone, Polygon):
+                    raise ValueError(
+                        f"convex_hull не вернул Polygon. "
+                        f"Тип результата: {type(boundary_drill_zone)}"
+                    )
+
                 x_boundary, y_boundary = boundary_drill_zone.exterior.coords.xy
+
             else:
-                error_msg = f"Проверьте значение параметра type_calc: {type_calc}"
-                logger.critical(error_msg)
-                raise ValueError(f"{error_msg}")
+                raise ValueError(
+                    f"Некорректное значение параметра type_calc: {type_calc}"
+                )
+
+            # Дополнительная проверка результата
+            if len(x_boundary) == 0 or len(y_boundary) == 0:
+                raise ValueError("Получена пустая граница зоны")
+
             name_txt = f'{save_directory_contours}/{drill_zone.rating}.txt'
-            with open(name_txt, "w") as file:
-                file.write(f"/\n")
+
+            with open(name_txt, "w", encoding="utf-8") as file:
+                file.write("/\n")
+
                 for x, y in zip(x_boundary, y_boundary):
                     file.write(f"{x} {y}\n")
+
                 file.write(f"{x_boundary[0]} {y_boundary[0]}\n")
-    pass
+
+            saved_zones.append(drill_zone.rating)
+
+            logger.info(
+                f"Контур зоны {drill_zone.rating} успешно сохранен: {name_txt}"
+            )
+
+        except ValueError as error:
+            failed_zones.append(drill_zone.rating)
+            logger.warning(f"Контур зоны {drill_zone.rating} не построен: {error}")
+            continue
+
+        except Exception as error:
+            failed_zones.append(drill_zone.rating)
+            logger.error(f"Неожиданная ошибка при сохранении контура зоны {drill_zone.rating}:"
+                         f" {type(error).__name__}: {error}")
+            continue
+
+    logger.info(
+        f"Сохранение контуров завершено. "
+        f"Успешно: {len(saved_zones)}, "
+        f"с ошибками: {len(failed_zones)}"
+    )
+
+    if failed_zones:
+        logger.warning(
+            f"Не удалось сохранить контуры для зон: {failed_zones}"
+        )
+
+    return saved_zones, failed_zones
 
 
 def get_save_path(program_name: str = "default") -> str:
@@ -288,11 +397,11 @@ def save_ranking_drilling_to_excel(name_field, name_object, list_zones, filename
                  'Эффективный радиус, м': [round(well.r_eff, 1) for well in drill_zone.list_project_wells],
                  'Запасы, тыс т': [round(well.reserves, 1) for well in drill_zone.list_project_wells],
                  'Накопленная добыча нефти, тыс.т': [round(np.sum(well.Qo) / 1000, 1) for well in
-                                                              drill_zone.list_project_wells],
+                                                     drill_zone.list_project_wells],
                  'Накопленная добыча жидкости, тыс.т': [round(np.sum(well.Ql) / 1000, 1) for well in
-                                                                 drill_zone.list_project_wells],
+                                                        drill_zone.list_project_wells],
                  'Соседние скважины': [well.gdf_nearest_wells.well_number.unique() for
-                                       well in drill_zone.list_project_wells]
+                                       well in drill_zone.list_project_wells],
                  })
             if switch_economy:
                 df_project_wells_economy = pd.DataFrame(
@@ -396,81 +505,460 @@ def create_df_project_wells(list_zones):
     return df_result_project_wells
 
 
-def save_picture_voronoi(df_Coordinates, filename, type_coord="geo", default_size_pixel=1):
-    """Сохранение картинки с ячейками Вороных"""
+def save_picture_voronoi(
+        df_Coordinates,
+        filename,
+        type_coord="geo",
+        default_size_pixel=1,
+        label_mode="all",  # "all" | "corners" | "none"
+        labels_count=4,
+        voronoi_linewidth=1.4,
+        well_linewidth=1.2,
+        zone_alpha=0.22,
+        label_fontsize=7,
+        single_well_markersize=1.2,
+        t1_markersize=2.5,
+):
+    """
+    Сохранение прозрачной картинки с ячейками Вороного:
+    - черные границы ячеек Вороного
+    - прозрачный фон
+    - стволы и точки T1
+    - подписи скважин:
+        * all     -> весь фонд
+        * corners -> 4 фактические по углам области
+        * none    -> без подписей
+    - зоны эффективной добычи/закачки по r_eff_voronoy
+
+    Для МЗС используется исходная логика:
+    объединение через groupby(...).transform(combine_to_linestring)
+    с последующим drop_duplicates по well_number_digit.
+    """
+
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    if type_coord == 'geo':
-        LINESTRING = 'LINESTRING_geo'
-    elif type_coord == 'pix':
-        LINESTRING = 'LINESTRING_pix'
+    import pandas as pd
+    import geopandas as gpd
+
+    from shapely.geometry import Polygon, MultiPolygon
+    from shapely.geometry.base import BaseGeometry
+
+    # ---------------------------
+    # Выбор колонок геометрии
+    # ---------------------------
+    if type_coord == "geo":
+        LINESTRING = "LINESTRING_geo"
+        POINT_T1 = "POINT_T1_geo"
+    elif type_coord == "pix":
+        LINESTRING = "LINESTRING_pix"
+        POINT_T1 = "POINT_T1_pix"
     else:
         error_msg = "Неверный тип координат."
         logger.critical(error_msg)
-        raise TypeError(f"{error_msg}")
+        raise TypeError(error_msg)
 
+    df_Coordinates = df_Coordinates.copy()
+
+    # ---------------------------
+    # Вспомогательные функции
+    # ---------------------------
+    def is_valid_non_empty_geometry(g):
+        return g is not None and hasattr(g, "is_empty") and not g.is_empty
+
+    def filter_non_empty_geometry(gdf, geom_col):
+        return gdf[gdf[geom_col].apply(is_valid_non_empty_geometry)].copy()
+
+    def rounded_geometry(geometry, precision=0):
+        """
+        Округление координат полигона.
+        На вход voronoiDiagram4plg лучше подавать целые координаты.
+        """
+        if geometry is None or geometry.is_empty:
+            return geometry
+
+        if isinstance(geometry, Polygon):
+            rounded_exterior = [(round(x, precision), round(y, precision)) for x, y in geometry.exterior.coords]
+            rounded_interiors = [
+                [(round(x, precision), round(y, precision)) for x, y in interior.coords]
+                for interior in geometry.interiors
+            ]
+            return Polygon(rounded_exterior, rounded_interiors)
+
+        return geometry
+
+    def get_zone_color(work_marker, is_project=False):
+        if is_project:
+            return "#dc143c"  # алый
+        if pd.isna(work_marker):
+            return "#dc143c"
+
+        marker = str(work_marker).strip().lower()
+        if marker == "inj":
+            return "#43bff0"  # голубой
+        if marker == "prod":
+            return "#b87333"  # рыже-коричневый
+
+        return "#808080"
+
+    def plot_well_geometry(gdf, geom_col, ax, color, line_width=1.2, point_markersize=1.2, zorder=5):
+        """
+        Рисует геометрию скважин:
+        - LineString / MultiLineString как линии
+        - Point как маленькие точки
+        """
+        if gdf.empty:
+            return
+
+        gdf_geom = gdf[gdf[geom_col].notna()].copy()
+        if gdf_geom.empty:
+            return
+
+        gdf_geom = gdf_geom[gdf_geom[geom_col].apply(is_valid_non_empty_geometry)].copy()
+        if gdf_geom.empty:
+            return
+
+        gdf_geom = gdf_geom.set_geometry(geom_col)
+
+        # Линии
+        gdf_lines = gdf_geom[gdf_geom.geometry.geom_type.isin(["LineString", "MultiLineString"])].copy()
+        if not gdf_lines.empty:
+            gdf_lines.plot(
+                ax=ax,
+                color=color,
+                linewidth=line_width,
+                zorder=zorder
+            )
+
+        # Одиночные точки
+        gdf_points = gdf_geom[gdf_geom.geometry.geom_type == "Point"].copy()
+        if not gdf_points.empty:
+            gdf_points.plot(
+                ax=ax,
+                color=color,
+                markersize=point_markersize,
+                zorder=zorder
+            )
+
+    def select_corner_wells_for_labels(gdf_points, point_col, count=4):
+        """
+        Выбирает скважины, ближайшие к 4 углам bounding box.
+        Только из фактического фонда.
+        """
+        if gdf_points.empty:
+            return gdf_points.iloc[0:0].copy()
+
+        gdf_valid = gdf_points[gdf_points[point_col].notna()].copy()
+        if gdf_valid.empty:
+            return gdf_valid
+
+        gdf_valid = filter_non_empty_geometry(gdf_valid, point_col)
+        if gdf_valid.empty:
+            return gdf_valid
+
+        gdf_valid["_x"] = gdf_valid[point_col].apply(lambda p: p.x)
+        gdf_valid["_y"] = gdf_valid[point_col].apply(lambda p: p.y)
+
+        minx = gdf_valid["_x"].min()
+        maxx = gdf_valid["_x"].max()
+        miny = gdf_valid["_y"].min()
+        maxy = gdf_valid["_y"].max()
+
+        corners = [
+            ("bottom_left", minx, miny),
+            ("top_left", minx, maxy),
+            ("top_right", maxx, maxy),
+            ("bottom_right", maxx, miny),
+        ]
+
+        selected_idx = []
+        used_idx = set()
+
+        for _, cx, cy in corners:
+            gdf_valid["_dist_corner"] = (gdf_valid["_x"] - cx) ** 2 + (gdf_valid["_y"] - cy) ** 2
+            for idx in gdf_valid.sort_values("_dist_corner").index:
+                if idx not in used_idx:
+                    selected_idx.append(idx)
+                    used_idx.add(idx)
+                    break
+
+        target_count = min(count, len(gdf_valid))
+        if len(selected_idx) < target_count:
+            center_x = (minx + maxx) / 2
+            center_y = (miny + maxy) / 2
+            gdf_valid["_dist_center"] = (gdf_valid["_x"] - center_x) ** 2 + (gdf_valid["_y"] - center_y) ** 2
+
+            for idx in gdf_valid.sort_values("_dist_center", ascending=False).index:
+                if idx not in used_idx:
+                    selected_idx.append(idx)
+                    used_idx.add(idx)
+                if len(selected_idx) >= target_count:
+                    break
+
+        result = gdf_valid.loc[selected_idx].copy()
+        drop_cols = [c for c in ["_x", "_y", "_dist_corner", "_dist_center"] if c in result.columns]
+        result.drop(columns=drop_cols, inplace=True, errors="ignore")
+        return result.head(count)
+
+    def get_label_gdf(gdf_all, gdf_current, point_col, mode="all", count=4):
+        if mode == "none":
+            return gdf_all.iloc[0:0].copy()
+
+        if mode == "corners":
+            return select_corner_wells_for_labels(gdf_current, point_col, count=count)
+
+        if mode == "all":
+            gdf_valid = gdf_all[gdf_all[point_col].notna()].copy()
+            if gdf_valid.empty:
+                return gdf_valid
+            return filter_non_empty_geometry(gdf_valid, point_col)
+
+        raise ValueError("label_mode должен быть одним из: 'all', 'corners', 'none'")
+
+    # ---------------------------
+    # МЗС — возвращаем исходную логику
+    # ---------------------------
     df_MZS = df_Coordinates[df_Coordinates.type_wellbore == "МЗС"].copy()
-    df_Coordinates_other = df_Coordinates[df_Coordinates.type_wellbore != "МЗС"].copy()
-    # Проверка на наличие МЗС
+    df_other = df_Coordinates[df_Coordinates.type_wellbore != "МЗС"].copy()
+    # буферизация обычных скважин || тк вороные строятся для полигонов буферизируем точки и линии скважин
+    df_other["Polygon"] = (df_other.set_geometry(LINESTRING).buffer(1, resolution=3))
+
     if not df_MZS.empty:
         df_Coordinates_MZS = df_MZS.copy()
-        df_Coordinates_MZS[LINESTRING] = df_Coordinates_MZS.groupby("well_number_digit")[LINESTRING].transform(
-            combine_to_linestring)
-        # Если есть МЗС, то формирование для них одной строки
-        df_Coordinates_MZS.drop_duplicates(subset=['well_number_digit'], keep='first', inplace=True)
-        df_Coordinates = pd.concat([df_Coordinates_other, df_Coordinates_MZS], ignore_index=True)
+        # буферизация МЗС
+        df_polygons_mzs = (df_Coordinates_MZS.groupby("well_number_digit")[LINESTRING].apply(combine_mzs_to_polygon)
+                           .reset_index(name="Polygon"))
+        df_Coordinates_MZS = (df_Coordinates_MZS.drop_duplicates(subset=["well_number_digit"], keep="first")
+                              .drop(columns=["Polygon"], errors="ignore")
+                              .merge(df_polygons_mzs, on="well_number_digit", how="left"))
+        df_Coordinates = pd.concat([df_other, df_Coordinates_MZS], ignore_index=True)
+    else:
+        df_Coordinates = df_other.copy()
 
     gdf_Coordinates = gpd.GeoDataFrame(df_Coordinates, geometry=LINESTRING)
-    # буферизация скважин || тк вороные строятся для полигонов буферизируем точки и линии скважин
+
+    # ---------------------------
+    # Буферизация для Вороного
+    # ---------------------------
     gdf_Coordinates["Polygon"] = gdf_Coordinates.set_geometry(LINESTRING).buffer(1, resolution=3)
 
-    # Выпуклая оболочка - будет служить контуром для ячеек вороного || отступаем от границ фонда на 1000 м
+    # ---------------------------
+    # Внешняя граница
+    # ---------------------------
     convex_hull = gdf_Coordinates.set_geometry("Polygon").union_all().convex_hull
     convex_hull = gpd.GeoDataFrame(geometry=[convex_hull]).buffer(1000 / default_size_pixel).boundary
 
-    # Подготовим данные границы и полигонов скважины в нужном формате для алгоритма
-    def rounded_geometry(geometry, precision=0):
-        """ Округление координат точек в полигоне || на вход voronoiDiagram4plg надо подавать целые координаты """
-        if isinstance(geometry, Polygon):
-            rounded_exterior = [(round(x, precision), round(y, precision)) for x, y in geometry.exterior.coords]
-            return Polygon(rounded_exterior)
-
-    # Данные полигонов скважин polygon
+    # ---------------------------
+    # Подготовка входа для voronoiDiagram4plg
+    # ---------------------------
     polygons_wells = gdf_Coordinates[["Polygon"]].copy()
     polygons_wells.columns = ["geometry"]
     polygons_wells["geometry"] = polygons_wells["geometry"].apply(rounded_geometry)
 
-    # Граница в формате MultiPolygon
-    boundary = MultiPolygon([rounded_geometry(Polygon(convex_hull[0]))])
-    boundary = gpd.GeoDataFrame({'geometry': [boundary]})
+    hull_geom = convex_hull.iloc[0]
+    if hasattr(hull_geom, "geoms"):
+        hull_geom = list(hull_geom.geoms)[0]
 
-    # Вороные
-    boundary = boundary.set_geometry('geometry')
-    polygons_wells = polygons_wells.set_geometry('geometry')
+    boundary_poly = MultiPolygon([rounded_geometry(Polygon(hull_geom))])
+    boundary = gpd.GeoDataFrame({"geometry": [boundary_poly]})
+
+    polygons_wells = polygons_wells.set_geometry("geometry")
+    boundary = boundary.set_geometry("geometry")
+
+    # ---------------------------
+    # Вороной
+    # ---------------------------
     vd = voronoiDiagram4plg(polygons_wells, boundary)
 
-    fig, ax = plt.subplots(figsize=(20, 50))
+    # ---------------------------
+    # Разделение фонда
+    # ---------------------------
+    gdf_current = gdf_Coordinates[gdf_Coordinates["work_marker"].notna()].copy()
+    gdf_project = gdf_Coordinates[gdf_Coordinates["work_marker"].isna()].copy()
 
-    boundary.plot(color='white', edgecolor='black', ax=ax)
-    vd.plot(ax=ax, color='blue')  # cmap="winter"
-    vd.boundary.plot(ax=ax, color='white')
+    # ---------------------------
+    # Зоны эффективной работы
+    # ---------------------------
+    zone_geoms = []
+    zone_colors = []
 
-    gdf_Coordinates_current = gdf_Coordinates[gdf_Coordinates['work_marker'].notna()].copy()
-    gdf_Coordinates_current.set_geometry("LINESTRING_geo").plot(color='black', markersize=50, ax=ax)
-    gdf_Coordinates_current.set_geometry("POINT_T1_geo").plot(color='black', markersize=10, ax=ax)
+    gdf_Coordinates.loc[gdf_Coordinates["work_marker"].isna(), "r_eff"] = gdf_Coordinates["r_eff_voronoy"]
+    for _, row in gdf_Coordinates.iterrows():
+        geom = row.get(LINESTRING)
+        r_eff = row.get("r_eff")
 
-    gdf_Coordinates_project = gdf_Coordinates[gdf_Coordinates['work_marker'].isna()].copy()
-    gdf_Coordinates_project.set_geometry("LINESTRING_geo").plot(color='red', markersize=50, ax=ax)
-    gdf_Coordinates_project.set_geometry("POINT_T1_geo").plot(color='red', markersize=10, ax=ax)
+        if geom is None or pd.isna(r_eff):
+            continue
+        if not isinstance(geom, BaseGeometry) or geom.is_empty:
+            continue
+        if r_eff <= 0:
+            continue
 
-    # Добавление текста с именами скважин рядом с точками T1
-    for point, name in zip(gdf_Coordinates['POINT_T1_geo'], gdf_Coordinates['well_number']):
-        if point is not None:  # Проверяем, что линия не пустая
-            plt.text(point.x + 30, point.y - 30, name, fontsize=6, ha='left')  # Координаты (x, y)
-    plt.savefig(filename + '/.debug/voronoy.png')
+        zone = geom.buffer(r_eff / default_size_pixel, resolution=16)
+        if zone.is_empty:
+            continue
+
+        is_project = pd.isna(row.get("work_marker"))
+        zone_geoms.append(zone)
+        zone_colors.append(get_zone_color(row.get("work_marker"), is_project=is_project))
+
+    gdf_zones = None
+    if zone_geoms:
+        gdf_zones = gpd.GeoDataFrame({"color": zone_colors}, geometry=zone_geoms)
+
+    # ---------------------------
+    # Рисование
+    # ---------------------------
+    fig, ax = plt.subplots(figsize=(12, 16))
+    fig.patch.set_alpha(0)
+    ax.set_facecolor((1, 1, 1, 0))
+
+    # Граница фонда
+    boundary.plot(
+        ax=ax,
+        facecolor="none",
+        edgecolor="black",
+        linewidth=1.6,
+        zorder=1
+    )
+
+    # Зоны
+    if gdf_zones is not None and not gdf_zones.empty:
+        for color in gdf_zones["color"].unique():
+            gdf_part = gdf_zones[gdf_zones["color"] == color]
+            gdf_part.plot(
+                ax=ax,
+                facecolor=color,
+                edgecolor="none",
+                alpha=zone_alpha,
+                zorder=2
+            )
+
+    # Вороной
+    vd.plot(
+        ax=ax,
+        facecolor="none",
+        edgecolor="black",
+        linewidth=voronoi_linewidth,
+        zorder=3
+    )
+
+    vd.boundary.plot(
+        ax=ax,
+        color="black",
+        linewidth=voronoi_linewidth,
+        zorder=4
+    )
+
+    # Фактические: линии / точки
+    if not gdf_current.empty:
+        plot_well_geometry(
+            gdf=gdf_current,
+            geom_col=LINESTRING,
+            ax=ax,
+            color="black",
+            line_width=well_linewidth,
+            point_markersize=single_well_markersize,
+            zorder=5
+        )
+
+        gdf_t1_current = gdf_current[gdf_current[POINT_T1].notna()].copy()
+        if not gdf_t1_current.empty:
+            gdf_t1_current = filter_non_empty_geometry(gdf_t1_current, POINT_T1)
+            if not gdf_t1_current.empty:
+                gdf_t1_current.set_geometry(POINT_T1).plot(
+                    ax=ax,
+                    color="black",
+                    markersize=t1_markersize,
+                    zorder=6
+                )
+
+    # Проектные: линии / точки
+    if not gdf_project.empty:
+        plot_well_geometry(
+            gdf=gdf_project,
+            geom_col=LINESTRING,
+            ax=ax,
+            color="red",
+            line_width=well_linewidth,
+            point_markersize=single_well_markersize,
+            zorder=5
+        )
+
+        gdf_t1_project = gdf_project[gdf_project[POINT_T1].notna()].copy()
+        if not gdf_t1_project.empty:
+            gdf_t1_project = filter_non_empty_geometry(gdf_t1_project, POINT_T1)
+            if not gdf_t1_project.empty:
+                gdf_t1_project.set_geometry(POINT_T1).plot(
+                    ax=ax,
+                    color="red",
+                    markersize=t1_markersize,
+                    zorder=6
+                )
+
+    # ---------------------------
+    # Подписи
+    # ---------------------------
+    gdf_labels = get_label_gdf(
+        gdf_all=gdf_Coordinates,
+        gdf_current=gdf_current,
+        point_col=POINT_T1,
+        mode=label_mode,
+        count=labels_count
+    )
+
+    xlim = ax.get_xlim()
+    ylim = ax.get_ylim()
+    dx = (xlim[1] - xlim[0]) * 0.010
+    dy = (ylim[1] - ylim[0]) * 0.010
+    cx = (xlim[0] + xlim[1]) / 2
+    cy = (ylim[0] + ylim[1]) / 2
+
+    for _, row in gdf_labels.iterrows():
+        pt = row[POINT_T1]
+        name = row.get("well_number", "")
+        if not is_valid_non_empty_geometry(pt):
+            continue
+
+        if label_mode == "all":
+            local_dx = dx if pt.x >= cx else -dx
+            local_dy = dy if pt.y >= cy else -dy
+            ha = "left" if pt.x >= cx else "right"
+            va = "bottom" if pt.y >= cy else "top"
+        else:
+            local_dx = dx
+            local_dy = dy
+            ha = "left"
+            va = "bottom"
+
+        ax.text(
+            pt.x + local_dx,
+            pt.y + local_dy,
+            str(name),
+            fontsize=label_fontsize,
+            color="black",
+            ha=ha,
+            va=va,
+            zorder=7,
+            bbox=dict(
+                facecolor=(1, 1, 1, 0.45),
+                edgecolor="none",
+                pad=1.0
+            )
+        )
+
+    ax.set_aspect("equal")
+    ax.axis("off")
+    plt.tight_layout(pad=0)
+
+    plt.savefig(
+        filename,
+        dpi=300,
+        transparent=True,
+        bbox_inches="tight",
+        pad_inches=0
+    )
     plt.close(fig)
-    pass
 
 
 def remove_keys(data, keys):
@@ -607,4 +1095,42 @@ def save_local_parameters(parameters, save_path):
         f.write('import datetime\n\n')
         f.write('parameters = ')
         pprint.pprint(parameters, f, indent=4, width=100, depth=None)
+    pass
+
+
+def save_excel_permeability_fact_wells(data_wells_permeability_excel, save_directory):
+    data_wells_permeability_excel = data_wells_permeability_excel[data_wells_permeability_excel['permeability_fact']
+                                                                  != 0]
+    data_wells_permeability_excel.columns = ['номер скважины', 'характер', 'состояние', 'тип', 'последняя дата работы',
+                                             'эффективный радиус скважины рассчитанный на основе порового объема, м',
+                                             'эффективный радиус через площадь ячейки вороного, м',
+                                             'эффективный радиус нормированный на ячейку вороного, м',
+                                             'длина ствола скважины T1-T3, м', 'количество стадий ГРП, шт',
+                                             'полудлина трещины ГРП, м', 'раскрытие трещины ГРП, мм',
+                                             'запускной Qж ТР, т/сут', 'стартовая обводненность ТР (объем), д.ед.',
+                                             'запускное забойное давление добывающей скважины, атм',
+                                             'стартовое пластовое давление ТР, атм',
+                                             'нефтенасыщенная толщина, м', 'пористость, д.ед',
+                                             'проницаемость c карты, мД', 'проницаемость обратным счетом через РБ, мД']
+    with pd.ExcelWriter(f"{save_directory}/Фактическая_проницаемость_скважин.xlsx") as writer:
+        data_wells_permeability_excel.to_excel(writer, index=False)
+    pass
+
+
+def save_excel_inj_wells(data_wells, save_directory):
+    data_inj_wells = data_wells[data_wells['work_marker'] == 'inj']
+    data_inj_wells = data_inj_wells[["well_number", "well_status", "well_type", "date",
+                                     "Winj_rate_TR", "Winj_rate", "Winj",
+                                     "time_work_inj", "no_work_time",
+                                     "r_eff_not_norm", "r_eff_voronoy", "r_eff",
+                                     "Winj_cumsum", "V_useful_injection"]]
+    data_inj_wells.columns = ['номер скважины', 'состояние', 'тип', 'последняя дата работы',
+                              'приемистость ТР, м3/сут', 'приемистость, м3/сут', 'закачка, м3',
+                              'время работы в закачке, часы', 'количество месяцев в простое',
+                              'эффективный радиус скважины рассчитанный на основе порового объема, м',
+                              'эффективный радиус через площадь ячейки вороного, м',
+                              'эффективный радиус нормированный на ячейку вороного, м',
+                              'накопленная закачка, м3', 'объем полезной закачки через Куч, м3']
+    with pd.ExcelWriter(f"{save_directory}/Полезная_закачка.xlsx") as writer:
+        data_inj_wells.to_excel(writer, index=False)
     pass
