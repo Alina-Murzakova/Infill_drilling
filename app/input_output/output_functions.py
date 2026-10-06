@@ -11,7 +11,7 @@ from shapely import Point, Polygon, MultiPolygon, MultiPoint
 from typing import Dict, Any, List
 
 from app.maps_handler.maps import read_array
-from app.well_active_zones import combine_to_linestring
+from app.well_active_zones import combine_mzs_to_polygon
 from longsgis import voronoiDiagram4plg
 
 
@@ -685,14 +685,17 @@ def save_picture_voronoi(
     # ---------------------------
     df_MZS = df_Coordinates[df_Coordinates.type_wellbore == "МЗС"].copy()
     df_other = df_Coordinates[df_Coordinates.type_wellbore != "МЗС"].copy()
+    # буферизация обычных скважин || тк вороные строятся для полигонов буферизируем точки и линии скважин
+    df_other["Polygon"] = (df_other.set_geometry(LINESTRING).buffer(1, resolution=3))
 
     if not df_MZS.empty:
         df_Coordinates_MZS = df_MZS.copy()
-        df_Coordinates_MZS[LINESTRING] = (
-            df_Coordinates_MZS.groupby("well_number_digit")[LINESTRING]
-            .transform(combine_to_linestring)
-        )
-        df_Coordinates_MZS.drop_duplicates(subset=["well_number_digit"], keep="first", inplace=True)
+        # буферизация МЗС
+        df_polygons_mzs = (df_Coordinates_MZS.groupby("well_number_digit")[LINESTRING].apply(combine_mzs_to_polygon)
+                           .reset_index(name="Polygon"))
+        df_Coordinates_MZS = (df_Coordinates_MZS.drop_duplicates(subset=["well_number_digit"], keep="first")
+                              .drop(columns=["Polygon"], errors="ignore")
+                              .merge(df_polygons_mzs, on="well_number_digit", how="left"))
         df_Coordinates = pd.concat([df_other, df_Coordinates_MZS], ignore_index=True)
     else:
         df_Coordinates = df_other.copy()

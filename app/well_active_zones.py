@@ -4,7 +4,9 @@ import numpy as np
 import pandas as pd
 import geopandas as gpd
 
-from shapely.geometry import LineString, Polygon, MultiPolygon
+from shapely.geometry import LineString, Polygon, MultiPolygon, Point
+from shapely.ops import unary_union
+from shapely.validation import make_valid
 from longsgis import voronoiDiagram4plg
 
 from loguru import logger
@@ -118,19 +120,22 @@ def get_parameters_voronoi_cells(df_Coordinates, type_coord="geo", default_size_
 
     df_MZS = df_Coordinates[df_Coordinates.type_wellbore == "МЗС"].copy()
     df_Coordinates_other = df_Coordinates[df_Coordinates.type_wellbore != "МЗС"].copy()
+    # буферизация обычных скважин || тк вороные строятся для полигонов буферизируем точки и линии скважин
+    df_Coordinates_other["Polygon"] = (df_Coordinates_other.set_geometry(LINESTRING).buffer(1, resolution=3))
     # Проверка на наличие МЗС
     if not df_MZS.empty:
         df_Coordinates_MZS = df_MZS.copy()
-        df_Coordinates_MZS[LINESTRING] = df_Coordinates_MZS.groupby("well_number_digit")[LINESTRING].transform(
-            combine_to_linestring)
-        # Если есть МЗС, то формирование для них одной строки
-        df_Coordinates_MZS.drop_duplicates(subset=['well_number_digit'], keep='first', inplace=True)
+        # буферизация МЗС
+        df_polygons_mzs = (df_Coordinates_MZS.groupby("well_number_digit")[LINESTRING].apply(combine_mzs_to_polygon)
+                           .reset_index(name="Polygon"))
+        df_Coordinates_MZS = (df_Coordinates_MZS.drop_duplicates(subset=["well_number_digit"], keep="first")
+                              .drop(columns=["Polygon"], errors="ignore")
+                              .merge(df_polygons_mzs, on="well_number_digit", how="left"))
         df_Coordinates = pd.concat([df_Coordinates_other, df_Coordinates_MZS], ignore_index=True)
+    else:
+        df_Coordinates = df_Coordinates_other
 
     gdf_Coordinates = gpd.GeoDataFrame(df_Coordinates, geometry=LINESTRING)
-    # буферизация скважин || тк вороные строятся для полигонов буферизируем точки и линии скважин
-    gdf_Coordinates["Polygon"] = gdf_Coordinates.set_geometry(LINESTRING).buffer(1, resolution=3)
-
     # Выпуклая оболочка - будет служить контуром для ячеек вороного || отступаем от границ фонда на 1000 м
     convex_hull = gdf_Coordinates.set_geometry("Polygon").union_all().convex_hull
     convex_hull = gpd.GeoDataFrame(geometry=[convex_hull]).buffer(1000 / default_size_pixel).boundary
@@ -241,15 +246,38 @@ def voronoi_normalize_r_eff(data_wells, df_parameters_voronoi, buff=1.1):
     return data_wells
 
 
-def combine_to_linestring(group):
-    """Объединение координат МЗС в одну линию"""
-    coords = []
+def combine_mzs_to_polygon(group, buffer_size=1):
+    """Для МЗС: буферизуем каждый ствол отдельно, потом объединяем полигоны"""
+
+    polygons = []
+
     for geom in group:
-        if geom.geom_type == 'Point':
-            coords.append((geom.x, geom.y))  # добавляем координаты точки
-        elif geom.geom_type == 'LineString':
-            coords.extend(list(geom.coords))  # добавляем все координаты линии
-    return LineString(coords) if coords else None
+        if geom is None or geom.is_empty:
+            continue
+
+        if geom.geom_type == "Point":
+            poly = geom.buffer(buffer_size, resolution=3)
+
+        elif geom.geom_type == "LineString":
+            poly = geom.buffer(buffer_size, resolution=3)
+
+        else:
+            continue
+
+        if not poly.is_valid:
+            poly = make_valid(poly)
+
+        polygons.append(poly)
+
+    if not polygons:
+        return None
+
+    result = unary_union(polygons)
+
+    if not result.is_valid:
+        result = make_valid(result)
+
+    return result
 
 
 def calculate_effective_radius(data_wells, dict_properties, is_exe=False):
@@ -285,7 +313,7 @@ def calculate_effective_radius(data_wells, dict_properties, is_exe=False):
     else:
         So_min = dict_properties['reservoir_fluid_properties']['Sor']
     data_wells['r_eff_not_norm'] = data_wells.apply(well_effective_radius,
-                                                    args=(So_min, default_radius, default_radius_inj, ), axis=1)
+                                                    args=(So_min, default_radius, default_radius_inj,), axis=1)
 
     # нормировка эффективного радиуса фонда через площади ячеек Вороного
     data_wells = voronoi_normalize_r_eff(data_wells, df_parameters_voronoi)
