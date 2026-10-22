@@ -7,7 +7,7 @@ from loguru import logger
 from app.config import columns_name_frac
 
 
-def load_frac_info(path_frac, data_wells, name_object, dict_parameters_coefficients):
+def load_frac_info(path_frac, data_wells, name_object, dict_parameters_coefficients, data_frac=None):
     """
     Загрузка фрак-листа NGT и получение средних параметров по трещинам
     Parameters
@@ -23,11 +23,13 @@ def load_frac_info(path_frac, data_wells, name_object, dict_parameters_coefficie
     """
     if dict_parameters_coefficients['switches']['switch_fracList_params']:
         pattern = r"(\d+)\s*из\s*(\d+)"
-        # Загрузка файла
-        data_frac = pd.read_excel(os.path.join(os.path.dirname(__file__), path_frac), header=1)
-        # Переименование колонок
-        data_frac = data_frac[list(columns_name_frac.keys())]
-        data_frac.columns = columns_name_frac.values()
+        # Загрузка файла либо использование уже собранной выборки из БД.
+        if data_frac is None:
+            data_frac = pd.read_excel(os.path.join(os.path.dirname(__file__), path_frac), header=1)
+            data_frac = data_frac[list(columns_name_frac.keys())]
+            data_frac.columns = columns_name_frac.values()
+        else:
+            data_frac = data_frac.copy().reindex(columns=list(columns_name_frac.values()))
         # Подготовка файла
         data_frac['well_number'] = data_frac[
             'well_number'].ffill()  # протягивание номера скважины в объединенных ячейках

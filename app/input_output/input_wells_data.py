@@ -9,7 +9,7 @@ from app.input_output.functions_wells_data import identification_ZBS_MZS, get_av
     get_avg_first_param, calculate_cumsum, create_shapely_types, range_priority_wells, get_well_type
 
 
-def load_wells_data(data_well_directory):
+def load_wells_data(data_well_directory=None, data_history=None):
     """
     Функция загрузки истории скважин и определения исследуемого объекта (месторождение, пласт)
     Parameters
@@ -21,24 +21,37 @@ def load_wells_data(data_well_directory):
     Фрейм с полной историей скважин
     Словарь с данными о расчете {field, object}
     """
-    # 1. Загрузка файла
-    # data_history = pd.read_excel(os.path.join(os.path.dirname(__file__), data_well_directory))
-    data_history = pd.DataFrame()
-    xls = pd.ExcelFile(os.path.join(os.path.dirname(__file__), data_well_directory))
-    for sheet_name in xls.sheet_names:
-        if "Данные" in sheet_name:
-            df = xls.parse(sheet_name)
-            data_history = pd.concat([data_history, df], ignore_index=True)
+    # 1. Загрузка файла или использование уже собранной выборки из БД.
+    if data_history is None:
+        data_history = pd.DataFrame()
+        with pd.ExcelFile(os.path.join(os.path.dirname(__file__), data_well_directory)) as xls:
+            for sheet_name in xls.sheet_names:
+                if "Данные" in sheet_name:
+                    df = xls.parse(sheet_name)
+                    data_history = pd.concat([data_history, df], ignore_index=True)
 
-    # 2. Подготовка файла
-    # Переименование колонок
-    data_history = data_history[list(columns_name.keys())]
-    data_history.columns = columns_name.values()
+        # 2. Подготовка файла: переименование пользовательских колонок.
+        data_history = data_history[list(columns_name.keys())]
+        data_history.columns = columns_name.values()
+    else:
+        data_history = data_history.copy().reindex(columns=list(columns_name.values()))
     data_history['well_number'] = data_history['well_number'].map(
         lambda x: str(int(float(x))) if isinstance(x, (int, float)) else str(x))
 
     # Удаление строк, где скважина еще не пробурена
     data_history = data_history[data_history.work_marker != "не пробурена"].fillna(0)
+    # A trajectory with one missing endpoint otherwise turns into a line from
+    # (0, 0) and can contain hundreds of thousands of interpolation points.
+    # Treat the available endpoint as a vertical-well coordinate instead.
+    missing_t1 = (data_history["T1_x_geo"] == 0) | (data_history["T1_y_geo"] == 0)
+    data_history.loc[missing_t1, "T1_x_geo"] = data_history.loc[missing_t1, "T3_x_geo"]
+    data_history.loc[missing_t1, "T1_y_geo"] = data_history.loc[missing_t1, "T3_y_geo"]
+    missing_t3 = (data_history["T3_x_geo"] == 0) | (data_history["T3_y_geo"] == 0)
+    data_history.loc[missing_t3, "T3_x_geo"] = data_history.loc[missing_t3, "T1_x_geo"]
+    data_history.loc[missing_t3, "T3_y_geo"] = data_history.loc[missing_t3, "T1_y_geo"]
+    missing_head = (data_history["T_head_x_geo"] == 0) | (data_history["T_head_y_geo"] == 0)
+    data_history.loc[missing_head, "T_head_x_geo"] = data_history.loc[missing_head, "T1_x_geo"]
+    data_history.loc[missing_head, "T_head_y_geo"] = data_history.loc[missing_head, "T1_y_geo"]
     data_history = data_history.sort_values(by=['well_number', 'date'], ascending=[True, False]).reset_index(drop=True)
     logger.info(f"В исходных данных {len(data_history.well_number.unique())} скважин")
     # Словарь с данными о расчете // месторождение и объект

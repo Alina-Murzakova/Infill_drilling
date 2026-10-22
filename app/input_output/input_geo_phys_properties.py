@@ -6,10 +6,9 @@ from loguru import logger
 from app.config import gpch_column_name
 
 
-def load_geo_phys_properties(path_geo_phys_properties, name_field, name_object, default_formation_compressibility=4.0):
-    """Создание словаря ГФХ для пласта"""
-    # Загрузка файла
-    df_geo_phys_properties = pd.read_excel(os.path.join(os.path.dirname(__file__), path_geo_phys_properties))
+def read_geo_phys_properties(source, name_field, name_object, default_formation_compressibility=0.4):
+    """Прочитать исходные значения ГФХ из пути или file-like объекта."""
+    df_geo_phys_properties = pd.read_excel(source)
     # Находим пересечение ключей словаря и колонок датафрейма
     common_keys = set(df_geo_phys_properties.columns) & set(gpch_column_name.keys())
 
@@ -108,7 +107,24 @@ def load_geo_phys_properties(path_geo_phys_properties, name_field, name_object, 
                         error_msg = f"Свойство {prop} задано некорректно: {value}"
                         logger.critical(error_msg)
                         raise ValueError(f"{error_msg}")
-        return formatting_dict_geo_phys_properties(dict_geo_phys_properties_field)
+        return dict_geo_phys_properties_field
+
+
+def load_geo_phys_properties(path_geo_phys_properties, name_field, name_object, default_formation_compressibility=0.4):
+    """Создание словаря ГФХ для пласта в размерностях модели."""
+    source = path_geo_phys_properties
+    if isinstance(source, (str, os.PathLike)):
+        candidate = os.fspath(source)
+        if not os.path.isabs(candidate):
+            candidate = os.path.join(os.path.dirname(__file__), candidate)
+        source = candidate
+    values = read_geo_phys_properties(
+        source,
+        name_field,
+        name_object,
+        default_formation_compressibility=default_formation_compressibility,
+    )
+    return formatting_dict_geo_phys_properties(values)
 
 
 def formatting_dict_geo_phys_properties(dict_geo_phys_properties):

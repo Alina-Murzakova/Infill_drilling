@@ -133,6 +133,7 @@ def show():
                 disabled=disabled,
                 label_visibility="collapsed",
                 key=key,
+                persist_state="session",
             )
 
     # -----------------------------------------------------
@@ -169,6 +170,7 @@ def show():
         "Учёт траекторий ГС",
         value=True,
         key="mapping_accounting_horwell",
+        persist_state="session",
     )
 
     # -----------------------------------------------------
@@ -179,6 +181,7 @@ def show():
         "Учёт АГРП на нагнетательных скважинах на карте ОИЗ",
         value=False,
         key="mapping_auto_frac",
+        persist_state="session",
     )
 
     # -----------------------------------------------------

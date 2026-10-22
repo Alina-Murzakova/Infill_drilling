@@ -10,7 +10,6 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from pathlib import Path
 from version import APP_NAME, APP_VERSION
 from streamlit_pages.initial_data import show as show_initial_data
 from streamlit_pages.about_program import show as show_about_program
@@ -18,7 +17,11 @@ from streamlit_pages.mapping import show as show_mapping
 from streamlit_pages.drilling_zone import show as show_drilling_zone
 from streamlit_pages.res_fluid_params import show as show_res_fluid_params
 from streamlit_pages.well_params import show as show_well_params
-from streamlit_pages.economy import show as show_economy
+from streamlit_pages.results import show as show_results
+from app.streamlit_runtime import (
+    initialize_session,
+    validation_issues,
+)
 
 
 # Иконка приложения
@@ -57,8 +60,7 @@ st.set_page_config(page_title=APP_NAME,
                    layout="wide",
                    )
 
-st.title(APP_NAME)
-st.caption(f"Версия {APP_VERSION}")
+initialize_session()
 
 
 # Стили
@@ -78,8 +80,6 @@ st.markdown(
         align-items: center !important;
         text-align: left !important;
         padding: 8px 10px !important;
-        border: none !important;
-        background: transparent !important;
     }
     
     /* Все контейнеры внутри кнопки */
@@ -108,6 +108,19 @@ st.markdown(
         background-color: rgba(128, 128, 128, 0.15) !important;
     }
 
+    section[data-testid="stSidebar"] [data-testid="stSidebarContent"] {
+        padding-bottom: 5rem;
+    }
+
+    section[data-testid="stSidebar"] .st-key-about_bottom {
+        position: fixed;
+        left: 1rem;
+        bottom: 0.75rem;
+        width: 318px;
+        background: var(--background-color);
+        z-index: 10;
+    }
+
     
     </style>
     """,
@@ -120,50 +133,39 @@ sections = [
     (":material/distance:", "Поиск зон бурения"),
     (":material/oil_barrel:", "Параметры скважин"),
     (":material/water_drop:", "Свойства пласта и флюидов"),
-    (":material/money_bag:", "Экономика"),
     (":material/bar_chart:", "Результаты"),
 ]
 
 # ===== Состояние выбранного раздела =====
 if "current_section" not in st.session_state:
-    st.session_state.current_section = "О программе"
+    st.session_state.current_section = "Исходные данные"
 
 # ===== Боковое меню =====
 with st.sidebar:
-
-    # О программе
-    if st.button(
-            "О программе",
-            icon=":material/info:",
-            key="about",
-            use_container_width=True,
-    ):
-        st.session_state.current_section = "О программе"
-
-    # Разделы
-    st.markdown("### Разделы")
+    st.markdown(f"### {APP_NAME}\nВерсия {APP_VERSION}")
+    incomplete_sections = {issue.section for issue in validation_issues()}
 
     for icon, name in sections:
         if st.button(
                 name,
-                icon=icon,
+                icon=":material/error:" if name in incomplete_sections else icon,
                 key=f"section_{name}",
-                use_container_width=True,
+                width="stretch",
+                type="primary" if name in incomplete_sections else "tertiary",
         ):
             st.session_state.current_section = name
+    with st.container(key="about_bottom"):
+        if st.button(
+                "О программе",
+                icon=":material/info:",
+                key="about",
+                width="stretch",
+                type="tertiary",
+        ):
+            st.session_state.current_section = "О программе"
 
 # ===== Текущий раздел =====
 current_section = st.session_state.current_section
-
-# if st.session_state.current_section == "О программе":
-#     st.header("О программе")
-#     st.write(f"{APP_NAME} v{APP_VERSION}")
-# else:
-#     st.header(st.session_state.current_section)
-#
-# st.write(
-#     f"Здесь будет раздел «{current_section}»."
-# )
 
 pages = {
     "О программе": show_about_program,
@@ -172,6 +174,30 @@ pages = {
     "Поиск зон бурения": show_drilling_zone,
     "Свойства пласта и флюидов": show_res_fluid_params,
     "Параметры скважин": show_well_params,
-    "Экономика": show_economy,
+    "Результаты": show_results,
 }
+if st.session_state.current_section not in pages:
+    st.session_state.current_section = "Исходные данные"
 pages[st.session_state.current_section]()
+current_section = st.session_state.current_section
+
+
+if current_section not in {"О программе", "Результаты"}:
+    issues = validation_issues()
+    with st.bottom:
+        left, right = st.columns([1, 3], vertical_alignment="center")
+        run_clicked = left.button(
+            "Запустить расчёт",
+            type="primary",
+            icon=":material/play_arrow:",
+            width="stretch",
+            disabled=bool(issues) or st.session_state.calculation_running,
+        )
+        if issues:
+            right.caption(f"Заполните обязательные данные. Незаполненные разделы подсвечены в меню ({len(issues)}).")
+        else:
+            right.success("Все обязательные данные заполнены", icon=":material/check_circle:")
+    if run_clicked:
+        st.session_state.calculation_requested = True
+        st.session_state.current_section = "Результаты"
+        st.rerun()

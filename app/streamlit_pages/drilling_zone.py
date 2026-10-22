@@ -120,6 +120,7 @@ def show():
                 format=format,
                 label_visibility="collapsed",
                 key=key,
+                persist_state="session",
             )
 
     # -----------------------------------------------------
