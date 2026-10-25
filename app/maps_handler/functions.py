@@ -42,6 +42,25 @@ def mapping(maps_directory, data_wells, **kwargs):
         (data_wells["T1_x_geo"].to_numpy(), data_wells["T1_y_geo"].to_numpy()))
     data_wells['T3_x_pix'], data_wells['T3_y_pix'] = maps[-1].convert_coord_to_pix(
         (data_wells["T3_x_geo"].to_numpy(), data_wells["T3_y_geo"].to_numpy()))
+    pixel_columns = ['T1_x_pix', 'T1_y_pix', 'T3_x_pix', 'T3_y_pix']
+    data_wells[pixel_columns] = data_wells[pixel_columns].replace([np.inf, -np.inf], np.nan)
+    valid_t1 = data_wells['T1_x_pix'].notna() & data_wells['T1_y_pix'].notna()
+    valid_t3 = data_wells['T3_x_pix'].notna() & data_wells['T3_y_pix'].notna()
+    data_wells.loc[~valid_t1 & valid_t3, ['T1_x_pix', 'T1_y_pix']] = data_wells.loc[
+        ~valid_t1 & valid_t3, ['T3_x_pix', 'T3_y_pix']
+    ].to_numpy()
+    data_wells.loc[valid_t1 & ~valid_t3, ['T3_x_pix', 'T3_y_pix']] = data_wells.loc[
+        valid_t1 & ~valid_t3, ['T1_x_pix', 'T1_y_pix']
+    ].to_numpy()
+    invalid_coordinates = ~(valid_t1 | valid_t3)
+    if invalid_coordinates.any():
+        logger.warning(
+            f"Исключено {int(invalid_coordinates.sum())} скважин без корректных "
+            "координат в области выбранных карт"
+        )
+        data_wells = data_wells.loc[~invalid_coordinates].copy()
+    if data_wells.empty:
+        raise ValueError("На выбранных картах нет скважин с корректными координатами")
     data_wells['length_pix'] = np.sqrt(np.power(data_wells.T3_x_pix - data_wells.T1_x_pix, 2)
                                        + np.power(data_wells.T3_y_pix - data_wells.T1_y_pix, 2))
     # расчет Shapely объектов
@@ -244,6 +263,12 @@ def get_final_resolution(list_rasters, pixel_sizes):
     min_y = max(list(map(lambda geo_transform, data: geo_transform[3] + geo_transform[5] * data.shape[0],
                          geo_transform_list, data_list)))
     max_y = min(list(map(lambda geo_transform: geo_transform[3], geo_transform_list)))
+
+    if max_x <= min_x or max_y <= min_y:
+        raise ValueError(
+            "Выбранные карты не имеют общей области покрытия. "
+            "Выберите совместимые версии карт или загрузите собственный набор."
+        )
 
     if not pixel_sizes:
         pixel_size_x = round(min(list(map(lambda geo_transform: geo_transform[1], geo_transform_list))) / 5) * 5

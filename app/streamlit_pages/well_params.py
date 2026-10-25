@@ -1,5 +1,7 @@
 import streamlit as st
 
+from app.streamlit_runtime import remember_upload
+
 
 def show():
     """Страница «Параметры скважин»."""
@@ -166,6 +168,7 @@ def show():
                 disabled=disabled,
                 label_visibility="collapsed",
                 key=key,
+                persist_state="session",
             )
 
     # =====================================================
@@ -262,21 +265,41 @@ def show():
             horizontal=True,
             index=0,
             key="well_frac_type",
+            persist_state="session",
         )
 
-        use_frac_sheet = st.checkbox(
-            "Параметры ГРП из фрак-листов",
-            value=False,
-            key="well_use_frac_sheet",
+        frac_count = st.session_state.get("frac_db_count", 0)
+        if frac_count:
+            st.success(f"В БД найдены параметры ГРП по {frac_count} скважинам")
+            frac_source_options = ["База данных", "Загрузить файл", "Не использовать фрак-лист"]
+        else:
+            st.warning("В БД не найдено ни одной скважины с ГРП — можно загрузить фрак-лист")
+            frac_source_options = ["Загрузить файл", "Не использовать фрак-лист"]
+        if st.session_state.get("well_frac_source") not in frac_source_options:
+            st.session_state.well_frac_source = frac_source_options[0]
+        frac_source = st.radio(
+            "Источник фактических параметров ГРП",
+            frac_source_options,
+            horizontal=True,
+            key="well_frac_source",
+            persist_state="session",
         )
-
-        frac_file = st.text_input(
-            "Файл параметров ГРП",
-            value="",
-            placeholder=r"C:\...\frac.xlsx",
-            disabled=not use_frac_sheet,
-            key="well_frac_file",
-        )
+        use_frac_sheet = frac_source != "Не использовать фрак-лист"
+        st.session_state.well_use_frac_sheet = use_frac_sheet
+        frac_file = ""
+        if frac_source == "Загрузить файл":
+            frac_upload = st.file_uploader(
+                "Файл параметров ГРП",
+                type=["xlsx", "xls", "xlsm"],
+                key="well_frac_upload",
+                on_change=remember_upload,
+                args=("well_frac_upload", "well_frac_upload_value"),
+            )
+            stored_frac = st.session_state.get("well_frac_upload_value")
+            if frac_upload is None and stored_frac is None:
+                st.error("Загрузите фрак-лист или отключите его использование")
+            elif stored_frac is not None:
+                st.caption(f"Загружен файл: {stored_frac.name}")
 
         length_FracStage = number_parameter(
             label="Длина стадии ГРП, м",
@@ -364,6 +387,7 @@ def show():
             "Фильтрация выбросов проницаемости через РБ",
             value=False,
             key="well_filtration_perm_fact",
+            persist_state="session",
         )
 
     # =====================================================
@@ -403,6 +427,7 @@ def show():
             "Зафиксировать забойное давление",
             value=False,
             key="well_fix_P_well_init",
+            persist_state="session",
         )
 
         fix_P_well_init = number_parameter(
@@ -425,6 +450,7 @@ def show():
             ],
             index=0,
             key="well_water_cut_source",
+            persist_state="session",
         )
 
         k = number_parameter(
@@ -498,7 +524,7 @@ def show():
             else 0.0
         ),
         "switch_wc_from_map": (
-            water_cut_source == "По карте"
+            water_cut_source == "С карты"
         ),
         "k": int(k),
         "threshold": float(threshold),

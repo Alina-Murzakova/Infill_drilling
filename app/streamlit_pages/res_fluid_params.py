@@ -1,280 +1,102 @@
+from __future__ import annotations
+
 import streamlit as st
+
+from app.data_access.models import PVT_UI_FIELDS
+from app.streamlit_runtime import (
+    apply_geo_properties_upload,
+    initialize_session,
+    remember_upload,
+)
+
+
+def _mark_manual(name: str) -> None:
+    st.session_state[f"pvt_source_{name}"] = "введено вручную"
+
+
+def _pvt_tab() -> None:
+    if st.session_state.pvt_found:
+        st.success("Для выбранного месторождения и объекта найдена запись PVT")
+    else:
+        st.warning("Запись PVT не найдена. Установлены физически допустимые значения по умолчанию — проверьте их.")
+    upload = st.file_uploader(
+        "Загрузить файл ГФХ",
+        type=["xlsx", "xls", "xlsm"],
+        key="gfh_upload",
+        on_change=remember_upload,
+        args=("gfh_upload", "gfh_upload_value"),
+        disabled=not (st.session_state.selected_field and st.session_state.selected_object),
+        help="Значения из файла заполнят форму; после этого их можно изменить вручную.",
+    )
+    apply_geo_properties_upload()
+    stored = st.session_state.get("gfh_upload_value")
+    if stored is not None and not st.session_state.get("gfh_upload_error"):
+        st.caption(f"Параметры загружены из {stored.name}")
+    if st.session_state.get("gfh_upload_error"):
+        st.error(f"Не удалось прочитать файл ГФХ: {st.session_state.gfh_upload_error}")
+
+    for name, (label, minimum, maximum) in PVT_UI_FIELDS.items():
+        col_label, col_value = st.columns([1.2, 0.8], vertical_alignment="center")
+        col_label.markdown(label)
+        col_value.number_input(
+            label,
+            min_value=float(minimum),
+            max_value=float(maximum),
+            step=0.001,
+            format="%.4f",
+            key=f"pvt_{name}",
+            on_change=_mark_manual,
+            args=(name,),
+            label_visibility="collapsed",
+            persist_state="session",
+        )
+
+
+def _number_row(label: str, key: str, minimum: float, maximum: float, step: float = 0.001, disabled: bool = False):
+    col_label, col_value = st.columns([1.2, 0.8], vertical_alignment="center")
+    col_label.markdown(label)
+    col_value.number_input(
+        label,
+        min_value=float(minimum),
+        max_value=float(maximum),
+        step=float(step),
+        format="%.3f",
+        key=key,
+        disabled=disabled,
+        label_visibility="collapsed",
+        persist_state="session",
+    )
+
+
+def _relative_tab() -> None:
+    st.checkbox(
+        "Автоадаптация ОФП по истории работы",
+        key="resfluid_relative_permeability",
+        help="При включении параметры ОФП ниже служат стартовым приближением и уточняются моделью.",
+        persist_state="session",
+    )
+    auto = st.session_state.resfluid_relative_permeability
+    fields = [
+        ("Остаточная нефтенасыщенность, д.ед.", "resfluid_Sor", 0.0, 1.0),
+        ("Связанная водонасыщенность, д.ед.", "resfluid_Swc", 0.0, 1.0),
+        ("Концевая точка ОФП по нефти", "resfluid_Fo", 0.0, 1.0),
+        ("Концевая точка ОФП по воде", "resfluid_Fw", 0.0, 1.0),
+        ("Степень Corey по нефти", "resfluid_m2", 0.001, 10.0),
+        ("Степень Corey по воде", "resfluid_m1", 0.001, 10.0),
+    ]
+    for label, key, minimum, maximum in fields:
+        _number_row(label, key, minimum, maximum, disabled=auto)
+    st.divider()
+    _number_row("Объёмный коэффициент воды, м³/м³", "resfluid_Bw", 0.001, 1.5)
+    _number_row("Анизотропия пласта, д.ед.", "resfluid_kv_kh", 0.001, 1.5)
 
 
 def show():
-    """Страница «Свойства пласта и флюидов»."""
-
+    initialize_session()
     st.header("Свойства пласта и флюидов")
-
-    # Краткое описание раздела
-    st.markdown(
-        '<div class="resfluid-description">'
-        "Настройка свойств пласта и флюидов, используемых при выполнении расчёта. "
-        "</div>",
-        unsafe_allow_html=True,
-    )
-
-    # -----------------------------------------------------
-    # Стили
-    # -----------------------------------------------------
-
-    st.markdown(
-        """
-        <style>
-        /* Отступ между строками параметров */
-        div[data-testid="stHorizontalBlock"] {
-            margin-bottom: 14px;
-        }
-
-        /* Ширина поля со значением */
-        div[data-testid="stNumberInput"] {
-            width: 350px !important;
-        }
-
-        /* Названия параметров */
-        .resfluid-label {
-            font-size: 18px;
-            line-height: 1.3;
-            padding-top: 7px;
-        }
-
-        /* Краткое описание раздела */
-        .resfluid-description {
-            font-size: 16px;
-            line-height: 1.4;
-            margin-top: -8px;
-            margin-bottom: 20px;
-        }
-
-        /* Чекбоксы */
-        div[data-testid="stCheckbox"] label p {
-            font-size: 18px !important;
-        }
-
-        /* Отступ после чекбокса */
-        div[data-testid="stCheckbox"] {
-            margin-bottom: 14px !important;
-        }
-
-        /* Поля ввода */
-        div[data-testid="stNumberInput"] input {
-            font-size: 18px !important;
-        }
-
-        /* Немного уменьшаем внутренние отступы вокруг полей */
-        div[data-testid="stNumberInput"] {
-            margin-top: 0 !important;
-        }
-
-        /* Кнопки + / - */
-        div[data-testid="stNumberInput"] button {
-            background-color: #E4E7EC !important;
-        }
-
-        /* + / - при наведении */
-        div[data-testid="stNumberInput"] button:hover {
-            background-color: #D1D5DB !important;
-        }
-
-        /* + / - при нажатии */
-        div[data-testid="stNumberInput"] button:active {
-            background-color: #B8BDC6 !important;
-        }
-
-        /* + / - после нажатия */
-        div[data-testid="stNumberInput"] button:focus {
-            background-color: #D1D5DB !important;
-        }
-
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    # -----------------------------------------------------
-    # Вспомогательная функция для параметров
-    # -----------------------------------------------------
-
-    def number_parameter(
-        label,
-        value,
-        min_value,
-        max_value,
-        step,
-        key,
-        format=None,
-        disabled=False,
-    ):
-        """
-        Строка параметра:
-        название слева + поле значения справа.
-        """
-
-        col_label, col_value = st.columns(
-            [0.5, 1.0],
-            gap="small",
-        )
-
-        with col_label:
-            st.markdown(
-                f'<div class="resfluid-label">{label}</div>',
-                unsafe_allow_html=True,
-            )
-
-        with col_value:
-            return st.number_input(
-                label,
-                min_value=min_value,
-                max_value=max_value,
-                value=value,
-                step=step,
-                format=format,
-                disabled=disabled,
-                label_visibility="collapsed",
-                key=key,
-            )
-
-    # -----------------------------------------------------
-    # Учет относительной проницаемости
-    # -----------------------------------------------------
-
-    switch_adaptation_relative_permeability = st.checkbox(
-        "Автоадаптация ОФП",
-        value=True,
-        key="resfluid_relative_permeability",
-    )
-
-    # -----------------------------------------------------
-    # Остаточная нефтенасыщенность
-    # -----------------------------------------------------
-
-    Sor = number_parameter(
-        label="Остаточная нефтенасыщенность, д.ед.",
-        value=0.2,
-        min_value=0.0,
-        max_value=1.0,
-        step=0.001,
-        format="%.3f",
-        key="resfluid_Sor",
-        disabled=not switch_adaptation_relative_permeability,
-    )
-
-    # -----------------------------------------------------
-    # Остаточная водонасыщенность
-    # -----------------------------------------------------
-
-    Swc = number_parameter(
-        label="Связанная водонасыщенность, д.ед.",
-        value=0.2,
-        min_value=0.0,
-        max_value=1.0,
-        step=0.001,
-        format="%.3f",
-        key="resfluid_Swc",
-        disabled=not switch_adaptation_relative_permeability,
-    )
-
-    # -----------------------------------------------------
-    # Относительная проницаемость нефти
-    # -----------------------------------------------------
-
-    Fo = number_parameter(
-        label="Концевая точка ОФП по нефти",
-        value=0.8,
-        min_value=0.0,
-        max_value=1.0,
-        step=0.001,
-        format="%.3f",
-        key="resfluid_Fo",
-        disabled=not switch_adaptation_relative_permeability,
-    )
-
-    # -----------------------------------------------------
-    # Относительная проницаемость воды
-    # -----------------------------------------------------
-
-    Fw = number_parameter(
-        label="Концевая точка ОФП по воде",
-        value=0.8,
-        min_value=0.0,
-        max_value=1.0,
-        step=0.001,
-        format="%.3f",
-        key="resfluid_Fw",
-        disabled=not switch_adaptation_relative_permeability,
-    )
-
-    # -----------------------------------------------------
-    # Показатель степени Corey для нефти
-    # -----------------------------------------------------
-
-    m2 = number_parameter(
-        label="Степень Corey по нефти",
-        value=2.0,
-        min_value=0.0,
-        max_value=10.0,
-        step=0.001,
-        format="%.3f",
-        key="resfluid_m2",
-        disabled=not switch_adaptation_relative_permeability,
-    )
-
-    # -----------------------------------------------------
-    # Показатель степени Corey для воды
-    # -----------------------------------------------------
-
-    m1 = number_parameter(
-        label="Степень Corey по воде",
-        value=2.0,
-        min_value=0.0,
-        max_value=10.0,
-        step=0.001,
-        format="%.3f",
-        key="resfluid_m1",
-        disabled=not switch_adaptation_relative_permeability,
-    )
-
-    # -----------------------------------------------------
-    # Объемный коэффициент воды
-    # -----------------------------------------------------
-
-    Bw = number_parameter(
-        label="Объёмный коэффициент воды, м³/м³",
-        value=1.0,
-        min_value=0.0,
-        max_value=1.5,
-        step=0.001,
-        format="%.3f",
-        key="resfluid_Bw",
-    )
-
-    # -----------------------------------------------------
-    # Коэффициент анизотропии
-    # -----------------------------------------------------
-
-    kv_kh = number_parameter(
-        label="Анизотропия пласта, д.ед.",
-        value=1.0,
-        min_value=0.0,
-        max_value=1.5,
-        step=0.001,
-        format="%.3f",
-        key="resfluid_kv_kh",
-    )
-
-    # -----------------------------------------------------
-    # Данные для модели
-    # -----------------------------------------------------
-
-    return {
-        "switch_adaptation_relative_permeability":
-            switch_adaptation_relative_permeability,
-        "Sor": float(Sor),
-        "Swc": float(Swc),
-        "Fo": float(Fo),
-        "Fw": float(Fw),
-        "m2": float(m2),
-        "m1": float(m1),
-        "Bw": float(Bw),
-        "kv_kh": float(kv_kh),
-    }
+    st.write("Геолого-физические и PVT-параметры автоматически заполняются из БД. Любое значение можно скорректировать вручную.")
+    tab_pvt, tab_relative = st.tabs(["Геолого-физические свойства и PVT", "ОФП и дополнительные параметры"])
+    with tab_pvt:
+        _pvt_tab()
+    with tab_relative:
+        _relative_tab()
