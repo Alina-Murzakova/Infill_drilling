@@ -57,10 +57,6 @@ st.set_page_config(page_title=APP_NAME,
                    layout="wide",
                    )
 
-st.title(APP_NAME)
-st.caption(f"Версия {APP_VERSION}")
-
-
 # Стили
 st.markdown(
     """
@@ -96,7 +92,7 @@ st.markdown(
         width: 100% !important;
         margin: 0 !important;
         text-align: left !important;
-        font-size: 20px !important;
+        font-size: 18px !important;
     }
     
     section[data-testid="stSidebar"] button [data-testid="stIconMaterial"] {
@@ -108,7 +104,34 @@ st.markdown(
         background-color: rgba(128, 128, 128, 0.15) !important;
     }
 
-    
+/* Резервируем место под панель внизу страницы */
+.stMain .block-container {
+    padding-bottom: 110px !important;
+}
+
+/* Фон нижней панели */
+.calculation-footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 999;
+    height: 85px;
+    background: var(--background-color);
+    border-top: 1px solid rgba(128, 128, 128, 0.25);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding-left: 350px;
+    box-sizing: border-box;
+}
+
+/* Контейнер кнопки */
+.calculation-footer-inner {
+    width: 320px;
+    max-width: 100%;
+}
+
     </style>
     """,
     unsafe_allow_html=True)
@@ -130,6 +153,20 @@ if "current_section" not in st.session_state:
 
 # ===== Боковое меню =====
 with st.sidebar:
+
+    st.markdown(
+        f"""
+        <div style="margin-bottom: 20px;">
+            <div style="font-size: 28px; font-weight: 700;">
+                АВНС
+            </div>
+            <div style="font-size: 14px; color: #808080;">
+                Версия {APP_VERSION}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     # О программе
     if st.button(
@@ -175,3 +212,36 @@ pages = {
     "Экономика": show_economy,
 }
 pages[st.session_state.current_section]()
+
+# Кнопка запуска расчёта в основной области
+# Нижняя панель запуска
+if st.session_state.current_section != "О программе":
+
+    st.markdown(
+        """
+        <div class="calculation-footer">
+            <div class="calculation-footer-inner"></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    _, col_button, _ = st.columns([1, 1, 1])
+
+    with col_button:
+        calculate = st.button(
+            "Запустить расчёт",
+            icon=":material/play_arrow:",
+            key="run_calculation",
+            use_container_width=True,
+            type="primary",
+        )
+
+    if calculate:
+        st.session_state.run_calculation = True
+
+# Обработка запуска расчёта
+if st.session_state.get("run_calculation", False):
+    st.session_state.run_calculation = False
+
+    # Здесь будет запуск реального расчёта

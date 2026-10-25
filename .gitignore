@@ -27,3 +27,4 @@ So_current + interference_all_points+fractures.ipynb
 /*.spec
 /build
 /dist
+/.local_edw
