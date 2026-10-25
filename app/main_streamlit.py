@@ -96,7 +96,7 @@ st.markdown(
         width: 100% !important;
         margin: 0 !important;
         text-align: left !important;
-        font-size: 20px !important;
+        font-size: 18px !important;
     }
     
     section[data-testid="stSidebar"] button [data-testid="stIconMaterial"] {
