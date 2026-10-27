@@ -16,13 +16,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 # keeping credentials and infrastructure details out of the user interface.
 DATA_SOURCE = os.getenv("INFILL_DATA_SOURCE", "local").strip().casefold()
 
-# CSVs are build inputs only. Runtime reads the schema-compatible SQL database.
-LOCAL_CSV_ROOT = Path(
-    os.getenv(
-        "INFILL_LOCAL_CSV_ROOT",
-        PROJECT_ROOT / "other_files" / "локальная копия бд",
-    )
-)
+# Runtime reads only the schema-compatible SQL database. CSV build inputs are
+# intentionally configured by the separate local builder, not by the app.
 LOCAL_DB_PATH = Path(
     os.getenv("INFILL_LOCAL_DB_PATH", PROJECT_ROOT / ".local_edw" / "edw.db")
 )
@@ -40,7 +35,6 @@ def repository_config() -> dict[str, object]:
     if DATA_SOURCE == "local":
         return {
             "type": "local",
-            "root": str(LOCAL_CSV_ROOT),
             "db_path": str(LOCAL_DB_PATH),
         }
     if DATA_SOURCE == "kspd":

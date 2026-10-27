@@ -165,10 +165,10 @@ venv\Scripts\python.exe -m streamlit run app\main_streamlit.py
 
 Источник данных выбирает разработчик; в пользовательском интерфейсе переключателя нет. Настройки хранятся в `app/data_access/settings.py` и могут быть переопределены переменными окружения:
 
-* `INFILL_DATA_SOURCE=local` (default) — локальная SQL-имитация EDW; `INFILL_LOCAL_CSV_ROOT` задаёт папку CSV-выгрузок, `INFILL_LOCAL_DB_PATH` — путь к единому DuckDB-файлу.
+* `INFILL_DATA_SOURCE=local` (default) — локальная SQL-имитация EDW; приложение читает только единый DuckDB-файл из `INFILL_LOCAL_DB_PATH` (по умолчанию `.local_edw/edw.db`) и не зависит от исходных CSV.
 * `INFILL_DATA_SOURCE=kspd` — прямое подключение Greenplum/EDW; параметры `INFILL_KSPD_HOST`, `INFILL_KSPD_PORT`, `INFILL_KSPD_DATABASE`, `INFILL_KSPD_USER`, `INFILL_KSPD_PASSWORD`. Путь к `.env` можно задать через `INFILL_ENV_FILE`.
 
-Перед первым локальным запуском соберите БД:
+Сборка БД из CSV — отдельная локальная операция разработчика. Путь к исходным CSV задаётся сборщику через `--source-dir` (по умолчанию используется папка самого скрипта). Для локальной сборки выполните:
 
 ```powershell
 venv\Scripts\python.exe ".\other_files\локальная копия бд\build_local_edw.py"

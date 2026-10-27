@@ -10,7 +10,11 @@ import pandas as pd
 
 from app.config import columns_name
 
-from .local_database import connect_local_database, database_is_current, repair_mojibake
+from .local_database import (
+    connect_local_database,
+    repair_mojibake,
+    validate_local_database,
+)
 from .models import (
     GridChoice,
     PVT_EDW_FACTORS,
@@ -206,26 +210,13 @@ class SqlEdwRepository(DatabaseRepository):
         return result
 
 
-class LocalCsvRepository(SqlEdwRepository):
-    """Local SQL imitation of EDW materialized from ``schema.table.csv`` files.
-
-    The legacy class name is retained to avoid breaking the UI configuration.
-    No calculation data is read from CSV at runtime.
-    """
+class LocalDatabaseRepository(SqlEdwRepository):
+    """Read a ready-to-use local EDW without depending on its source CSV files."""
 
     locator_prefix = "local"
 
-    def __init__(self, root: str | Path, db_path: str | Path | None = None):
-        self.root = Path(root).resolve()
-        self.db_path = Path(db_path).resolve() if db_path else self.root / ".local_edw" / "edw.db"
-        if not self.root.is_dir():
-            raise FileNotFoundError(f"Папка CSV-выгрузок не найдена: {self.root}")
-        if not database_is_current(self.root, self.db_path):
-            builder = self.root / "build_local_edw.py"
-            raise RuntimeError(
-                "Локальная EDW не собрана или CSV изменились. "
-                f"Запустите: python \"{builder}\""
-            )
+    def __init__(self, db_path: str | Path):
+        self.db_path = validate_local_database(db_path)
 
     def _read_sql(self, query: str, params: dict[str, Any] | None = None) -> pd.DataFrame:
         connection = connect_local_database(self.db_path)
