@@ -297,16 +297,33 @@ def create_shapely_types(data_wells, list_names):
     DataFrame[columns = "POINT T1", "POINT T3", "LINESTRING"] - фрейм данных с добавленными shapely объектами
     """
     T1_x, T1_y, T3_x, T3_y = list_names
-    df_result = pd.DataFrame()
+    coordinates = data_wells[[T1_x, T1_y, T3_x, T3_y]].apply(pd.to_numeric, errors="coerce")
+    coordinates = coordinates.replace([np.inf, -np.inf], np.nan)
+    valid_t1 = coordinates[T1_x].notna() & coordinates[T1_y].notna()
+    valid_t3 = coordinates[T3_x].notna() & coordinates[T3_y].notna()
+    coordinates.loc[~valid_t1 & valid_t3, [T1_x, T1_y]] = coordinates.loc[
+        ~valid_t1 & valid_t3, [T3_x, T3_y]
+    ].to_numpy()
+    coordinates.loc[valid_t1 & ~valid_t3, [T3_x, T3_y]] = coordinates.loc[
+        valid_t1 & ~valid_t3, [T1_x, T1_y]
+    ].to_numpy()
+    invalid = ~(valid_t1 | valid_t3)
+    if invalid.any():
+        logger.warning(
+            f"Для {int(invalid.sum())} скважин нет корректных координат; "
+            "использована нейтральная точка (0, 0)"
+        )
+        coordinates.loc[invalid, [T1_x, T1_y, T3_x, T3_y]] = 0.0
+
+    df_result = pd.DataFrame(index=data_wells.index)
     import warnings
     with warnings.catch_warnings(action='ignore', category=pd.errors.SettingWithCopyWarning):
-        df_result["POINT_T1"] = list(map(lambda x, y: Point(x, y), data_wells[T1_x], data_wells[T1_y]))
-        df_result["POINT_T3"] = list(map(lambda x, y: Point(x, y), data_wells[T3_x], data_wells[T3_y]))
-        df_result["LINESTRING"] = list(map(lambda x, y: LineString([x, y]),
-                                           df_result["POINT_T1"], df_result["POINT_T3"]))
-        df_result["LINESTRING"] = np.where(df_result["POINT_T1"] == df_result["POINT_T3"], df_result["POINT_T1"],
-                                           list(map(lambda x, y: LineString([x, y]),
-                                                    df_result["POINT_T1"], df_result["POINT_T3"])))
+        df_result["POINT_T1"] = [Point(float(x), float(y)) for x, y in zip(coordinates[T1_x], coordinates[T1_y])]
+        df_result["POINT_T3"] = [Point(float(x), float(y)) for x, y in zip(coordinates[T3_x], coordinates[T3_y])]
+        df_result["LINESTRING"] = [
+            start if start.equals(end) else LineString([start.coords[0], end.coords[0]])
+            for start, end in zip(df_result["POINT_T1"], df_result["POINT_T3"])
+        ]
     return df_result
 
 

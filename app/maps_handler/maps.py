@@ -1,4 +1,5 @@
 import os
+import threading
 import numpy as np
 import pandas as pd
 from osgeo import gdal
@@ -12,6 +13,9 @@ from affine import Affine
 # from scipy.ndimage import gaussian_filter
 
 from .config import list_names_map
+
+
+_PLOT_LOCK = threading.RLock()
 
 
 class Map:
@@ -162,114 +166,114 @@ class Map:
 
     def save_img(self, filename, data_wells=None, list_zones=None, info_clusterization_zones=None, project_wells=None,
                  polygon_OI=None):
-        import matplotlib.pyplot as plt
+        from matplotlib import colormaps
+        from matplotlib.backends.backend_agg import FigureCanvasAgg
+        from matplotlib.figure import Figure
 
-        # Определение размера осей
-        x = (self.geo_transform[0], self.geo_transform[0] + self.geo_transform[1] * self.data.shape[1])
-        y = (self.geo_transform[3] + self.geo_transform[5] * self.data.shape[0], self.geo_transform[3])
-        x_plt = self.convert_coord_to_pix((np.array(x), np.array(y)))[0]
-        y_plt = self.convert_coord_to_pix((np.array(x), np.array(y)))[1]
-        d_x, d_y = abs(x_plt[1] - x_plt[0]), abs(y_plt[1] - y_plt[0])
-        count = len(str(int(min(d_x, d_y))))
+        # Matplotlib's pyplot state is process-global. Streamlit calculations run
+        # in background threads, so pyplot.imshow() could create an image in one
+        # Axes and pyplot.sci() could see another thread's Axes. Use the object API
+        # and serialize figure rendering to keep each mappable bound to its Axes.
+        with _PLOT_LOCK:
+            x = (self.geo_transform[0], self.geo_transform[0] + self.geo_transform[1] * self.data.shape[1])
+            y = (self.geo_transform[3] + self.geo_transform[5] * self.data.shape[0], self.geo_transform[3])
+            x_plt = self.convert_coord_to_pix((np.array(x), np.array(y)))[0]
+            y_plt = self.convert_coord_to_pix((np.array(x), np.array(y)))[1]
+            d_x, d_y = abs(x_plt[1] - x_plt[0]), abs(y_plt[1] - y_plt[0])
+            count = len(str(int(min(d_x, d_y))))
+            fig = Figure(figsize=(d_x / 10 ** (count - 1), d_y / 10 ** (count - 1)))
+            FigureCanvasAgg(fig)
+            ax = fig.subplots()
+            try:
+                element_size = min(d_x, d_y) / 10 ** (count - 0.2)
+                font_size = min(d_x, d_y) / 10 ** (count - 0.5)
+                image = ax.imshow(self.data, cmap='viridis', origin="upper")
+                cbar = fig.colorbar(image, ax=ax)
+                cbar.ax.tick_params(labelsize=font_size * 8)
 
-        plt.figure(figsize=(d_x / 10 ** (count - 1), d_y / 10 ** (count - 1)))
-        element_size = min(d_x, d_y) / 10 ** (count - 0.2)
-        font_size = min(d_x, d_y) / 10 ** (count - 0.5)
+                title = ""
+                if list_zones is not None:
+                    labels = [zone.rating for zone in list_zones]
+                    cmap = colormaps.get_cmap('Wistia').resampled(max(len(set(labels)), 1))
+                    colors = [cmap(i) for i in range(len(set(labels)))]
+                    if len(labels) == 1 and labels[0] == -1:
+                        colors = {0: "gray"}
+                    else:
+                        colors = dict(zip(labels, colors))
+                        colors.update({-1: "gray"})
 
-        plt.imshow(self.data, cmap='viridis', origin="upper")
-        cbar = plt.colorbar()
-        cbar.ax.tick_params(labelsize=font_size * 8)
+                    for i, color_value in zip(labels, colors.values()):
+                        zone = list_zones[labels.index(i)]
+                        x_zone = zone.x_coordinates
+                        y_zone = zone.y_coordinates
+                        ax.scatter(x_zone, y_zone, color=color_value, alpha=0.6, s=1)
+                        if len(x_zone) != 0:
+                            ax.text(
+                                x_zone[int(len(x_zone) / 2)],
+                                y_zone[int(len(x_zone) / 2)],
+                                i,
+                                fontsize=font_size * 2,
+                                color='red',
+                            )
 
-        # Отображение зон кластеризации на карте
-        title = ""
-        if list_zones is not None:
-            labels = list(map(lambda zone: zone.rating, list_zones))
-            # Выбираем теплую цветовую карту
-            cmap = plt.get_cmap('Wistia', len(set(labels)))
-            # Генерируем список цветов
-            colors = [cmap(i) for i in range(len(set(labels)))]
+                        if i != -1 and project_wells:
+                            for well in zone.list_project_wells:
+                                if well.init_Qo_rate > 0:
+                                    x_t1, y_t1 = well.POINT_T1_pix.x, well.POINT_T1_pix.y
+                                    x_t3, y_t3 = well.POINT_T3_pix.x, well.POINT_T3_pix.y
+                                    ax.plot([x_t1, x_t3], [y_t1, y_t3], c='red', linewidth=element_size * 0.3)
+                                    ax.scatter(x_t1, y_t1, s=element_size, c='red', marker="o", linewidths=0.1)
+                                    ax.text(x_t1 + 3, y_t1 - 3, well.well_number, fontsize=font_size, ha='left')
 
-            if len(labels) == 1 and labels[0] == -1:
-                colors = {0: "gray"}
-            else:
-                colors = dict(zip(labels, colors))
-                colors.update({-1: "gray"})
+                    if info_clusterization_zones is not None:
+                        title = (f"Epsilon = {info_clusterization_zones['epsilon']}\n "
+                                 f"min_samples = {info_clusterization_zones['min_samples']} \n "
+                                 f"with {info_clusterization_zones['n_clusters']} clusters")
 
-            for i, c in zip(labels, colors.values()):
-                zone = list_zones[labels.index(i)]
-                x_zone = zone.x_coordinates
-                y_zone = zone.y_coordinates
-                plt.scatter(x_zone, y_zone, color=c, alpha=0.6, s=1)
-                if len(x_zone) != 0:
-                    plt.text(x_zone[int(len(x_zone) / 2)], y_zone[int(len(x_zone) / 2)], i, fontsize=font_size * 2,
-                             color='red')
+                if data_wells is not None:
+                    data_wells = data_wells.copy()
+                    for column in ['T1_x_geo', 'T3_x_geo']:
+                        data_wells = data_wells.loc[
+                            (data_wells[column] <= x[1]) & (data_wells[column] >= x[0])
+                        ]
+                    for column in ['T1_y_geo', 'T3_y_geo']:
+                        data_wells = data_wells.loc[
+                            (data_wells[column] <= y[1]) & (data_wells[column] >= y[0])
+                        ]
 
-                if i != -1:
-                    #  Отрисовка проектного фонда
-                    if project_wells:
-                        for well in zone.list_project_wells:
-                            if well.init_Qo_rate > 0:
-                                # координаты скважин в пиксельных координатах
-                                x_t1, y_t1 = (well.POINT_T1_pix.x, well.POINT_T1_pix.y)
-                                x_t3, y_t3 = (well.POINT_T3_pix.x, well.POINT_T3_pix.y)
-
-                                # Отображение скважин на карте
-                                plt.plot([x_t1, x_t3], [y_t1, y_t3], c='red', linewidth=element_size * 0.3)
-                                plt.scatter(x_t1, y_t1, s=element_size, c='red', marker="o", linewidths=0.1)
-
-                                # Отображение имен скважин рядом с точками T1
-                                plt.text(x_t1 + 3, y_t1 - 3, well.well_number, fontsize=font_size, ha='left')
-
-            if info_clusterization_zones is not None:
-                title = (f"Epsilon = {info_clusterization_zones['epsilon']}\n "
-                         f"min_samples = {info_clusterization_zones['min_samples']} \n "
-                         f"with {info_clusterization_zones['n_clusters']} clusters")
-
-        # Отображение списка скважин на карте
-        if data_wells is not None:
-            column_lim_x = ['T1_x_geo', 'T3_x_geo']
-            for column in column_lim_x:
-                data_wells = data_wells.loc[((data_wells[column] <= x[1]) & (data_wells[column] >= x[0]))]
-            column_lim_y = ['T1_y_geo', 'T3_y_geo']
-            for column in column_lim_y:
-                data_wells = data_wells.loc[((data_wells[column] <= y[1]) & (data_wells[column] >= y[0]))]
-
-            color = 'black'
-            data_wells_type = pd.DataFrame()
-            for work_marker in ['prod', 'inj', 'project']:
-                if work_marker == 'prod':
-                    data_wells_type = data_wells.loc[data_wells['work_marker'] == 'prod']
-                    color = 'black'
-                elif work_marker == 'inj':
-                    data_wells_type = data_wells.loc[data_wells['work_marker'] == 'inj']
-                    color = 'mediumblue'
-                elif work_marker == 'project':
-                    data_wells_type = data_wells[data_wells['work_marker'].isna()]
-                    color = 'red'
-
-                if not data_wells_type.empty:
-                    # координаты скважин в пиксельных координатах
-                    x_t1, y_t1 = (data_wells_type.T1_x_pix, data_wells_type.T1_y_pix)
-                    x_t3, y_t3 = (data_wells_type.T3_x_pix, data_wells_type.T3_y_pix)
-
-                    # Отображение скважин на карте
-                    plt.plot([x_t1, x_t3], [y_t1, y_t3], c=color, linewidth=element_size * 0.3)
-                    plt.scatter(x_t1, y_t1, s=element_size, c=color, marker="o", linewidths=0.1)
-
-                    # Отображение имен скважин рядом с точками T1
-                    for x, y, name in zip(x_t1, y_t1, data_wells_type.well_number):
-                        plt.text(x + 2, y - 2, name, fontsize=font_size, fontweight='bold', ha='left', color=color)
-        if polygon_OI:
-            for geom in polygon_OI.geoms:
-                plt.plot(*geom.exterior.xy, c='r')
-        plt.title(f"{self.type_map}\n {title}", fontsize=font_size * 8)
-        plt.tick_params(axis='both', which='major', labelsize=font_size * 8)
-        plt.contour(self.data, levels=8, colors='black', origin='lower', linewidths=font_size / 100)
-        plt.xlim(x_plt)
-        plt.ylim([y_plt[1], y_plt[0]])
-        plt.gca().invert_yaxis()
-        plt.savefig(filename, dpi=400)
-        plt.close()
+                    for work_marker, color in [('prod', 'black'), ('inj', 'mediumblue'), ('project', 'red')]:
+                        if work_marker == 'project':
+                            data_wells_type = data_wells[data_wells['work_marker'].isna()]
+                        else:
+                            data_wells_type = data_wells.loc[data_wells['work_marker'] == work_marker]
+                        if data_wells_type.empty:
+                            continue
+                        x_t1, y_t1 = data_wells_type.T1_x_pix, data_wells_type.T1_y_pix
+                        x_t3, y_t3 = data_wells_type.T3_x_pix, data_wells_type.T3_y_pix
+                        ax.plot([x_t1, x_t3], [y_t1, y_t3], c=color, linewidth=element_size * 0.3)
+                        ax.scatter(x_t1, y_t1, s=element_size, c=color, marker="o", linewidths=0.1)
+                        for x_value, y_value, name in zip(x_t1, y_t1, data_wells_type.well_number):
+                            ax.text(
+                                x_value + 2,
+                                y_value - 2,
+                                name,
+                                fontsize=font_size,
+                                fontweight='bold',
+                                ha='left',
+                                color=color,
+                            )
+                if polygon_OI:
+                    for geom in polygon_OI.geoms:
+                        ax.plot(*geom.exterior.xy, c='r')
+                ax.set_title(f"{self.type_map}\n {title}", fontsize=font_size * 8)
+                ax.tick_params(axis='both', which='major', labelsize=font_size * 8)
+                ax.contour(self.data, levels=8, colors='black', origin='lower', linewidths=font_size / 100)
+                ax.set_xlim(x_plt)
+                ax.set_ylim([y_plt[1], y_plt[0]])
+                ax.invert_yaxis()
+                fig.savefig(filename, dpi=400)
+            finally:
+                fig.clear()
 
 
 def read_raster(file_path, no_value=0):
