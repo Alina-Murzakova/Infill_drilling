@@ -12,7 +12,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-from app.data_access import KspdRepository, LocalCsvRepository, MAP_SPECS
+from app.data_access import KspdRepository, LocalDatabaseRepository, MAP_SPECS
 from app.data_access.materialize import grid_to_grd, save_uploaded_file
 from app.data_access.models import PVT_FIELDS
 from app.input_output.input_geo_phys_properties import (
@@ -164,7 +164,7 @@ def initialize_session() -> None:
     st.session_state.setdefault("pvt_found", False)
     config = repository_config()
     if config["type"] == "local":
-        st.session_state.db_connected = Path(config["root"]).is_dir()
+        st.session_state.db_connected = Path(config["db_path"]).is_file()
     else:
         st.session_state.db_connected = bool(config.get("host") and config.get("user"))
 
@@ -176,7 +176,7 @@ def repository_config() -> dict[str, Any]:
 def make_repository(config: dict[str, Any] | None = None):
     config = config or repository_config()
     if config["type"] == "local":
-        return LocalCsvRepository(config["root"], config["db_path"])
+        return LocalDatabaseRepository(config["db_path"])
     return KspdRepository(
         config["host"], config["port"], config["database"], config["user"], config["password"]
     )

@@ -46,6 +46,8 @@ INDEXES: dict[tuple[str, str], tuple[tuple[str, ...], ...]] = {
     ),
 }
 
+REQUIRED_TABLES = frozenset(INDEXES)
+
 
 GRID_TEXT_COLUMNS = {
     "comment",
@@ -142,6 +144,51 @@ def database_is_current(source_dir: str | Path, db_path: str | Path) -> bool:
         if (schema, table) not in database_tables:
             return False
     return True
+
+
+def validate_local_database(db_path: str | Path) -> Path:
+    """Validate a ready-to-use local EDW without consulting source CSV files."""
+
+    db_path = Path(db_path).resolve()
+    if not db_path.is_file():
+        raise FileNotFoundError(f"Локальная EDW не найдена: {db_path}")
+
+    try:
+        with closing(duckdb.connect(str(db_path), read_only=True)) as connection:
+            version = connection.execute(
+                "SELECT value FROM main.local_edw_metadata WHERE key='format_version'"
+            ).fetchone()
+            database_tables = set(
+                connection.execute(
+                    """SELECT table_schema, table_name
+                       FROM information_schema.tables
+                       WHERE table_type = 'BASE TABLE'"""
+                ).fetchall()
+            )
+    except (duckdb.Error, OSError) as exc:
+        raise RuntimeError(
+            f"Не удалось открыть локальную EDW {db_path}: {exc}"
+        ) from exc
+
+    try:
+        format_version = int(version[0]) if version is not None else None
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            f"Локальная EDW {db_path} имеет некорректную версию формата"
+        ) from exc
+    if format_version != FORMAT_VERSION:
+        raise RuntimeError(
+            f"Локальная EDW {db_path} имеет версию формата {format_version}; "
+            f"ожидается {FORMAT_VERSION}"
+        )
+
+    missing_tables = sorted(REQUIRED_TABLES - database_tables)
+    if missing_tables:
+        formatted = ", ".join(f"{schema}.{table}" for schema, table in missing_tables)
+        raise RuntimeError(
+            f"В локальной EDW {db_path} отсутствуют обязательные таблицы: {formatted}"
+        )
+    return db_path
 
 
 def _batches(
