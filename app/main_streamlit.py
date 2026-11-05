@@ -112,6 +112,16 @@ st.markdown(
         padding-bottom: 5rem;
     }
 
+    /* Пустое значение задаётся удалением текста; отдельная кнопка сброса не нужна. */
+    button[data-testid="stNumberInputClearButton"] {
+        display: none !important;
+    }
+
+    /* Streamlit применяет число по Enter или при выходе из поля; микроподсказку скрываем. */
+    [data-testid="stNumberInput"] [data-testid="InputInstructions"] {
+        display: none !important;
+    }
+
     section[data-testid="stSidebar"] .st-key-about_bottom {
         position: fixed;
         left: 1rem;

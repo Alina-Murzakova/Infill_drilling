@@ -8,6 +8,7 @@ from app.streamlit_runtime import (
     initialize_session,
     remember_upload,
 )
+from app.streamlit_widgets import clearable_number_input
 
 
 def _mark_manual(name: str) -> None:
@@ -38,33 +39,32 @@ def _pvt_tab() -> None:
     for name, (label, minimum, maximum) in PVT_UI_FIELDS.items():
         col_label, col_value = st.columns([1.2, 0.8], vertical_alignment="center")
         col_label.markdown(label)
-        col_value.number_input(
+        clearable_number_input(
+            col_value,
             label,
+            key=f"pvt_{name}",
             min_value=float(minimum),
             max_value=float(maximum),
             step=0.001,
             format="%.4f",
-            key=f"pvt_{name}",
             on_change=_mark_manual,
             args=(name,),
-            label_visibility="collapsed",
-            persist_state="session",
         )
 
 
 def _number_row(label: str, key: str, minimum: float, maximum: float, step: float = 0.001, disabled: bool = False):
     col_label, col_value = st.columns([1.2, 0.8], vertical_alignment="center")
     col_label.markdown(label)
-    col_value.number_input(
+    clearable_number_input(
+        col_value,
         label,
+        key=key,
         min_value=float(minimum),
         max_value=float(maximum),
         step=float(step),
         format="%.3f",
-        key=key,
         disabled=disabled,
-        label_visibility="collapsed",
-        persist_state="session",
+        required=not disabled,
     )
 
 

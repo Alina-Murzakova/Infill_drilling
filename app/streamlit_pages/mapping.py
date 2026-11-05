@@ -1,5 +1,7 @@
 import streamlit as st
 
+from app.streamlit_widgets import clearable_number_input
+
 
 def show():
     """Страница «Картопостроение»"""
@@ -37,7 +39,7 @@ def show():
             line-height: 1.3;
             padding-top: 7px;
         }
-        
+
         /* Краткое описание раздела */
         .mapping-description {
             font-size: 16px;
@@ -65,23 +67,23 @@ def show():
         div[data-testid="stNumberInput"] {
             margin-top: 0 !important;
         }
-        
-        /* Настройка цветов */     
+
+        /* Настройка цветов */
          /* Кнопки + / - */
         div[data-testid="stNumberInput"] button {
             background-color: #E4E7EC !important;
         }
-        
+
         /* + / - при наведении */
         div[data-testid="stNumberInput"] button:hover {
             background-color: #D1D5DB !important;
         }
-        
+
         /* + / - при нажатии */
         div[data-testid="stNumberInput"] button:active {
             background-color: #B8BDC6 !important;
         }
-        
+
         /* + / - после нажатия */
         div[data-testid="stNumberInput"] button:focus {
             background-color: #D1D5DB !important;
@@ -123,17 +125,16 @@ def show():
             )
 
         with col_value:
-            return st.number_input(
+            return clearable_number_input(
+                st,
                 label,
+                key=key,
                 min_value=min_value,
                 max_value=max_value,
-                value=value,
                 step=step,
                 format=format,
                 disabled=disabled,
-                label_visibility="collapsed",
-                key=key,
-                persist_state="session",
+                required=not disabled,
             )
 
     # -----------------------------------------------------
@@ -231,11 +232,11 @@ def show():
     # -----------------------------------------------------
 
     return {
-        "default_size_pixel": int(size_pixel),
-        "radius_interpolate": int(radius_interpolate),
+        "default_size_pixel": int(size_pixel) if size_pixel is not None else None,
+        "radius_interpolate": int(radius_interpolate) if radius_interpolate is not None else None,
         "switch_accounting_horwell": switch_accounting_horwell,
         "switch_frac_inj_well": switch_frac_inj_well,
-        "azimuth_sigma_h_min": int(azimuth_sigma_h_min),
-        "l_half_fracture": float(l_half_fracture),
-        "KIN": float(KIN),
+        "azimuth_sigma_h_min": int(azimuth_sigma_h_min) if azimuth_sigma_h_min is not None else None,
+        "l_half_fracture": float(l_half_fracture) if l_half_fracture is not None else None,
+        "KIN": float(KIN) if KIN is not None else None,
     }

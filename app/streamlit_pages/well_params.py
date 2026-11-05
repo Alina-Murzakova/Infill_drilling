@@ -1,6 +1,7 @@
 import streamlit as st
 
-from app.streamlit_runtime import remember_upload
+from app.streamlit_runtime import SESSION_DEFAULTS, remember_upload
+from app.streamlit_widgets import clearable_number_input
 
 
 def show():
@@ -27,16 +28,16 @@ def show():
 
         /* Названия вкладок */
         div[data-testid="stTabs"] [role="tab"] {
-            font-size: 22px !important; 
-            font-weight: 500 !important; 
+            font-size: 22px !important;
+            font-weight: 500 !important;
         }
-        
+
         /* На случай, если Streamlit рендерит текст внутри ссылки/дополнительного тега */
         div[data-testid="stTabs"] [role="tab"] * {
             font-size: 22px !important;
             font-weight: 500 !important;
         }
-        
+
         /* Корректируем высоту панели, чтобы крупные вкладки не обрезались */
         div[data-testid="stTabs"] [role="tablist"] {
             height: auto !important;
@@ -100,7 +101,7 @@ def show():
         div[data-testid="stTextInput"] input {
             font-size: 18px !important;
         }
-        
+
         /* Кнопки + / - */
         div[data-testid="stNumberInput"] button {
             background-color: #E4E7EC !important;
@@ -116,7 +117,7 @@ def show():
 
         div[data-testid="stNumberInput"] button:focus {
             background-color: #D1D5DB !important;
-        } 
+        }
 
         </style>
         """,
@@ -149,7 +150,8 @@ def show():
             )
 
         with col_value:
-            if isinstance(value, float):
+            default_value = SESSION_DEFAULTS.get(key, value)
+            if isinstance(default_value, float):
                 min_value = float(min_value)
                 max_value = float(max_value)
                 step = float(step)
@@ -158,17 +160,16 @@ def show():
                 max_value = int(max_value)
                 step = int(step)
 
-            return st.number_input(
+            return clearable_number_input(
+                st,
                 label,
+                key=key,
                 min_value=min_value,
                 max_value=max_value,
-                value=value,
                 step=step,
                 format=format,
                 disabled=disabled,
-                label_visibility="collapsed",
-                key=key,
-                persist_state="session",
+                required=not disabled,
             )
 
     # =====================================================
@@ -308,7 +309,7 @@ def show():
             max_value=999999,
             step=1,
             key="well_length_frac_stage",
-            disabled=use_frac_sheet,
+            disabled=use_frac_sheet or frac_type == "Без ГРП",
         )
 
         xfr = number_parameter(
@@ -318,7 +319,7 @@ def show():
             max_value=999999,
             step=1,
             key="well_xfr",
-            disabled=use_frac_sheet,
+            disabled=use_frac_sheet or frac_type == "Без ГРП",
         )
 
         w_f = number_parameter(
@@ -328,7 +329,7 @@ def show():
             max_value=999999,
             step=1,
             key="well_w_f",
-            disabled=use_frac_sheet,
+            disabled=use_frac_sheet or frac_type == "Без ГРП",
         )
 
         k_f = number_parameter(
@@ -338,7 +339,7 @@ def show():
             max_value=999999,
             step=1,
             key="well_k_f",
-            disabled=use_frac_sheet,
+            disabled=use_frac_sheet or frac_type == "Без ГРП",
         )
 
     # =====================================================
@@ -486,12 +487,12 @@ def show():
 
     return {
         # ---------- Общие ----------
-        "r_w": float(r_w),
-        "t_p": float(t_p),
-        "well_efficiency": float(well_efficiency),
-        "KUBS": float(KUBS),
-        "KPPP": float(KPPP),
-        "skin": float(skin),
+        "r_w": float(r_w) if r_w is not None else None,
+        "t_p": float(t_p) if t_p is not None else None,
+        "well_efficiency": float(well_efficiency) if well_efficiency is not None else None,
+        "KUBS": float(KUBS) if KUBS is not None else None,
+        "KPPP": float(KPPP) if KPPP is not None else None,
+        "skin": float(skin) if skin is not None else None,
 
         # ---------- ГРП ----------
         "Type_Frac": (
@@ -500,33 +501,33 @@ def show():
             else frac_type
         ),
         "switch_fracList_params": use_frac_sheet,
-        "length_FracStage": float(length_FracStage),
-        "xfr": float(xfr),
-        "w_f": float(w_f),
-        "k_f": float(k_f),
+        "length_FracStage": float(length_FracStage) if length_FracStage is not None else None,
+        "xfr": float(xfr) if xfr is not None else None,
+        "w_f": float(w_f) if w_f is not None else None,
+        "k_f": float(k_f) if k_f is not None else None,
         "path_frac": frac_file,
 
         # ---------- Фактический фонд ----------
-        "first_months": int(first_months),
-        "last_months": int(last_months),
-        "default_radius_prod": float(default_radius_prod),
-        "default_radius_inj": float(default_radius_inj),
+        "first_months": int(first_months) if first_months is not None else None,
+        "last_months": int(last_months) if last_months is not None else None,
+        "default_radius_prod": float(default_radius_prod) if default_radius_prod is not None else None,
+        "default_radius_inj": float(default_radius_inj) if default_radius_inj is not None else None,
         "switch_filtration_perm_fact": switch_filtration_perm_fact,
 
         # ---------- Проектный фонд ----------
-        "L": int(L),
-        "min_length": int(min_length),
-        "buffer_project_wells": int(buffer_project_wells),
+        "L": int(L) if L is not None else None,
+        "min_length": int(min_length) if min_length is not None else None,
+        "buffer_project_wells": int(buffer_project_wells) if buffer_project_wells is not None else None,
         "switch_fix_P_well_init": switch_fix_P_well_init,
         "fix_P_well_init": (
             float(fix_P_well_init)
-            if switch_fix_P_well_init
+            if switch_fix_P_well_init and fix_P_well_init is not None
             else 0.0
         ),
         "switch_wc_from_map": (
             water_cut_source == "С карты"
         ),
-        "k": int(k),
-        "threshold": float(threshold),
-        "period_calculation": int(period_calculation),
+        "k": int(k) if k is not None else None,
+        "threshold": float(threshold) if threshold is not None else None,
+        "period_calculation": int(period_calculation) if period_calculation is not None else None,
     }
