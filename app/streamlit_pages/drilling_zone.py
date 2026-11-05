@@ -1,5 +1,7 @@
 import streamlit as st
 
+from app.streamlit_widgets import clearable_number_input
+
 
 def show():
     """Страница «Поиск зон бурения»"""
@@ -111,16 +113,14 @@ def show():
             )
 
         with col_value:
-            return st.number_input(
+            return clearable_number_input(
+                st,
                 label,
+                key=key,
                 min_value=min_value,
                 max_value=max_value,
-                value=value,
                 step=step,
                 format=format,
-                label_visibility="collapsed",
-                key=key,
-                persist_state="session",
             )
 
     # -----------------------------------------------------
@@ -180,8 +180,8 @@ def show():
     # -----------------------------------------------------
 
     return {
-        "percent_top": int(percent_top),
-        "min_radius": int(min_radius),
-        "sensitivity_quality_drill": int(sensitivity_quality_drill),
-        "init_profit_cum_oil": int(init_profit_cum_oil),
+        "percent_top": int(percent_top) if percent_top is not None else None,
+        "min_radius": int(min_radius) if min_radius is not None else None,
+        "sensitivity_quality_drill": int(sensitivity_quality_drill) if sensitivity_quality_drill is not None else None,
+        "init_profit_cum_oil": int(init_profit_cum_oil) if init_profit_cum_oil is not None else None,
     }

@@ -963,18 +963,21 @@ def save_picture_voronoi(
 
 def remove_keys(data, keys):
     """
-    Функция для очистки словаря от лишних ключей
+    Возвращает копию структуры без служебных ключей.
+
+    Исходный словарь параметров не изменяется: он продолжает использоваться
+    выполняющимся расчётом и для последующих диагностических checkpoint-файлов.
     """
     if isinstance(data, dict):
-        for key in keys:
-            data.pop(key, None)
-        for value in data.values():
-            if isinstance(value, (dict, list)):
-                remove_keys(value, keys)
+        return {
+            key: remove_keys(value, keys)
+            for key, value in data.items()
+            if key not in keys
+        }
     elif isinstance(data, list):
-        for item in data:
-            if isinstance(item, (dict, list)):
-                remove_keys(item, keys)
+        return [remove_keys(item, keys) for item in data]
+    elif isinstance(data, tuple):
+        return tuple(remove_keys(item, keys) for item in data)
     return data
 
 
@@ -1086,7 +1089,7 @@ def save_local_parameters(parameters, save_path):
     """Сохранение файла local_parameters.py"""
     # Удаляем параметры, которые были рассчитаны
     list_keys = ['Bo', 'P_init', 'Pb', 'c_o', 'c_r', 'c_w', 'gor', 'k_h', 'mu_o', 'mu_w', 'rho',
-                 'save_directory', 'all_P_wells_init']
+                 'save_directory', 'all_P_wells_init', 'preloaded']
     parameters = remove_keys(parameters, list_keys)
     with open(save_path, 'w', encoding='utf-8') as f:
         # Используем pprint для красивого форматирования

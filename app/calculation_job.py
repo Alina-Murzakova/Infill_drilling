@@ -9,6 +9,7 @@ from typing import Any
 
 from loguru import logger
 
+from app.debug_bundle import create_debug_bundle, write_error_log
 from app.exceptions import CalculationCancelled
 from app.main import run_model
 
@@ -27,6 +28,8 @@ class CalculationJob:
         self._summary = None
         self._result_zip: bytes | None = None
         self._result_zip_name: str | None = None
+        self._debug_zip: bytes | None = None
+        self._debug_zip_name: str | None = None
         self._thread = threading.Thread(target=self._run, name="infill-calculation", daemon=True)
 
     def start(self) -> None:
@@ -49,6 +52,10 @@ class CalculationJob:
     def result(self):
         with self._lock:
             return self._summary, self._result_zip, self._result_zip_name
+
+    def debug_bundle(self) -> tuple[bytes | None, str | None]:
+        with self._lock:
+            return self._debug_zip, self._debug_zip_name
 
     def _append_log(self, message: Any) -> None:
         text = str(message).rstrip()
@@ -92,9 +99,19 @@ class CalculationJob:
             with self._lock:
                 self._status = "cancelled"
         except Exception as error:
-            self._append_log(traceback.format_exc())
+            traceback_text = traceback.format_exc()
+            self._append_log(traceback_text)
+            try:
+                work_dir = Path(self._parameters["paths"]["save_directory"]).parent
+                write_error_log(work_dir, error, traceback_text)
+                debug_zip, debug_zip_name = create_debug_bundle(work_dir=work_dir)
+            except Exception as debug_error:
+                self._append_log(f"Не удалось сформировать диагностический архив: {debug_error}")
+                debug_zip, debug_zip_name = None, None
             with self._lock:
                 self._error = str(error)
+                self._debug_zip = debug_zip
+                self._debug_zip_name = debug_zip_name
                 self._status = "failed"
         finally:
             logger.remove(sink_id)

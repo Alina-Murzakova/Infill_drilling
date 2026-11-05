@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import traceback
+
 import altair as alt
 import pandas as pd
 import streamlit as st
 
 from app.calculation_job import CalculationJob
+from app.debug_bundle import create_debug_bundle, write_error_log
 from app.streamlit_runtime import build_parameters, new_work_directory
 
 
@@ -26,16 +29,30 @@ def _start_requested_calculation() -> None:
     st.session_state.calculation_cancelled = False
     st.session_state.result_summary = None
     st.session_state.result_zip = None
+    st.session_state.calculation_debug_zip = None
+    st.session_state.calculation_debug_zip_name = None
+    work_dir = new_work_directory()
     try:
         with st.spinner("Подготавливаем исходные данные…"):
-            parameters = build_parameters(new_work_directory())
+            parameters = build_parameters(work_dir)
         job = CalculationJob(parameters)
         st.session_state.calculation_job = job
         st.session_state.calculation_running = True
         job.start()
     except Exception as error:
+        traceback_text = traceback.format_exc()
         st.session_state.calculation_running = False
         st.session_state.calculation_error = str(error)
+        st.session_state.calculation_logs = [traceback_text]
+        try:
+            write_error_log(work_dir, error, traceback_text)
+            debug_zip, debug_zip_name = create_debug_bundle(work_dir=work_dir)
+            st.session_state.calculation_debug_zip = debug_zip
+            st.session_state.calculation_debug_zip_name = debug_zip_name
+        except Exception as debug_error:
+            st.session_state.calculation_logs.append(
+                f"Не удалось сформировать диагностический архив: {debug_error}"
+            )
 
 
 @st.fragment(run_every=1)
@@ -59,6 +76,10 @@ def _calculation_panel() -> None:
         st.session_state.calculation_error = snapshot["error"] if status == "failed" else None
         st.session_state.calculation_cancelled = status == "cancelled"
         st.session_state.calculation_logs = snapshot["logs"]
+        if status == "failed":
+            debug_zip, debug_zip_name = job.debug_bundle()
+            st.session_state.calculation_debug_zip = debug_zip
+            st.session_state.calculation_debug_zip_name = debug_zip_name
         st.session_state.calculation_job = None
         st.rerun(scope="app")
 
@@ -128,6 +149,25 @@ def show():
         _calculation_panel()
     if st.session_state.get("calculation_error"):
         st.error(f"Расчёт завершился с ошибкой: {st.session_state.calculation_error}")
+        if st.session_state.get("calculation_debug_zip"):
+            st.warning(
+                "Диагностический архив может содержать исходные производственные данные. "
+                "Он не отправляется автоматически — передавайте его разработчикам только "
+                "по согласованному защищённому каналу.",
+                icon=":material/security:",
+            )
+            st.download_button(
+                "Скачать данные для диагностики",
+                data=st.session_state.calculation_debug_zip,
+                file_name=(
+                    st.session_state.calculation_debug_zip_name
+                    or "Диагностика_АВНС.zip"
+                ),
+                mime="application/zip",
+                icon=":material/bug_report:",
+                width="stretch",
+                on_click="ignore",
+            )
         with st.expander("Журнал расчёта", expanded=True):
             st.code("\n".join(st.session_state.get("calculation_logs", [])[-100:]), language=None)
     elif st.session_state.get("calculation_cancelled"):

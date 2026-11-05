@@ -1,5 +1,10 @@
 import math
+import pickle
 import sys
+import traceback
+from datetime import datetime, timezone
+from pathlib import Path
+
 import pandas as pd
 import geopandas as gpd
 from loguru import logger
@@ -14,13 +19,64 @@ from app.maps_handler.functions import mapping, calculate_reservoir_state_maps, 
 from app.well_active_zones import calculate_effective_radius
 from app.drill_zones.drilling_zones import calculate_drilling_zones
 from app.project_wells import calculate_reserves_by_voronoi
-from app.input_output.output_functions import get_save_path, create_new_dir, save_local_parameters
+from app.input_output.output_functions import get_save_path, save_local_parameters
 from app.input_output.output import upload_data
 from app.reservoir_kr_optimizer import get_reservoir_kr
 from app.exceptions import CalculationCancelled
 
 
+def _save_debug_pickle(debug_dir: Path, filename: str, value) -> None:
+    """Persist the latest completed calculation stage without masking model errors."""
+    target = debug_dir / filename
+    temporary = target.with_suffix(f"{target.suffix}.tmp")
+    try:
+        with temporary.open("wb") as file:
+            pickle.dump(value, file, protocol=pickle.HIGHEST_PROTOCOL)
+        temporary.replace(target)
+    except Exception as error:
+        logger.warning(f"Не удалось сохранить диагностический файл {filename}: {error}")
+        temporary.unlink(missing_ok=True)
+
+
+def _save_debug_parameters(debug_dir: Path, parameters) -> None:
+    try:
+        save_local_parameters(parameters, debug_dir / "local_parameters.py")
+    except Exception as error:
+        logger.warning(f"Не удалось сохранить local_parameters.py: {error}")
+
+
 def run_model(parameters, total_stages, progress=None, is_cancelled=None):
+    """Run the model with the same staged ``.debug`` artifacts in desktop and web modes."""
+    save_directory = Path(parameters["paths"]["save_directory"])
+    debug_dir = save_directory / ".debug"
+    debug_dir.mkdir(parents=True, exist_ok=True)
+    sink_id = logger.add(
+        debug_dir / "log.log",
+        mode="w",
+        encoding="utf-8",
+        level="INFO",
+        format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}",
+    )
+    _save_debug_parameters(debug_dir, parameters)
+    try:
+        return _run_model(parameters, total_stages, progress, is_cancelled)
+    except CalculationCancelled:
+        raise
+    except Exception as error:
+        error_content = (
+            f"Время ошибки (UTC): {datetime.now(timezone.utc).isoformat()}\n"
+            f"Тип ошибки: {type(error).__name__}\n"
+            f"Сообщение: {error}\n\n"
+            f"Трассировка:\n{traceback.format_exc()}"
+        )
+        (debug_dir / "error.log").write_text(error_content, encoding="utf-8")
+        _save_debug_parameters(debug_dir, parameters)
+        raise
+    finally:
+        logger.remove(sink_id)
+
+
+def _run_model(parameters, total_stages, progress=None, is_cancelled=None):
     import logging
     logging.basicConfig(level=logging.INFO, )
     # Настраиваем библиотеку reservoir_maps
@@ -41,6 +97,8 @@ def run_model(parameters, total_stages, progress=None, is_cancelled=None):
     log_stage("ИНИЦИАЛИЗАЦИЯ ЛОКАЛЬНЫХ ПЕРЕМЕННЫХ")
     # Пути
     paths = parameters['paths']
+    save_directory = paths['save_directory']
+    debug_dir = Path(save_directory) / ".debug"
     # Параметры расчета
     drill_zones_params = parameters['drill_zones']
     is_exe = getattr(sys, 'frozen', False) or hasattr(sys, '_MEIPASS')
@@ -55,13 +113,8 @@ def run_model(parameters, total_stages, progress=None, is_cancelled=None):
         data_well_directory=paths["data_well_directory"],
         data_history=preloaded.get("data_history"),
     )
+    _save_debug_pickle(debug_dir, "data_history.pickle", data_history)
     name_field, name_object = info_object_calculation.get("field"), info_object_calculation.get("object_value")
-    save_directory = paths['save_directory']
-    # Создание локальной папки Месторождение_Объект
-    # save_directory = f"{paths['save_directory']}\\{name_field}_{name_object.replace('/', '-')}"
-    # создание пути под системные файлы
-    create_new_dir(f"{save_directory}/.debug")
-    logger.add(f"{save_directory}/.debug/logs.log", mode='w', encoding='utf-8')
 
     log_stage(f"ЗАГРУЗКА ГФХ ПО ПЛАСТУ {name_object.replace('/', '-')} МЕСТОРОЖДЕНИЯ {name_field}")
     dict_geo_phys_properties = preloaded.get("geo_phys_properties")
@@ -73,25 +126,33 @@ def run_model(parameters, total_stages, progress=None, is_cancelled=None):
     data_history, data_wells = (
         prepare_wells_data(data_history, dict_properties=parameters,
                            first_months=parameters['well_params']['fact_wells_params']['first_months']))
+    _save_debug_pickle(debug_dir, "data_history.pickle", data_history)
+    _save_debug_pickle(debug_dir, "data_wells.pickle", data_wells)
 
     log_stage(f"ЗАГРУЗКА ФРАК-ПАРАМЕТРОВ")
     data_wells, parameters = load_frac_info(
         paths["path_frac"], data_wells, name_object, parameters,
         data_frac=preloaded.get("frac_info"),
     )
+    _save_debug_pickle(debug_dir, "data_wells.pickle", data_wells)
+    _save_debug_parameters(debug_dir, parameters)
 
     log_stage("ЗАГРУЗКА И ОБРАБОТКА КАРТ")
     maps, data_wells, maps_to_calculate = mapping(maps_directory=paths["maps_directory"],
                                                   data_wells=data_wells,
                                                   **{**parameters['maps'], **parameters['switches']})
     default_size_pixel = maps[0].geo_transform[1]  # размер ячейки после загрузки всех карт
+    _save_debug_pickle(debug_dir, "maps.pickle", maps)
+    _save_debug_pickle(debug_dir, "data_wells.pickle", data_wells)
 
     log_stage("РАСЧЕТ РАДИУСОВ ДРЕНИРОВАНИЯ И НАГНЕТАНИЯ ДЛЯ СКВАЖИН")
     data_wells = calculate_effective_radius(data_wells, dict_properties=parameters, is_exe=is_exe)
+    _save_debug_pickle(debug_dir, "data_wells.pickle", data_wells)
 
     log_stage(f"ЗАГРУЗКА ОФП, {parameters['switches']['switch_adaptation_relative_permeability']}")
     if parameters['switches']['switch_adaptation_relative_permeability']:
         parameters = get_reservoir_kr(data_history.copy(), data_wells.copy(), parameters)
+        _save_debug_parameters(debug_dir, parameters)
 
     log_stage(f"РАСЧЕТ КАРТ ТЕКУЩЕГО СОСТОЯНИЯ: ОБВОДНЕННОСТИ И ОИЗ, {any(maps_to_calculate.values())}")
     if any(maps_to_calculate.values()):
@@ -101,12 +162,16 @@ def run_model(parameters, total_stages, progress=None, is_cancelled=None):
                                               default_size_pixel,
                                               maps_to_calculate,
                                               maps_directory=paths["maps_directory"])
+        _save_debug_pickle(debug_dir, "maps.pickle", maps)
 
     log_stage(f"РАСЧЕТ ОЦЕНОЧНЫХ КАРТ")
     maps = maps + calculate_score_maps(maps=maps, dict_properties=parameters['reservoir_fluid_properties'])
+    _save_debug_pickle(debug_dir, "maps.pickle", maps)
 
     log_stage("РАСЧЕТ ПРОНИЦАЕМОСТИ ДЛЯ ФАКТИЧЕСКИХ СКВАЖИН ЧЕРЕЗ РБ")
     data_wells, parameters, data_wells_permeability_excel = get_df_permeability_fact_wells(data_wells, parameters)
+    _save_debug_pickle(debug_dir, "data_wells.pickle", data_wells)
+    _save_debug_parameters(debug_dir, parameters)
 
     log_stage("ОЦЕНКА ТЕМПОВ ПАДЕНИЯ ДЛЯ ТЕКУЩЕГО ФОНДА")
     data_decline_rate_stat, _, _ = get_decline_rates(data_history, data_wells, is_exe=is_exe)
@@ -123,6 +188,7 @@ def run_model(parameters, total_stages, progress=None, is_cancelled=None):
                                                                      percent_low=percent_low,
                                                                      data_wells=data_wells,
                                                                      dict_properties=parameters)
+    _save_debug_pickle(debug_dir, "list_zones.pickle", list_zones)
 
     type_map_list = list(map(lambda raster: raster.type_map, maps))
     map_rrr = maps[type_map_list.index('residual_recoverable_reserves')]
@@ -138,9 +204,11 @@ def run_model(parameters, total_stages, progress=None, is_cancelled=None):
                                                                   drill_zones_params['init_profit_cum_oil'],
                                                                   parameters)
             gdf_project_wells_all = pd.concat([gdf_project_wells_all, gdf_project_wells], ignore_index=True)
+    _save_debug_pickle(debug_dir, "list_zones.pickle", list_zones)
 
     log_stage("РАСЧЕТ ЗАПАСОВ ДЛЯ ПРОЕКТНЫХ СКВАЖИН")
     calculate_reserves_by_voronoi(list_zones, data_wells, map_rrr, save_directory)
+    _save_debug_pickle(debug_dir, "list_zones.pickle", list_zones)
 
     log_stage(f"ЗАГРУЗКА ИСХОДНЫХ ДАННЫХ ДЛЯ РАСЧЕТА ЭКОНОМИКИ, {parameters['switches']['switch_economy']}")
     if parameters['switches']['switch_economy']:
