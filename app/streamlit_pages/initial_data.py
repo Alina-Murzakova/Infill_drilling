@@ -170,9 +170,16 @@ def _maps_block() -> None:
 def show():
     initialize_session()
     st.header("Исходные данные")
-    st.write(
-        "Выберите месторождение и объект. Найденные данные заполнятся автоматически; "
-        "их можно заменить своими файлами."
+
+    # Краткое описание раздела
+    st.markdown(
+        '<div class="mapping-description">'
+        'Загрузка / подключение основных исходных данных, необходимых для выполнения расчёта.'
+        '<br>'
+        'Выберите месторождение и объект. Найденные данные заполнятся автоматически, '
+        'их можно заменить своими файлами.'
+        '</div>',
+        unsafe_allow_html=True,
     )
     _object_selectors()
     if not (st.session_state.selected_field and st.session_state.selected_object):
