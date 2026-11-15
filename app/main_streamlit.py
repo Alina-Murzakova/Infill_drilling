@@ -132,7 +132,7 @@ st.markdown(
     }
 
     section[data-testid="stSidebar"] .st-key-about_bottom {
-        positiaddon: fixed;
+        position: fixed;
         bottom: 0.75rem;
         width: 325px;
         background: var(--background-color);
