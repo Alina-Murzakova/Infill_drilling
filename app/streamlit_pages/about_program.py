@@ -19,8 +19,6 @@ LICENSE_PATH = PROJECT_ROOT / "LICENSE"
 # =========================================================
 # Работа с файлами
 # =========================================================
-
-
 def file_to_base64(file_path: Path) -> str:
     """Преобразование файла в Base64."""
     return base64.b64encode(
@@ -30,7 +28,6 @@ def file_to_base64(file_path: Path) -> str:
 
 def get_mime_type(file_path: Path) -> str:
     """Определение MIME-типа файла."""
-
     mime_type, _ = mimetypes.guess_type(
         str(file_path)
     )
@@ -41,13 +38,11 @@ def get_mime_type(file_path: Path) -> str:
 # =========================================================
 # Обработка изображений
 # =========================================================
-
 def process_images(markdown_text: str) -> str:
     """
     Заменяет локальные Markdown-картинки
     на HTML с встроенным изображением.
     """
-
     image_pattern = r'!\[([^\]]*)\]\(([^)]+)\)'
 
     def replace_markdown_image(match):
@@ -98,7 +93,6 @@ def process_html_images(markdown_text: str) -> str:
 
         <img src="diagrams/image.png">
     """
-
     html_pattern = r'<img([^>]+)src=["\']([^"\']+)["\']([^>]*)>'
 
     def replace_html_image(match):
@@ -145,13 +139,11 @@ def process_html_images(markdown_text: str) -> str:
 # =========================================================
 # Обработка локальных ссылок
 # =========================================================
-
 def process_links(markdown_text: str) -> str:
     """
     Обрабатывает локальные ссылки README.
     Внешние ссылки не изменяются.
     """
-
     link_pattern = r'(?<!!)\[([^\]]+)\]\(([^)]+)\)'
 
     def replace_link(match):
@@ -223,10 +215,10 @@ def remove_toc(markdown_text: str) -> str:
 
     return markdown_text
 
+
 # =========================================================
 # README
 # =========================================================
-
 def process_readme(markdown_text: str) -> str:
     markdown_text = remove_toc(markdown_text)
     markdown_text = process_images(markdown_text)
@@ -244,14 +236,11 @@ def process_readme(markdown_text: str) -> str:
 # =========================================================
 # Страница "О программе"
 # =========================================================
-
 def show():
     """Страница «О программе»."""
-
     # -----------------------------------------------------
     # Проверка README
     # -----------------------------------------------------
-
     if not README_PATH.exists():
         st.error(
             f"README.md не найден:\n\n"
@@ -263,15 +252,12 @@ def show():
     # -----------------------------------------------------
     # Читаем README
     # -----------------------------------------------------
-
     try:
-
         readme = README_PATH.read_text(
             encoding="utf-8"
         )
 
     except Exception as e:
-
         st.error(
             f"Не удалось прочитать README.md:\n\n{e}"
         )

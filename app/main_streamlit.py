@@ -18,11 +18,7 @@ from streamlit_pages.drilling_zone import show as show_drilling_zone
 from streamlit_pages.res_fluid_params import show as show_res_fluid_params
 from streamlit_pages.well_params import show as show_well_params
 from streamlit_pages.results import show as show_results
-from app.streamlit_runtime import (
-    initialize_session,
-    validation_issues,
-)
-
+from app.streamlit_runtime import (initialize_session, validation_issues)
 
 # Иконка приложения
 icons = [
@@ -51,8 +47,17 @@ def resource_path(relative_path: str) -> str:
 base_path_icon = resource_path("app/_internal/icons")
 lbl_path = os.path.join(base_path_icon, lbl)
 
-# BASE_DIR = Path(__file__).resolve().parent.parent
-# lbl_path = BASE_DIR / "_internal" / "icons" / "lbl.ico"
+
+def load_css():
+    """Загрузка стилей вкладок"""
+    css_path = Path(__file__).resolve().parent / "streamlit_pages" / "styles.css"
+
+    with open(css_path, encoding="utf-8") as f:
+        st.markdown(
+            f"<style>{f.read()}</style>",
+            unsafe_allow_html=True,
+        )
+
 
 # Настройки страницы
 st.set_page_config(page_title=APP_NAME,
@@ -60,8 +65,11 @@ st.set_page_config(page_title=APP_NAME,
                    layout="wide",
                    )
 
+load_css()
 initialize_session()
 
+issues = validation_issues()
+incomplete_sections = {issue.section for issue in issues}
 
 # Стили
 st.markdown(
@@ -69,7 +77,7 @@ st.markdown(
     <style>
     /* Ширина боковой панели */
     section[data-testid="stSidebar"] {
-        width: 350px !important;
+        width: 380px !important;
     }
 
     /* Сама кнопка */
@@ -105,7 +113,8 @@ st.markdown(
 
     /* Наведение */
     section[data-testid="stSidebar"] button:hover {
-        background-color: rgba(128, 128, 128, 0.15) !important;
+        background-color: #E0E4EC !important;
+        color: #000000 !important;
     }
 
     section[data-testid="stSidebar"] [data-testid="stSidebarContent"] {
@@ -123,15 +132,20 @@ st.markdown(
     }
 
     section[data-testid="stSidebar"] .st-key-about_bottom {
-        position: fixed;
-        left: 1rem;
+        positiaddon: fixed;
         bottom: 0.75rem;
-        width: 318px;
+        width: 325px;
         background: var(--background-color);
         z-index: 10;
     }
-
     
+    /* Активный раздел меню */
+    div[class*="st-key-menu_"] button[kind="primary"] {
+        background-color: #E0E4EC !important;
+        color: #000000 !important;
+        border: none !important;
+    }
+
     </style>
     """,
     unsafe_allow_html=True)
@@ -148,31 +162,84 @@ sections = [
 
 # ===== Состояние выбранного раздела =====
 if "current_section" not in st.session_state:
-    st.session_state.current_section = "Исходные данные"
+    st.session_state.current_section = "О программе"
+
+
+def select_section(name):
+    st.session_state.current_section = name
+
 
 # ===== Боковое меню =====
 with st.sidebar:
-    st.markdown(f"### {APP_NAME}\nВерсия {APP_VERSION}")
-    incomplete_sections = {issue.section for issue in validation_issues()}
+    st.markdown(
+        f"""
+        <div style="margin-bottom: 20px;">
+            <div style="font-size: 28px; font-weight: 700;">
+                {APP_NAME}
+            </div>
+            <div style="font-size: 16px; color: #808080;">
+                Версия {APP_VERSION}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
+    # Основные разделы
     for icon, name in sections:
-        if st.button(
+        is_active = st.session_state.current_section == name
+
+        with st.container(key=f"menu_{name.replace(' ', '_')}"):
+            st.button(
                 name,
-                icon=":material/error:" if name in incomplete_sections else icon,
+                icon=icon,
                 key=f"section_{name}",
                 width="stretch",
-                type="primary" if name in incomplete_sections else "tertiary",
-        ):
-            st.session_state.current_section = name
+                type="primary" if is_active else "tertiary",  # if name in incomplete_sections
+                on_click=select_section,
+                args=(name,),
+            )
+
+    # Раздел "О программе"
     with st.container(key="about_bottom"):
-        if st.button(
-                "О программе",
-                icon=":material/info:",
-                key="about",
-                width="stretch",
-                type="tertiary",
-        ):
-            st.session_state.current_section = "О программе"
+        st.button(
+            "О программе",
+            icon=":material/info:",
+            key="about",
+            width="stretch",
+            type="tertiary",
+            on_click=select_section,
+            args=("О программе",),
+        )
+
+    # горизонтальная разделительная линия
+    st.divider()
+
+    # Статус заполнения
+    if issues:
+        st.warning(
+            f"Необходимо заполнить все обязательные данные.\n",
+            icon=":material/warning:"
+        )
+    else:
+        st.success(
+            "Все обязательные данные заполнены",
+            icon=":material/check_circle:"
+        )
+
+    # Кнопка запуска расчёта
+    run_clicked = st.button(
+        "Запустить расчёт",
+        type="primary",
+        icon=":material/play_arrow:",
+        width="stretch",
+        disabled=bool(issues) or st.session_state.calculation_running,
+    )
+
+    if run_clicked:
+        st.session_state.calculation_requested = True
+        st.session_state.current_section = "Результаты"
+        st.rerun()
 
 # ===== Текущий раздел =====
 current_section = st.session_state.current_section
@@ -187,27 +254,6 @@ pages = {
     "Результаты": show_results,
 }
 if st.session_state.current_section not in pages:
-    st.session_state.current_section = "Исходные данные"
+    st.session_state.current_section = "О программе"
 pages[st.session_state.current_section]()
 current_section = st.session_state.current_section
-
-
-if current_section not in {"О программе", "Результаты"}:
-    issues = validation_issues()
-    with st.bottom:
-        left, right = st.columns([1, 3], vertical_alignment="center")
-        run_clicked = left.button(
-            "Запустить расчёт",
-            type="primary",
-            icon=":material/play_arrow:",
-            width="stretch",
-            disabled=bool(issues) or st.session_state.calculation_running,
-        )
-        if issues:
-            right.caption(f"Заполните обязательные данные. Незаполненные разделы подсвечены в меню ({len(issues)}).")
-        else:
-            right.success("Все обязательные данные заполнены", icon=":material/check_circle:")
-    if run_clicked:
-        st.session_state.calculation_requested = True
-        st.session_state.current_section = "Результаты"
-        st.rerun()

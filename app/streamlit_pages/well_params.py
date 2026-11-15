@@ -19,112 +19,6 @@ def show():
     )
 
     # -----------------------------------------------------
-    # Стили
-    # -----------------------------------------------------
-
-    st.markdown(
-        """
-        <style>
-
-        /* Названия вкладок */
-        div[data-testid="stTabs"] [role="tab"] {
-            font-size: 22px !important;
-            font-weight: 500 !important;
-        }
-
-        /* На случай, если Streamlit рендерит текст внутри ссылки/дополнительного тега */
-        div[data-testid="stTabs"] [role="tab"] * {
-            font-size: 22px !important;
-            font-weight: 500 !important;
-        }
-
-        /* Корректируем высоту панели, чтобы крупные вкладки не обрезались */
-        div[data-testid="stTabs"] [role="tablist"] {
-            height: auto !important;
-            gap: 20px !important;
-        }
-
-        /* Отступ между строками параметров */
-        div[data-testid="stHorizontalBlock"] {
-            margin-bottom: 14px;
-        }
-
-        /* Ширина поля со значением */
-        div[data-testid="stNumberInput"] {
-            width: 350px !important;
-        }
-
-        /* Названия параметров */
-        .well-label {
-            font-size: 18px;
-            line-height: 1.3;
-            padding-top: 7px;
-        }
-
-        /* Краткое описание раздела */
-        .well-description {
-            font-size: 16px;
-            line-height: 1.4;
-            margin-top: -8px;
-            margin-bottom: 20px;
-        }
-
-        /* Чекбоксы */
-        div[data-testid="stCheckbox"] label p {
-            font-size: 18px !important;
-        }
-
-        div[data-testid="stCheckbox"] {
-            margin-bottom: 14px !important;
-        }
-
-        /* Радиокнопки */
-        div[data-testid="stRadio"] label p {
-            font-size: 18px !important;
-        }
-
-        /* Поля ввода */
-        div[data-testid="stNumberInput"] input {
-            font-size: 18px !important;
-        }
-
-        div[data-testid="stNumberInput"] {
-            margin-top: 0 !important;
-        }
-
-        /* Подпись поля "Файл параметров ГРП" */
-        div[data-testid="stTextInput"] label p {
-            font-size: 18px !important;
-        }
-
-        /* Текст внутри поля */
-        div[data-testid="stTextInput"] input {
-            font-size: 18px !important;
-        }
-
-        /* Кнопки + / - */
-        div[data-testid="stNumberInput"] button {
-            background-color: #E4E7EC !important;
-        }
-
-        div[data-testid="stNumberInput"] button:hover {
-            background-color: #D1D5DB !important;
-        }
-
-        div[data-testid="stNumberInput"] button:active {
-            background-color: #B8BDC6 !important;
-        }
-
-        div[data-testid="stNumberInput"] button:focus {
-            background-color: #D1D5DB !important;
-        }
-
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    # -----------------------------------------------------
     # Вспомогательная функция для числовых параметров
     # -----------------------------------------------------
 
@@ -138,10 +32,7 @@ def show():
         format=None,
         disabled=False,
     ):
-        col_label, col_value = st.columns(
-            [0.5, 1.0],
-            gap="small",
-        )
+        col_label, col_value = st.columns([0.5, 1.0], gap="small")
 
         with col_label:
             st.markdown(

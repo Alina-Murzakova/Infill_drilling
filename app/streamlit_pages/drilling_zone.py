@@ -17,73 +17,6 @@ def show():
     )
 
     # -----------------------------------------------------
-    # Стили
-    # -----------------------------------------------------
-
-    st.markdown(
-        """
-        <style>
-        /* Отступ между строками параметров */
-        div[data-testid="stHorizontalBlock"] {
-            margin-bottom: 14px;
-        }
-
-        /* Ширина поля со значением */
-        div[data-testid="stNumberInput"] {
-            width: 350px !important;
-        }
-
-        /* Названия параметров */
-        .drilling-label {
-            font-size: 18px;
-            line-height: 1.3;
-            padding-top: 7px;
-        }
-
-        /* Краткое описание раздела */
-        .drilling-description {
-            font-size: 16px;
-            line-height: 1.4;
-            margin-top: -8px;
-            margin-bottom: 20px;
-        }
-
-        /* Поля ввода */
-        div[data-testid="stNumberInput"] input {
-            font-size: 18px !important;
-        }
-
-        /* Немного уменьшаем внутренние отступы вокруг полей */
-        div[data-testid="stNumberInput"] {
-            margin-top: 0 !important;
-        }
-
-        /* Кнопки + / - */
-        div[data-testid="stNumberInput"] button {
-            background-color: #E4E7EC !important;
-        }
-
-        /* + / - при наведении */
-        div[data-testid="stNumberInput"] button:hover {
-            background-color: #D1D5DB !important;
-        }
-
-        /* + / - при нажатии */
-        div[data-testid="stNumberInput"] button:active {
-            background-color: #B8BDC6 !important;
-        }
-
-        /* + / - после нажатия */
-        div[data-testid="stNumberInput"] button:focus {
-            background-color: #D1D5DB !important;
-        }
-
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    # -----------------------------------------------------
     # Вспомогательная функция для параметров
     # -----------------------------------------------------
 
@@ -101,10 +34,7 @@ def show():
         название слева + поле значения справа.
         """
 
-        col_label, col_value = st.columns(
-            [0.5, 1.0],
-            gap="small",
-        )
+        col_label, col_value = st.columns([0.5, 1.0], gap="small")
 
         with col_label:
             st.markdown(
