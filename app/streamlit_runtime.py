@@ -14,7 +14,7 @@ import streamlit as st
 
 from app.data_access import KspdRepository, LocalDatabaseRepository, MAP_SPECS
 from app.data_access.materialize import grid_to_grd, save_uploaded_file
-from app.data_access.models import PVT_FIELDS
+from app.data_access.models import PVT_FIELDS, PVT_UI_FIELDS
 from app.input_output.input_geo_phys_properties import (
     formatting_dict_geo_phys_properties,
     read_geo_phys_properties,
@@ -99,6 +99,8 @@ SESSION_DEFAULTS: dict[str, Any] = {
     "result_summary": None,
     "result_zip": None,
     "result_zip_name": None,
+    "calculation_debug_zip": None,
+    "calculation_debug_zip_name": None,
 }
 
 for _target, (_source, _default) in PVT_FIELDS.items():
@@ -123,6 +125,58 @@ class UploadedPayload:
 
     def getvalue(self) -> bytes:
         return self.data
+
+
+REQUIRED_NUMERIC_FIELDS: dict[str, tuple[tuple[str, str], ...]] = {
+    "Картопостроение": (
+        ("mapping_size_pixel", "Размер ячейки"),
+        ("mapping_radius_interpolate", "Радиус интерполяции"),
+        ("mapping_KIN", "КИН"),
+    ),
+    "Поиск зон бурения": (
+        ("drilling_percent_top", "Процент лучших точек"),
+        ("drilling_min_radius", "Минимальный радиус зоны"),
+        ("drilling_sensitivity_quality", "Чувствительность к качеству зоны"),
+        ("drilling_init_profit_cum_oil", "Минимальные запасы на скважину"),
+    ),
+    "Параметры скважин": (
+        ("well_r_w", "Радиус скважины"),
+        ("well_t_p", "Время на ВНР"),
+        ("well_efficiency", "Коэффициент эксплуатации"),
+        ("well_KUBS", "Коэффициент успешности"),
+        ("well_KPPP", "Коэффициент для ГС"),
+        ("well_skin", "Скин кольматации"),
+        ("well_first_months", "Период для расчёта запускных параметров"),
+        ("well_last_months", "Период для расчёта последних параметров"),
+        ("well_default_radius_prod", "Минимальный радиус добывающих скважин"),
+        ("well_default_radius_inj", "Минимальный радиус нагнетательных скважин"),
+        ("well_L", "Максимальная длина скважины"),
+        ("well_min_length", "Минимальная длина горизонтального участка"),
+        ("well_buffer_project_wells", "Эффективный радиус проектной скважины"),
+        ("well_k", "Количество ближайших скважин"),
+        ("well_threshold", "Порог фильтрации ближайших скважин"),
+        ("well_period_calculation", "Период прогноза"),
+    ),
+    "Свойства пласта и флюидов": (
+        ("resfluid_Bw", "Объёмный коэффициент воды"),
+        ("resfluid_kv_kh", "Анизотропия пласта"),
+    ),
+}
+
+
+def _append_missing_numeric_fields(
+    issues: list[ValidationIssue],
+    section: str,
+    fields: tuple[tuple[str, str], ...],
+) -> None:
+    for key, label in fields:
+        if st.session_state.get(key) is None:
+            issues.append(ValidationIssue(section, f"Поле «{label}» обязательно для заполнения"))
+
+
+def _value_or_default(key: str) -> Any:
+    value = st.session_state.get(key)
+    return SESSION_DEFAULTS[key] if value is None else value
 
 
 def remember_upload(widget_key: str, storage_key: str) -> None:
@@ -304,10 +358,62 @@ def validation_issues() -> list[ValidationIssue]:
         elif st.session_state.get(f"map_upload_value_{spec.key}") is None:
             issues.append(ValidationIssue("Исходные данные", f"Загрузите карту «{spec.label}»"))
 
+    for section, fields in REQUIRED_NUMERIC_FIELDS.items():
+        _append_missing_numeric_fields(issues, section, fields)
+
+    if st.session_state.mapping_auto_frac:
+        _append_missing_numeric_fields(
+            issues,
+            "Картопостроение",
+            (
+                ("mapping_min_hor_stress", "Азимут минимального горизонтального напряжения"),
+                ("mapping_frac_half_length", "Полудлина трещины АГРП"),
+            ),
+        )
+
+    if not st.session_state.well_use_frac_sheet and st.session_state.well_frac_type != "Без ГРП":
+        _append_missing_numeric_fields(
+            issues,
+            "Параметры скважин",
+            (
+                ("well_length_frac_stage", "Длина стадии ГРП"),
+                ("well_xfr", "Полудлина трещины"),
+                ("well_w_f", "Ширина трещины"),
+                ("well_k_f", "Проницаемость проппанта"),
+            ),
+        )
+
+    if st.session_state.well_fix_P_well_init:
+        _append_missing_numeric_fields(
+            issues,
+            "Параметры скважин",
+            (("well_P_well_init", "Ожидаемое забойное давление"),),
+        )
+
+    if not st.session_state.resfluid_relative_permeability:
+        _append_missing_numeric_fields(
+            issues,
+            "Свойства пласта и флюидов",
+            (
+                ("resfluid_Sor", "Остаточная нефтенасыщенность"),
+                ("resfluid_Swc", "Связанная водонасыщенность"),
+                ("resfluid_Fo", "Концевая точка ОФП по нефти"),
+                ("resfluid_Fw", "Концевая точка ОФП по воде"),
+                ("resfluid_m2", "Степень Corey по нефти"),
+                ("resfluid_m1", "Степень Corey по воде"),
+            ),
+        )
+
     for name in PVT_FIELDS:
         value = st.session_state.get(f"pvt_{name}")
+        label = PVT_UI_FIELDS[name][0]
         if value is None or float(value) <= 0:
-            issues.append(ValidationIssue("Свойства пласта и флюидов", f"Параметр {name} должен быть больше нуля"))
+            issues.append(
+                ValidationIssue(
+                    "Свойства пласта и флюидов",
+                    f"Поле «{label}» обязательно и должно быть больше нуля",
+                )
+            )
 
     if st.session_state.well_use_frac_sheet:
         if st.session_state.well_frac_source == "База данных" and st.session_state.frac_db_count <= 0:
@@ -365,6 +471,10 @@ def _materialize_inputs(work_dir: Path, repository) -> tuple[dict[str, str], dic
 
 
 def build_parameters(work_dir: Path) -> dict[str, Any]:
+    issues = validation_issues()
+    if issues:
+        raise ValueError("Не заполнены обязательные параметры: " + "; ".join(issue.message for issue in issues))
+
     repository = make_repository()
     paths, preloaded = _materialize_inputs(work_dir, repository)
     raw_pvt = {name: float(st.session_state[f"pvt_{name}"]) for name in PVT_FIELDS}
@@ -390,8 +500,8 @@ def build_parameters(work_dir: Path) -> dict[str, Any]:
         "maps": {
             "default_size_pixel": int(st.session_state.mapping_size_pixel),
             "radius_interpolate": int(st.session_state.mapping_radius_interpolate),
-            "azimuth_sigma_h_min": int(st.session_state.mapping_min_hor_stress),
-            "l_half_fracture": float(st.session_state.mapping_frac_half_length),
+            "azimuth_sigma_h_min": int(_value_or_default("mapping_min_hor_stress")),
+            "l_half_fracture": float(_value_or_default("mapping_frac_half_length")),
             "KIN": float(st.session_state.mapping_KIN),
         },
         "drill_zones": {
@@ -411,10 +521,10 @@ def build_parameters(work_dir: Path) -> dict[str, Any]:
             },
             "fracturing": {
                 "Type_Frac": None if st.session_state.well_frac_type == "Без ГРП" else st.session_state.well_frac_type,
-                "length_FracStage": float(st.session_state.well_length_frac_stage),
-                "k_f": float(st.session_state.well_k_f),
-                "xfr": float(st.session_state.well_xfr),
-                "w_f": float(st.session_state.well_w_f),
+                "length_FracStage": float(_value_or_default("well_length_frac_stage")),
+                "k_f": float(_value_or_default("well_k_f")),
+                "xfr": float(_value_or_default("well_xfr")),
+                "w_f": float(_value_or_default("well_w_f")),
             },
             "fact_wells_params": {
                 "first_months": int(st.session_state.well_first_months),
@@ -435,12 +545,12 @@ def build_parameters(work_dir: Path) -> dict[str, Any]:
         "reservoir_fluid_properties": {
             **formatted_pvt,
             "kv_kh": float(st.session_state.resfluid_kv_kh),
-            "Swc": float(st.session_state.resfluid_Swc),
-            "Sor": float(st.session_state.resfluid_Sor),
-            "Fw": float(st.session_state.resfluid_Fw),
-            "m1": float(st.session_state.resfluid_m1),
-            "Fo": float(st.session_state.resfluid_Fo),
-            "m2": float(st.session_state.resfluid_m2),
+            "Swc": float(_value_or_default("resfluid_Swc")),
+            "Sor": float(_value_or_default("resfluid_Sor")),
+            "Fw": float(_value_or_default("resfluid_Fw")),
+            "m1": float(_value_or_default("resfluid_m1")),
+            "Fo": float(_value_or_default("resfluid_Fo")),
+            "m2": float(_value_or_default("resfluid_m2")),
             "Bw": float(st.session_state.resfluid_Bw),
         },
         "economy_params": {"day_in_month": 29, "start_date": datetime(datetime.now().year + 1, 1, 1)},

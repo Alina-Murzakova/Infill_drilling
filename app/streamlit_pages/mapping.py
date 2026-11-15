@@ -1,5 +1,7 @@
 import streamlit as st
 
+from app.streamlit_widgets import clearable_number_input
+
 
 def show():
     """Страница «Картопостроение»"""
@@ -43,17 +45,16 @@ def show():
             )
 
         with col_value:
-            return st.number_input(
+            return clearable_number_input(
+                st,
                 label,
+                key=key,
                 min_value=min_value,
                 max_value=max_value,
-                value=value,
                 step=step,
                 format=format,
                 disabled=disabled,
-                label_visibility="collapsed",
-                key=key,
-                persist_state="session",
+                required=not disabled,
             )
 
     # -----------------------------------------------------
@@ -151,11 +152,11 @@ def show():
     # -----------------------------------------------------
 
     return {
-        "default_size_pixel": int(size_pixel),
-        "radius_interpolate": int(radius_interpolate),
+        "default_size_pixel": int(size_pixel) if size_pixel is not None else None,
+        "radius_interpolate": int(radius_interpolate) if radius_interpolate is not None else None,
         "switch_accounting_horwell": switch_accounting_horwell,
         "switch_frac_inj_well": switch_frac_inj_well,
-        "azimuth_sigma_h_min": int(azimuth_sigma_h_min),
-        "l_half_fracture": float(l_half_fracture),
-        "KIN": float(KIN),
+        "azimuth_sigma_h_min": int(azimuth_sigma_h_min) if azimuth_sigma_h_min is not None else None,
+        "l_half_fracture": float(l_half_fracture) if l_half_fracture is not None else None,
+        "KIN": float(KIN) if KIN is not None else None,
     }
