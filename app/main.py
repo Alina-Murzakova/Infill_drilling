@@ -50,11 +50,7 @@ def run_model(parameters, total_stages, progress=None, is_cancelled=None):
         parameters['well_params']['proj_wells_params']['buffer_project_wells'] = 10
 
     log_stage("ЗАГРУЗКА СКВАЖИННЫХ ДАННЫХ")
-    preloaded = parameters.get("preloaded", {})
-    data_history, info_object_calculation = load_wells_data(
-        data_well_directory=paths["data_well_directory"],
-        data_history=preloaded.get("data_history"),
-    )
+    data_history, info_object_calculation = load_wells_data(data_well_directory=paths["data_well_directory"])
     name_field, name_object = info_object_calculation.get("field"), info_object_calculation.get("object_value")
     save_directory = paths['save_directory']
     # Создание локальной папки Месторождение_Объект
@@ -64,9 +60,7 @@ def run_model(parameters, total_stages, progress=None, is_cancelled=None):
     logger.add(f"{save_directory}/.debug/logs.log", mode='w', encoding='utf-8')
 
     log_stage(f"ЗАГРУЗКА ГФХ ПО ПЛАСТУ {name_object.replace('/', '-')} МЕСТОРОЖДЕНИЯ {name_field}")
-    dict_geo_phys_properties = preloaded.get("geo_phys_properties")
-    if dict_geo_phys_properties is None:
-        dict_geo_phys_properties = load_geo_phys_properties(paths["path_geo_phys_properties"], name_field, name_object)
+    dict_geo_phys_properties = load_geo_phys_properties(paths["path_geo_phys_properties"], name_field, name_object)
     parameters["reservoir_fluid_properties"].update(dict_geo_phys_properties)
 
     log_stage("ПОДГОТОВКА СКВАЖИННЫХ ДАННЫХ")
@@ -75,10 +69,7 @@ def run_model(parameters, total_stages, progress=None, is_cancelled=None):
                            first_months=parameters['well_params']['fact_wells_params']['first_months']))
 
     log_stage(f"ЗАГРУЗКА ФРАК-ПАРАМЕТРОВ")
-    data_wells, parameters = load_frac_info(
-        paths["path_frac"], data_wells, name_object, parameters,
-        data_frac=preloaded.get("frac_info"),
-    )
+    data_wells, parameters = load_frac_info(paths["path_frac"], data_wells, name_object, parameters)
 
     log_stage("ЗАГРУЗКА И ОБРАБОТКА КАРТ")
     maps, data_wells, maps_to_calculate = mapping(maps_directory=paths["maps_directory"],
